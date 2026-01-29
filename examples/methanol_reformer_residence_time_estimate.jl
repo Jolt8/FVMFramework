@@ -1,6 +1,5 @@
 using Revise
 using FVMFramework
-using Pkg
 
 using Ferrite
 using DifferentialEquations
@@ -15,14 +14,15 @@ left = Ferrite.Vec{3}((0.0, 0.0, 0.0))
 right = Ferrite.Vec{3}((1.0, 1.0, 1.0))
 grid = generate_grid(Hexahedron, grid_dimensions, left, right)
 
-addcellset!(grid, "internal_cells", x -> x != "chicken") # all
+addcellset!(grid, "internal_cells", x -> x != -1e9) # all
 
 # methanol, water, carbon_monoxide, hydrogen, carbon_dioxide
-initial_mass_fractions = [1.0, 1.3, 0.0001, 0.0001, 0.0001]
+initial_mass_fractions = [1.0, 1.3, 0.0001, 0.02, 0.0001]
 
 initial_mass_fractions = initial_mass_fractions ./ sum(initial_mass_fractions)
 
-van_t_hoff_A_vec = [5.39e-4, 1.50e-5, 1.05e-11]
+#for CH3OH, HCOO, OH
+van_t_hoff_A_vec = [1.7e-6, 4.74e-13, 3.32e-14]
 van_t_hoff_dH_vec = [-46800.0, -115000.0, -110000.0]
 
 MSR_rxn = MSRReaction(
@@ -70,7 +70,7 @@ WGS_rxn = WGSReaction(
     van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
 )
 
-reaction_physics = SimpleChemPhysics(0.8, 4184, [MSR_rxn, MD_rxn, WGS_rxn], [1250, 1250, 1250], [0], 0)
+reaction_physics = SimpleChemPhysics(0.45, 4184, [MSR_rxn, MD_rxn, WGS_rxn], [1250, 1250, 1250], [0], 0)
 
 phys_vec = [reaction_physics]
 
@@ -83,7 +83,7 @@ end
 
 internal_cell_set = CellSet(1, internal_cell_set_idxs)
 
-cell_sets = [internal_cell_set]
+cell_sets = ["internal_cells" => internal_cell_set]
 
 free_idxs = Int[]
 
@@ -169,13 +169,15 @@ molar_concentrations_cache = zeros(Float64, length(u_proto.mass_fractions[:, 1])
 net_rates_cache = zeros(Float64, length(reaction_physics.chemical_reactions))
 #passing in caches into the FVM_iter_f! function still seems to be impossible, I guess we'll need PreallocationTools
 
+species_molecular_weights = [0.03204, 0.01802, 0.02801, 0.00202, 0.04401]
+
 f_closure_implicit = (du, u, p, t) -> simple_reaction_0D_f!(
     du, u, p, t,
     cell_neighbor_map,
     cell_volumes, cell_centroids,
     connection_areas, connection_normals, connection_distances,
     unconnected_areas,
-    [0.03204, 0.01802, 0.02801, 0.00202, 0.04401],
+    species_molecular_weights,
     cell_props_id_map, bc_sys, phys_vec,
     u_axes, n_reactions, n_species
 )
@@ -191,7 +193,7 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 
 ode_func = ODEFunction(f_closure_implicit, jac_prototype=float.(jac_sparsity))
 
-t0, tMax = 0.0, 1000000000.0
+t0, tMax = 0.0, 1000.0
 desired_steps = 10
 dt = tMax / desired_steps
 tspan = (t0, tMax)
@@ -201,10 +203,26 @@ implicit_prob = ODEProblem(ode_func, u0, tspan, p_guess)
 
 @time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
 
-methanol_mass_fractions = [u_vec[1] for u_vec in sol.u]
-methanol_initial = methanol_mass_fractions[1]
-methanol_final = methanol_mass_fractions[end]
-methanol_conversion = 1 - methanol_final / methanol_initial
+#methanol, water, carbon_monoxide, hydrogen, carbon_dioxide
+methanol_molar_fractions = [u_vec[1] / species_molecular_weights[1] for u_vec in sol.u]
+water_molar_fractions = [u_vec[2] / species_molecular_weights[2] for u_vec in sol.u]
+carbon_monoxide_molar_fractions = [u_vec[3] / species_molecular_weights[3] for u_vec in sol.u]
+hydrogen_molar_fractions = [u_vec[4] / species_molecular_weights[4] for u_vec in sol.u]
+carbon_dioxide_molar_fractions = [u_vec[5] / species_molecular_weights[5] for u_vec in sol.u]
+
+using Plots
+plot(sol.t, methanol_molar_fractions)
+plot!(sol.t, water_molar_fractions)
+plot!(sol.t, carbon_monoxide_molar_fractions)
+plot!(sol.t, hydrogen_molar_fractions)
+plot!(sol.t, carbon_dioxide_molar_fractions)
+
+methanol_initial_molar_fraction = methanol_molar_fractions[1]
+methanol_conversions = [(methanol_initial_molar_fraction - meth) / methanol_initial_molar_fraction for meth in methanol_molar_fractions]
+
+plot(sol.t, methanol_conversions)
+t_idx_at_desired_conversion = argmin(abs.(methanol_conversions .- 0.95))
+t_at_desired_conversion = sol.t[t_idx_at_desired_conversion]
 
 #@VSCodeServer.profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
 
