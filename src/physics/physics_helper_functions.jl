@@ -16,7 +16,7 @@ function get_mw_avg(mass_fractions, molecular_weights)
     mw_avg_cache_for_cell = 0.0
 
     for i in eachindex(molecular_weights)
-        mw_avg_cache_for_cell += mass_fractions_a[i] / molecular_weights[i]
+        mw_avg_cache_for_cell += mass_fractions[i] / molecular_weights[i]
     end
 
     mw_avg_cache_for_cell = mw_avg_cache_for_cell^-1.0
@@ -26,7 +26,7 @@ function cell_rho_ideal(
     pressure, temp, #u values
     mw_avg, #other props 
     )
-    return (pressure * mw_avg) / (R_gas * temp_a)
+    return (pressure * mw_avg) / (R_gas * temp)
 end
 
 function get_cell_cp(
@@ -55,7 +55,17 @@ end
 
 function van_t_hoff(A, dH, T)
     #K = A * exp(dH/RT)
-    return A * exp(dH / (R_gas * T))
+    return A * exp(-dH / (R_gas * T))
+end
+
+function K_gibbs_free(T_ref, T_actual, ΔG_rxn_ref, ΔH_rxn_ref)
+    K_ref = exp(-ΔG_rxn_ref / (R_gas * T_ref))
+
+    ln_K_ratio = (-ΔH_rxn_ref / R_gas) * (1/T_actual - 1/T_ref)
+    
+    K_T = K_ref * exp(ln_K_ratio)
+    
+    return K_T 
 end
 
 #probably unecessary, but whatever

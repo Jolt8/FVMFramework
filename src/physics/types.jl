@@ -43,31 +43,32 @@ end
 
 
 ### BC TYPES ###
-
 abstract type AbstractBC end
 
-## Chemistry BCs ##
-struct ChemBC <: AbstractBC
-    initial_mass_fractions::Vector{Float64}
+## Velocity BCs ##
+struct VelBC <: AbstractBC
+    type::Symbol
+    fixed_vel::Float64
+end
+
+## Pressure BCs ##
+struct PressureBC <: AbstractBC
+    type::Symbol
+    fixed_pressure::Float64
 end
 
 ## Heat BCs ##
 struct HeatBC <: AbstractBC
-    initial_temp::Float64
+    type::Symbol
+    fixed_temp::Float64
 end
 
-struct VelBC <: AbstractBC
-    type::Symbol 
-    initial::Float64
-end
-
-struct PressureBC <: AbstractBC
-    type::Symbol 
-    initial::Float64
+## Chemistry BCs ##
+struct ChemBC <: AbstractBC
+    type::Symbol
+    fixed_mass_fractions::Vector{Float64}
 end
 
 ## General BC Types ## 
-
 abstract type  MultiPhysicsBCs end 
-
 abstract type AbstractBoundarySystem end

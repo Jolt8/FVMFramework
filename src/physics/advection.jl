@@ -9,14 +9,12 @@ function species_advection!(
     #geometry data
     area, norm, dist,
     #other props 
-    rho_a, rho_b, #kinda a u value because it changes with time but not explicitly tracked through u values
-    species_molecular_weights
     )
 
     upwinded_mass_fractions = upwind(species_mass_fractions_a, species_mass_fractions_b, face_m_dot)
 
-    du_species_mass_fractions_a -= face_m_dot * upwinded_mass_fractions
-    du_species_mass_fractions_b += face_m_dot * upwinded_mass_fractions
+    du_species_mass_fractions_a[1] -= face_m_dot * upwinded_mass_fractions
+    du_species_mass_fractions_b[1] += face_m_dot * upwinded_mass_fractions
 end
 
 #use get_cell_cp from helper functions to get cp for cell a and b
@@ -30,8 +28,7 @@ function enthalpy_advection!(
     #geometry data
     area, norm, dist,
     #other props 
-    cp_a, cp_b,
-    species_molecular_weights
+    cp_a, cp_b
     )
     cp_upwinded = upwind(cp_a, cp_b, face_m_dot)
 
@@ -39,8 +36,8 @@ function enthalpy_advection!(
 
     energy_flux = face_m_dot * cp_upwinded * temp_upwinded 
 
-    du_temp_a -= energy_flux
-    du_temp_b += energy_flux
+    du_temp_a[1] -= energy_flux
+    du_temp_b[1] += energy_flux
 end
 
 

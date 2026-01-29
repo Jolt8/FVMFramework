@@ -24,6 +24,6 @@ function diffusion_temp_exchange!(
 
     F = numerical_flux(k_effective, temp_a, temp_b, connection_area, connection_distance)
     
-    du_temp_a -= F
-    du_temp_b += F
+    du_temp_a[1] -= F
+    du_temp_b[1] += F
 end

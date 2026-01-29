@@ -35,21 +35,11 @@ function net_reaction_rate(chemical_reaction::PowerLawReaction, molar_concentrat
     return net_reaction_rate
 end
 
-function K_gibbs_free(T_ref, T_actual, ΔG_rxn_ref, ΔH_rxn_ref)
-    K_ref = exp(-ΔG_rxn_ref / (R_gas * T_ref))
-
-    ln_K_ratio = (-ΔH_rxn_ref / R_gas) * (1/T_actual - 1/T_ref)
-    
-    K_T = K_ref * exp(ln_K_ratio)
-    
-    return K_T 
-end
-
 function react_cell!(
     #mutated vars
     du_mass_fractions, du_temp, 
     #caches (also mutated)
-    molar_concentrations_cache, net_rates_cache, 
+    change_in_molar_concetrations_cache, molar_concentrations_cache, net_rates_cache, 
     #u data
     species_mass_fractions, cell_temp, 
     #geometry data
@@ -82,14 +72,12 @@ function react_cell!(
     end
     
     for (species_id, species_molar_concentration) in enumerate(molar_concentrations_cache)
-        change_in_species_molar_concentration = 0.0
-
         for (reaction_id, reaction) in enumerate(reactions)
             stoich = reaction.all_stoich_coeffs[species_id]
-            change_in_species_molar_concentration += net_rates_cache[reaction_id] * stoich
+            change_in_molar_concetrations_cache[species_id] += net_rates_cache[reaction_id] * stoich
         end
 
-        du_mass_fractions[species_id] += (change_in_species_molar_concentration * species_molecular_weights[species_id]) / rho
+        du_mass_fractions[species_id] += (change_in_molar_concetrations_cache[species_id] * species_molecular_weights[species_id]) / rho
         # rate (mol/(m3*s)) * MW (g/mol) / rho (g/m3) = unitless/s
     end
 
