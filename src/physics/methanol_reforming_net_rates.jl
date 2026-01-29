@@ -55,7 +55,7 @@ function PAM_reaction(rxn, molar_concentrations, T)
     P_CH3OH = pp[1]
     P_H2O = pp[2]
     P_CO = pp[3]
-    P_H2 = max(pp[4], 1e-9)
+    P_H2 = pp[4]
     P_CO2 = pp[5]
 
     K_CH3O = van_t_hoff(rxn.adsorption_A_vec[1], rxn.adsorption_dH_vec[1], T)
@@ -78,7 +78,8 @@ function net_reaction_rate(rxn::MSRReaction, molar_concentrations, T, kf_A, kf_E
     DEN = PAM_reaction(rxn, molar_concentrations, T)
 
     k_MSR = rxn.kf_A * exp(-rxn.kf_Ea / (R_gas * T))
-    K_eq_MSR = K_gibbs_free(rxn.K_gibbs_free_ref_temp, T, rxn.delta_gibbs_free_energy, rxn.heat_of_reaction)
+    #K_eq_MSR = K_gibbs_free(rxn.K_gibbs_free_ref_temp, T, rxn.delta_gibbs_free_energy, rxn.heat_of_reaction)
+    K_eq_MSR = 100000.0
     driving_force = 1.0 - ( (P_CO2 * P_H2^3) / (K_eq_MSR * P_CH3OH * P_H2O) )
     
     rate = (k_MSR * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2) #max just to ensure we don't divide by zero
