@@ -1,0 +1,10 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"julia.environmentPath": "C:\\Users\\wille\\.julia\\environments\\v1.12"
+	}
+}

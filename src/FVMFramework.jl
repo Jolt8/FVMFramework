@@ -16,6 +16,8 @@ using NonlinearSolve
 using ComponentArrays
 using StaticArrays
 using ProfileView
+using Dates
+using WriteVTK
 
 import AlgebraicMultigrid
 import SparseConnectivityTracer
@@ -23,7 +25,7 @@ import ADTypes
 import Logging
 
 #this is here just in case we have to do this again
-#add Ferrite DifferentialEquations LinearAlgebra SparseArrays SciMLSensitivity Optimization OptimizationPolyalgorithms Zygote Enzyme RecursiveArrayTools OptimizationOptimJL ILUZero NonlinearSolve ComponentArrays StaticArrays ProfileView
+#add Ferrite DifferentialEquations LinearAlgebra SparseArrays SciMLSensitivity Optimization OptimizationPolyalgorithms Zygote RecursiveArrayTools OptimizationOptimJL ILUZero NonlinearSolve ComponentArrays StaticArrays ProfileView
 #add AlgebraicMultigrid SparseConnectivityTracer ADTypes Logging
 
 #to add new files:
@@ -42,10 +44,10 @@ include("physics/types.jl")
 export AbstractPhysics, AbstractReaction, AbstractBoundarySystem
 export SimpleChemPhysics, ChemPhysics
 export HeatPhysics
-export ChemBC, HeatBC, MultiPhysicsBCs
+export ChemBC, HeatBC, VelBC, PressureBC, MultiPhysicsBCs
 
-include("physics/helper_functions.jl")
-export R_gas, upwind, harmonic_mean, van_t_hoff, arrenhius_k
+include("physics/physics_helper_functions.jl")
+export R_gas, upwind, harmonic_mean, van_t_hoff, arrenhius_k, K_gibbs_free
 export get_mw_avg, cell_rho_ideal, get_cell_cp
 
 include("physics/advection.jl")
@@ -62,17 +64,27 @@ export get_k_effective, numerical_flux, diffusion_temp_exchange!
 
 include("physics/chemistry.jl")
 export PowerLawReaction
-export net_reaction_rate, K_gibbs_free, react_cell!
+export net_reaction_rate, react_cell!
 
 include("physics/methanol_reforming_net_rates.jl")
 export MSRReaction, MDReaction, WGSReaction #new reaction types
 export net_reaction_rate
 
+include("workflow_helper_functions.jl")
+export rebuild_u_named, rebuild_u_named_vel
+
+include("sim_config.jl")
+export create_fvm_config, add_region!, add_boundary!, finish_fvm_config
+export FVMGeometry, SimulationConfigInfo, RegionSetupInfo, BoundarySetupInfo, FVMSystem
+
+include("sim_recording.jl")
+export sol_to_vtk
+
 include("solvers/preconditioners.jl")
 export iluzero, algebraicmultigrid
 
 include("solvers/fvm_operators/methanol_reformer_operator.jl")
-export methanol_reformer_f!
+export methanol_reformer_f!, MethanolReformerBoundarySystem, MethanolReformerPhysicsBCs, MethanolReformerPhysics
 
 include("solvers/fvm_operators/simple_reaction_0D.jl")
 export simple_reaction_0D_f!, SimpleReactionBoundarySystem, SimpleReactionPhysicsBCs
