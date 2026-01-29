@@ -5,6 +5,7 @@ struct SimpleReactionBoundarySystem <: AbstractBoundarySystem
     temp_fixed_idxs::Vector{Int}
     chem_fixed_idxs::Vector{Int}
 end
+
 struct SimpleReactionPhysicsBCs <: MultiPhysicsBCs #this also defines the order of each variable in u used in the future
     temp_bcs::Vector{HeatBC}
     chem_bcs::Vector{ChemBC}
@@ -28,7 +29,7 @@ function simple_reaction_0D_f!(
     du = ComponentVector(du, ax)
     
     du .= 0.0
-
+    
     molar_concentrations_cache = zeros(eltype(u.mass_fractions), length(u.mass_fractions[:, 1])) #just using mass fractions for cell 1, this may cause some issues later!
     net_rates_cache = zeros(eltype(u.mass_fractions), length(chem_phys[1].chemical_reactions))
 
@@ -51,7 +52,7 @@ function simple_reaction_0D_f!(
         
         #react_cell! also adds the heat of reaction to the cell 
         react_cell!(
-            @view(du.mass_fractions[:, cell_id]), @view(du.temp[cell_id:cell_id]), #fixed temp for now
+            @view(du.mass_fractions[:, cell_id]), @view(du.temp[cell_id:cell_id]), 
             molar_concentrations_cache, net_rates_cache, 
             mass_fractions, cell_temp,
             vol,
@@ -59,14 +60,15 @@ function simple_reaction_0D_f!(
             species_molecular_weights, reactions, cell_kg_cat_per_m3_for_each_reaction
         )
 
-        # heat source and capacity loop
+        # ----- Source Loop ----- 
         S = chem_phys[props].heat_vol_source_term * vol 
         
         du.temp[cell_id] += S
 
-        # ----- CAPACITY LOOP -----
+        # ----- Capacity Loop -----
         cell_mass = rho * vol
-        du.temp[cell_id] /= (rho * vol * cp)
+        cap = cp * cell_mass
+        du.temp[cell_id] /= cap
     end
 
     for cell_id in bc_sys.temp_fixed_idxs
