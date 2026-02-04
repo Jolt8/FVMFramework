@@ -8,29 +8,27 @@ end
 function continuity_and_momentum_darcy(
     #NOTE!!:
     #this also returns face_m_dot even though it's a f!() function
-    #mutated vars
-    du_pressure_a, du_pressure_b,
-    #u values
-    pressure_a, pressure_b,
+    du, u,
+    idx_a, idx_b,
     #geometry data
     area, norm, dist,
-    vol_a, vol_b,
     #other props 
     rho_a, rho_b, #kinda a u value because it changes with time but not explicitly tracked through u values
-    mu_a, mu_b,
-    permeability,
+    phys_a, phys_b
     )
 
+    pressure_a = u.pressure[idx_a]
+    pressure_b = u.pressure[idx_b]
+
     rho_avg = 0.5 * (rho_a + rho_b)
-    mu_avg = 0.5 * (mu_a + mu_b)
+    mu_avg = 0.5 * (phys_a.mu + phys_b.mu)
+    permeability_avg = 0.5 * (phys_a.permeability + phys_b.permeability)
 
-    face_m_dot = get_darcy_mass_flux(rho_avg, permeability, mu_avg, pressure_a, pressure_b, area, dist)
+    face_m_dot = get_darcy_mass_flux(rho_avg, permeability_avg, mu_avg, pressure_a, pressure_b, area, dist)
 
-    term_a = face_m_dot / vol_a
-    du_pressure_a[1] -= term_a
-
-    term_b = face_m_dot / vol_b
-    du_pressure_b[1] += term_b
+    #perhaps we should save the vol_a and vol_b division for the capacity functions later
+    du.pressure[idx_a] -= face_m_dot
+    du.pressure[idx_b] += face_m_dot
 
     return face_m_dot
 end

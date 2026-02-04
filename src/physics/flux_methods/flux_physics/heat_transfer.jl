@@ -9,21 +9,18 @@ function numerical_flux(k_avg, T_L, T_R, area, dist)
 end
 
 function diffusion_temp_exchange!(
-        #mutated vars
-        du_temp_a, du_temp_b,
-        #u data
-        temp_a, temp_b,
-        #geometry data
+        du, u,
+        idx_a, idx_b,
         connection_area, connection_distance,
         #props
-        k_a, k_b,
+        phys_a, phys_b
         #other data
 
     )
-    k_effective = get_k_effective(k_a, k_b)
+    k_effective = get_k_effective(phys_a.k, phys_b.k)
 
-    F = numerical_flux(k_effective, temp_a, temp_b, connection_area, connection_distance)
+    F = numerical_flux(k_effective, u.temp[idx_a], u.temp[idx_b], connection_area, connection_distance)
     
-    du_temp_a[1] -= F
-    du_temp_b[1] += F
+    du.temp[idx_a] -= F
+    du.temp[idx_b] += F
 end

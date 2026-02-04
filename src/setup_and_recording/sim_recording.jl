@@ -33,8 +33,8 @@ function sol_to_vtk(sol, u_named, grid, sim_file)
                         for species in propertynames(data)
                             write_cell_data(vtk, data[species], String(species))
                         end
-                    elseif ndims(data) == 2 # Matrix of (species, cells)
-                        for i in 1:size(data, 1)
+                    elseif ndims(data) == 2 # Matrix of (species, cells) 
+                        for i in eachindex(data[:, 1])
                             write_cell_data(vtk, data[i, :], "mass_fraction_$i")
                         end
                     else

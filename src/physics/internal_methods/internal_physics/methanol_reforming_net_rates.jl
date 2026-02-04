@@ -1,4 +1,3 @@
-
 struct MSRReaction <: AbstractReaction
     heat_of_reaction::Float64
     delta_gibbs_free_energy::Float64

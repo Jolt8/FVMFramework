@@ -22,7 +22,7 @@ function net_reaction_rate(chemical_reaction::PowerLawReaction, molar_concentrat
         stoich_coeff = chemical_reaction.reactant_stoich_coeffs[i]
         forward_term *= concentration^stoich_coeff
     end
-    
+
     reverse_term = 1.0
     for (i, species_id) in enumerate(chemical_reaction.products)
         concentration = molar_concentrations[species_id]
@@ -36,53 +36,55 @@ function net_reaction_rate(chemical_reaction::PowerLawReaction, molar_concentrat
 end
 
 function react_cell!(
+    #input idxs 
+    cell_id,
     #mutated vars
-    du_mass_fractions, du_temp, 
-    #caches (also mutated)
-    change_in_molar_concetrations_cache, molar_concentrations_cache, net_rates_cache, 
+    du,
     #u data
-    species_mass_fractions, cell_temp, 
+    u,
+    #caches (also mutated)
+    change_in_molar_concetrations_cache, molar_concentrations_cache, net_rates_cache,
     #geometry data
     vol,
     #props
     rho,
-    #other data
-    species_molecular_weights, reactions, cell_kg_cat_per_m3_for_each_reaction
-    )
+    #phys data
+    phys
+)
 
-    for (species_id, species_mass_fraction) in enumerate(species_mass_fractions)
-        molar_concentrations_cache[species_id] = (rho * species_mass_fraction) / species_molecular_weights[species_id]
+    for (species_id, species_mass_fraction) in enumerate(u.mass_fractions[:, cell_id])
+        molar_concentrations_cache[species_id] = (rho * species_mass_fraction) / phys.species_molecular_weights[species_id]
     end
 
-    for (reaction_id, reaction) in enumerate(reactions)
+    for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
         kf_A = reaction.kf_A
         kf_Ea = reaction.kf_Ea
 
         #find reverse pre exponential_factor
-        K_ref = K_gibbs_free(reaction.K_gibbs_free_ref_temp, cell_temp, reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
+        K_ref = K_gibbs_free(reaction.K_gibbs_free_ref_temp, u.temp[cell_id], reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
 
-        kr_A = (kf_A / K_ref) * exp(-reaction.heat_of_reaction / (R_gas * cell_temp)) 
+        kr_A = (kf_A / K_ref) * exp(-reaction.heat_of_reaction / (R_gas * u.temp[cell_id]))
 
         #find reverse Ea
         kr_Ea = kf_Ea - reaction.heat_of_reaction
 
-        net_rates_cache[reaction_id] = net_reaction_rate(reaction, molar_concentrations_cache, cell_temp, kf_A, kf_Ea, kr_A, kr_Ea) * cell_kg_cat_per_m3_for_each_reaction[reaction_id]
+        net_rates_cache[reaction_id] = net_reaction_rate(reaction, molar_concentrations_cache, u.temp[cell_id], kf_A, kf_Ea, kr_A, kr_Ea) * phys.cell_kg_cat_per_m3_for_each_reaction[reaction_id]
         #rate returned by net_reactions_rate is in mol / (kg_cat * s), so we times by the cell's kg_cat / m3
         #rate is now in mol / (m3 * s)
     end
-    
+
     for (species_id, species_molar_concentration) in enumerate(molar_concentrations_cache)
-        for (reaction_id, reaction) in enumerate(reactions)
+        for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
             stoich = reaction.all_stoich_coeffs[species_id]
             change_in_molar_concetrations_cache[species_id] += net_rates_cache[reaction_id] * stoich
         end
 
-        du_mass_fractions[species_id] += (change_in_molar_concetrations_cache[species_id] * species_molecular_weights[species_id]) / rho
+        du.mass_fractions[species_id, cell_id] += (change_in_molar_concetrations_cache[species_id] * phys.species_molecular_weights[species_id]) / rho
         # rate (mol/(m3*s)) * MW (g/mol) / rho (g/m3) = unitless/s
     end
 
-    for (reaction_id, reaction) in enumerate(reactions) 
-        du_temp[1] += net_rates_cache[reaction_id] * (-reaction.heat_of_reaction) * vol
+    for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
+        du.temp[cell_id] += net_rates_cache[reaction_id] * (-reaction.heat_of_reaction) * vol
         # rate (mol/(m3*s)) * H (J/mol) * vol (m3) = J/s = Watts
     end
 end
