@@ -1,7 +1,7 @@
 function get_cell_set_total_volume(grid, set_name, geo)
     total_volume = 0.0
     for cell_id in eachindex(geo.cell_volumes)
-        if cell_id in getcellset(grid, "heating_areas")
+        if cell_id in getcellset(grid, set_name)
             total_volume += geo.cell_volumes[cell_id]
         end
     end
@@ -23,6 +23,7 @@ end
 
 #this style of function is not needed for cell volumes because it's very easy to access cell_volumes with just [cell_id]
 function get_facet_set_cells_respective_areas(grid, set_name, geo)
+    n_cells = length(grid.cells)
     cell_ids_respective_areas = zeros(Float64, n_cells) 
 
     for (cell_id, facet_idx) in getfacetset(grid, set_name)

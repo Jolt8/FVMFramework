@@ -46,7 +46,6 @@ struct WGSReaction <: AbstractReaction
     adsorption_dH_vec::Vector{Float64}
 end
 
-
 function PAM_reaction(rxn, molar_concentrations, T)
     pp = molar_concentrations .* ((R_gas * T) * 1e-5)
     #we divide by 1e-5 because PAM parameters are typically in bar

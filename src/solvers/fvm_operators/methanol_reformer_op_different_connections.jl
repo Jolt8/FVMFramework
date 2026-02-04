@@ -70,12 +70,13 @@ function methanol_reformer_f_test!(
     du, u, p, t,
     cell_neighbor_map,
     cell_volumes, cell_centroids,
-    connection_areas, connection_normals, connection_distances,
     #cell volumes and cell centroids are accessed at the id of the cell
-    unconnected_areas,
+    connection_areas, connection_normals, connection_distances,
     #connection areas, normals, and distances are simply accessed by their location in the 
     #list which corresponds to the respective connection in cell_neighbor_map
-
+    unconnected_cell_face_map, 
+    cell_face_areas, cell_face_normals,
+    
     connection_groups::MethanolReformerConnectionGroups, phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
     regions_phys_func_cells::Vector{Tuple{AbstractPhysics,Function,Vector{Int}}},
     ax,
