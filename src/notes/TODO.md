@@ -27,3 +27,6 @@ TODO:
     - Create a dedicated method for distributing a BC over a set of cell volumes or set of cell areas 
 
     - Improve access of mass fractions 
+
+    - Add a method to finish_fvm_config(...) to take all cells that are not under a cell set and add them to a default set with either a user defined default region or a default default region with no physics or variables 
+        - We would also have to exclude it from the connections map

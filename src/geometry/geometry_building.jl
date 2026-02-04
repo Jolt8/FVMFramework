@@ -8,8 +8,8 @@ struct FVMGeometryTetra{T,CoordType} <: FVMGeometry
     connection_normals::Vector{CoordType}
     connection_distances::Vector{T}
     unconnected_cell_face_map::Vector{Tuple{Int,Int}}
-    all_cell_face_areas::Vector{SVector{4,T}}
-    all_cell_face_normals::Vector{SVector{4,CoordType}}
+    cell_face_areas::Vector{SVector{4,T}}
+    cell_face_normals::Vector{SVector{4,CoordType}}
 end
 
 struct FVMGeometryHexa{T,CoordType} <: FVMGeometry
@@ -20,8 +20,8 @@ struct FVMGeometryHexa{T,CoordType} <: FVMGeometry
     connection_normals::Vector{CoordType}
     connection_distances::Vector{T}
     unconnected_cell_face_map::Vector{Tuple{Int,Int}}
-    all_cell_face_areas::Vector{SVector{6,T}}
-    all_cell_face_normals::Vector{SVector{6,CoordType}}
+    cell_face_areas::Vector{SVector{6,T}}
+    cell_face_normals::Vector{SVector{6,CoordType}}
 end
 
 function compress_geo_to_struct(
@@ -30,14 +30,14 @@ function compress_geo_to_struct(
     cell_volumes, cell_centroids,
     connection_areas, connection_normals, connection_distances,
     unconnected_cell_face_map,
-    all_cell_face_areas, all_cell_face_normals)
+    cell_face_areas, cell_face_normals)
 
     return FVMGeometryTetra(
         cell_neighbor_map,
         cell_volumes, cell_centroids,
         connection_areas, connection_normals, connection_distances,
         unconnected_cell_face_map,
-        all_cell_face_areas, all_cell_face_normals
+        cell_face_areas, cell_face_normals
     )
 end
 
@@ -47,14 +47,14 @@ function compress_geo_to_struct(
     cell_volumes, cell_centroids,
     connection_areas, connection_normals, connection_distances,
     unconnected_cell_face_map,
-    all_cell_face_areas, all_cell_face_normals)
+    cell_face_areas, cell_face_normals)
 
     return FVMGeometryHexa(
         cell_neighbor_map,
         cell_volumes, cell_centroids,
         connection_areas, connection_normals, connection_distances,
         unconnected_cell_face_map,
-        all_cell_face_areas, all_cell_face_normals
+        cell_face_areas, cell_face_normals
     )
 end
 
@@ -72,7 +72,7 @@ function build_fvm_geo_into_struct(grid)
 
     cell_volumes, cell_centroids, #cell volumes and cell centroids are accessed at the id of the cell
     connection_areas, connection_normals, connection_distances, #connection areas, normals, and distances are simply accessed by their location in the list which corresponds to the respective connection in cell_neighbor_map
-    all_cell_face_areas, all_cell_face_normals = rebuild_fvm_geometry(
+    cell_face_areas, cell_face_normals = rebuild_fvm_geometry(
         cell_neighbor_map, neighbor_map_respective_node_ids,
         cell_face_map, map_respective_node_ids,
         initial_node_coordinates, nodes_of_cells
@@ -85,6 +85,6 @@ function build_fvm_geo_into_struct(grid)
         cell_volumes, cell_centroids,
         connection_areas, connection_normals, connection_distances,
         unconnected_cell_face_map,
-        all_cell_face_areas, all_cell_face_normals
+        cell_face_areas, cell_face_normals
     )
 end

@@ -66,6 +66,29 @@ function add_region!(
     push!(config.regions, RegionSetupInfo(name, initial_conditions, region_physics, region_function, region_cells))
 end
 
+#this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
+function add_facet_region!(
+        config, name;
+        initial_conditions,
+        region_physics,
+        region_function,
+    )
+
+    region_cells = get_cell_ids_in_facet_set(config.grid, name)
+    
+    for cell_id in region_cells
+        for field in propertynames(initial_conditions)
+            if ndims(getproperty(config.u_proto, field)) > 1 #for mass fractions
+                getproperty(config.u_proto, field)[:, cell_id] = initial_conditions[field]
+            else
+                getproperty(config.u_proto, field)[cell_id] = initial_conditions[field]
+            end
+        end
+    end
+
+    push!(config.regions, RegionSetupInfo(name, initial_conditions, region_physics, region_function, region_cells))
+end
+
 #TODO: allow for face boundary conditions, boundary conditions applied on faces only apply to the faces right now
 
 #we should probably find a way to make the creation of these structs automatic 

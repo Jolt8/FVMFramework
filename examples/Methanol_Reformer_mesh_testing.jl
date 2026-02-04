@@ -100,32 +100,8 @@ reforming_area_physics = MethanolReformerPhysics(
     [1250.0, 1250.0, 1250.0], # cell_kg_cat_per_m3_for_each_reaction
 )
 
-#=
-add_default_region!(
-    config, "default";
-    initial_conditions=ComponentVector(
-        vel_x=0.0, vel_y=0.0, vel_z=0.0,
-        pressure=ustrip(1.0u"atm" |> u"Pa"),
-        mass_fractions=initial_mass_fractions,
-        temp=ustrip(270.0u"°C" |> u"K")
-    ),
-    region_physics = reforming_area_physics,
-    region_function=function reforming_area!(
-            du, u, cell_id, 
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-            vol, rho, phys
-        )
-        #internal physics
-
-        #sources
-
-        #boundary conditions
-
-        #capacities
-        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
-    end
-)
-=#
+#in the future, we may want to add a method to make all cells that are not under a cell set 
+#become part of a default set with no internal physics or variables 
 
 add_region!(
     config, "reforming_area";
@@ -161,36 +137,23 @@ add_region!(
 
 geo = build_fvm_geo_into_struct(grid)
 
-total_heating_volume = 0.0
-
-for cell_id in eachindex(geo.cell_volumes)
-    if cell_id in getcellset(grid, "heating_areas")
-        total_heating_volume += geo.cell_volumes[cell_id]
-    end
-end
-
-get_cell_ids_in_facet_set(grid, "inlet")
-
-function get_all_cells_areas(grid)
-
-
 function get_facet_set_total_area(grid, set_name, geo)
-    cell_ids_in_facet_set(grid, set_name)
+    #although there's 6 face areas per cell, all we need is the total area of all the facets of the cell that belongs in the facet_set
+    total_area = 0.0
+    cell_ids_respective_areas = zeros(Float64, n_cells) 
 
-    for cell_id in eachindex(geo.)
-
-for cell_id in eachindex(geo.cell_volumes)
-    if cell_id in get_facet_set(grid, "heating_areas")
-        total_heating_volume += geo.cell_volumes[cell_id]
+    for (cell_id, facet_idx) in getfacetset(grid, set_name)
+        face_area = geo.cell_face_areas[cell_id][facet_idx]
+        total_area += face_area
+        cell_ids_respective_areas[cell_id] += face_area #we += because a cell might have 2 faces in this facet_set
     end
 end
 
-total_heating_volume
-
-input_wattage = 100.0 # W
-corrected_volumetric_heating = input_wattage / total_heating_volume
+inlet_total_area = get_facet_set_total_area(grid, "inlet", geo)
+inlet_cells_respective_areas = get_facet_set_cells_respective_areas(grid, "inlet", geo)
 
 desired_m_dot = 0.2u"g/s" |> u"kg/s"
+corrected_m_dot_per_area = desired_m_dot / total_inlet_area
 
 #we should probably create methods to automatically copy the parameters from other already defined regions
 
@@ -198,7 +161,7 @@ add_facet_region!(
     config, "inlet",
     initial_conditions=ComponentVector(
         vel_x=0.0, vel_y=1.0, vel_z=0.0,
-        pressure=ustrip(1.1u"atm" |> u"Pa"),
+        pressure=ustrip(1.0u"atm" |> u"Pa"),
         mass_fractions=initial_mass_fractions,
         temp=ustrip(270.0u"°C" |> u"K")
     ),
@@ -217,17 +180,11 @@ add_facet_region!(
         )
 
         #sources
-        du.pressure[cell_id] += desired_m_dot
+        du.pressure[cell_id] += corrected_m_dot_per_area * inlet_cells_respective_areas[cell_id]
 
         #boundary conditions
-        du.vel_x[cell_id] = 0.0
-        u.vel_x[cell_id] = 0.0
-
         du.vel_y[cell_id] = 0.0
         u.vel_y[cell_id] = 1.0
-
-        du.vel_z[cell_id] = 0.0
-        u.vel_z[cell_id] = 0.0
 
         du.mass_fractions .= 0.0
         u.mass_fractions = initial_mass_fractions
@@ -243,7 +200,7 @@ add_facet_region!(
     config, "outlet",
     initial_conditions=ComponentVector(
         vel_x=0.0, vel_y=1.0, vel_z=0.0,
-        pressure=ustrip(0.9u"atm" |> u"Pa"),
+        pressure=ustrip(1.0u"atm" |> u"Pa"),
         mass_fractions=initial_mass_fractions,
         temp=ustrip(270.0u"°C" |> u"K")
     ),
@@ -262,29 +219,15 @@ add_facet_region!(
         )
 
         #sources
-        du.pressure[cell_id] += desired_m_dot
+        du.pressure[cell_id] -= corrected_m_dot_per_area * inlet_cells_respective_areas[cell_id]
 
         #boundary conditions
-        du.vel_x[cell_id] = 0.0
-        u.vel_x[cell_id] = 0.0
-
-        du.vel_y[cell_id] = 0.0
-        u.vel_y[cell_id] = 1.0
-
-        du.vel_z[cell_id] = 0.0
-        u.vel_z[cell_id] = 0.0
-
-        du.mass_fractions .= 0.0
-        u.mass_fractions = initial_mass_fractions
 
         #capacities
         cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
         cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, rho, phys)
     end
 )
-
-
-
 
 add_region!(
     config, "wall";
@@ -298,31 +241,18 @@ add_region!(
     ),
     region_function=function wall_area!(du, u, cell_id, vol, rho, phys)
     #internal physics
-    #no internal physics in this region
     
     #sources
-    #no sources in this region
 
     #boundary conditions
-    #no boundary conditions in this region
 
     #capacities
     cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
 end
 )
 
-#we might want to automate this in the future
-geo = build_fvm_geo_into_struct(grid)
-
-total_heating_volume = 0.0
-
-for cell_id in eachindex(geo.cell_volumes)
-    if cell_id in getcellset(grid, "heating_areas")
-        total_heating_volume += geo.cell_volumes[cell_id]
-    end
-end
-
-total_heating_volume
+#we might want to add something akin to distribute_over_set_volume!(du += input_wattage)
+total_heating_volume = get_cell_set_total_volume(grid, "wall")
 
 input_wattage = 100.0 # W
 corrected_volumetric_heating = input_wattage / total_heating_volume
