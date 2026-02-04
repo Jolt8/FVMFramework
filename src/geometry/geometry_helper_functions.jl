@@ -77,9 +77,9 @@ function get_neighbor_map(grid)
 
     n_cells = length(grid.cells)
 
-    top = ExclusiveTopology(grid)
+    top = ExclusiveTopology(grid) #this causes A LOT of GC and slowdown, we may want to access it once
     for cell_id in 1:n_cells
-        for face_idx in 1:nfaces(grid.cells[cell_id])
+        for face_idx in 1:nfacets(grid.cells[cell_id])
             neighbor_info = top.face_face_neighbor[cell_id, face_idx]
 
             if !isempty(neighbor_info)
@@ -114,9 +114,9 @@ function get_unconnected_map(grid)
     unconnected_cell_face_map = NTuple{2, Int}[]
     unconnected_map_respective_node_ids = NTuple{n_nodes_per_face, Int}[]
 
-    top = ExclusiveTopology(grid)
+    top = ExclusiveTopology(grid) 
     for cell_id in 1:n_cells
-        for face_idx in 1:nfaces(grid.cells[cell_id])
+        for face_idx in 1:nfacets(grid.cells[cell_id])
             neighbor_info = top.face_face_neighbor[cell_id, face_idx]
 
             if isempty(neighbor_info) #note that were checking if it isempty here, not !isempty like above
@@ -140,21 +140,21 @@ function get_cell_face_map(grid)
     n_cells = length(grid.cells)
     n_nodes_per_face = length(get_face_nodes(grid, 1, 1))
 
-    unconnected_cell_face_map = NTuple{2, Int}[]
-    unconnected_map_respective_node_ids = NTuple{n_nodes_per_face, Int}[]
+    cell_face_map = NTuple{2, Int}[]
+    map_respective_node_ids = NTuple{n_nodes_per_face, Int}[]
 
     top = ExclusiveTopology(grid)
     for cell_id in 1:n_cells
-        for face_idx in 1:nfaces(grid.cells[cell_id])
+        for face_idx in 1:nfacets(grid.cells[cell_id])
             neighbor_info = top.face_face_neighbor[cell_id, face_idx]
 
             respective_nodes = get_face_nodes(grid, cell_id, face_idx)
 
-            push!(unconnected_cell_face_map, (cell_id, face_idx))
-            push!(unconnected_map_respective_node_ids, ntuple(i -> respective_nodes[i], n_nodes_per_face))
+            push!(cell_face_map, (cell_id, face_idx))
+            push!(map_respective_node_ids, ntuple(i -> respective_nodes[i], n_nodes_per_face))
         end
     end
-    return unconnected_cell_face_map, unconnected_map_respective_node_ids
+    return cell_face_map, map_respective_node_ids
 end
 
 

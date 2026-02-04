@@ -1,27 +1,27 @@
 abstract type FVMGeometry end
 
 struct FVMGeometryTetra{T,CoordType} <: FVMGeometry
-    cell_neighbor_map::Vector{Tuple{Int,Int}}
+    cell_neighbor_map::Vector{Tuple{Int, Int}}
     cell_volumes::Vector{T}
     cell_centroids::Vector{CoordType}
     connection_areas::Vector{T}
     connection_normals::Vector{CoordType}
     connection_distances::Vector{T}
-    unconnected_cell_face_map::Vector{Tuple{Int,Int}}
-    cell_face_areas::Vector{SVector{4,T}}
-    cell_face_normals::Vector{SVector{4,CoordType}}
+    unconnected_cell_face_map::Vector{Tuple{Int, Int}}
+    cell_face_areas::Vector{SVector{4, T}}
+    cell_face_normals::Vector{SVector{4, CoordType}}
 end
 
 struct FVMGeometryHexa{T,CoordType} <: FVMGeometry
-    cell_neighbor_map::Vector{Tuple{Int,Int}}
+    cell_neighbor_map::Vector{Tuple{Int, Int}}
     cell_volumes::Vector{T}
     cell_centroids::Vector{CoordType}
     connection_areas::Vector{T}
     connection_normals::Vector{CoordType}
     connection_distances::Vector{T}
-    unconnected_cell_face_map::Vector{Tuple{Int,Int}}
-    cell_face_areas::Vector{SVector{6,T}}
-    cell_face_normals::Vector{SVector{6,CoordType}}
+    unconnected_cell_face_map::Vector{Tuple{Int, Int}}
+    cell_face_areas::Vector{SVector{6, T}}
+    cell_face_normals::Vector{SVector{6, CoordType}}
 end
 
 function compress_geo_to_struct(

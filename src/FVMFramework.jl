@@ -92,10 +92,10 @@ export get_mw_avg, get_cell_rho, get_cell_cp #other misc props
 # ----- Setup and Recording Methods -----
 #   ---- Sim Config ----
 include("setup_and_recording/sim_config_helper_functions.jl")
-export get_cell_ids_in_facet_set, get_facet_set_total_area, get_facet_set_cells_respective_areas, get_cell_ids_in_facet_set
+export get_cell_set_total_volume, get_facet_set_total_area, get_facet_set_cells_respective_areas, get_cell_ids_in_facet_set
 
 include("setup_and_recording/sim_config.jl")
-export create_fvm_config, add_region!, add_boundary!, add_face_boundary!, finish_fvm_config
+export create_fvm_config, add_region!, add_facet_region!, finish_fvm_config
 export SimulationConfigInfo, RegionSetupInfo, BoundarySetupInfo, FVMSystem, AbstractConnectionGroup
 
 #   ---- Sim Recording ----
