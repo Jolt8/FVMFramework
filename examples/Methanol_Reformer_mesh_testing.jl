@@ -17,8 +17,6 @@ using Unitful
 
 grid = togrid("C://Users//wille//Desktop//FreeCad Projects//Methanol Reformer//MeOH for gmsh.msh")
 
-grid.cells[1]
-
 grid.cellsets
 grid.facetsets
 
@@ -137,23 +135,14 @@ add_region!(
 
 geo = build_fvm_geo_into_struct(grid)
 
-function get_facet_set_total_area(grid, set_name, geo)
-    #although there's 6 face areas per cell, all we need is the total area of all the facets of the cell that belongs in the facet_set
-    total_area = 0.0
-    cell_ids_respective_areas = zeros(Float64, n_cells) 
+geo.cell_face_areas
 
-    for (cell_id, facet_idx) in getfacetset(grid, set_name)
-        face_area = geo.cell_face_areas[cell_id][facet_idx]
-        total_area += face_area
-        cell_ids_respective_areas[cell_id] += face_area #we += because a cell might have 2 faces in this facet_set
-    end
-end
-
+getfacetset(grid, "inlet")
 inlet_total_area = get_facet_set_total_area(grid, "inlet", geo)
 inlet_cells_respective_areas = get_facet_set_cells_respective_areas(grid, "inlet", geo)
 
-desired_m_dot = 0.2u"g/s" |> u"kg/s"
-corrected_m_dot_per_area = desired_m_dot / total_inlet_area
+desired_m_dot = ustrip(0.2u"g/s" |> u"kg/s")
+corrected_m_dot_per_area = desired_m_dot / inlet_total_area
 
 #we should probably create methods to automatically copy the parameters from other already defined regions
 
@@ -194,7 +183,6 @@ add_facet_region!(
         cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, rho, phys)
     end
 )
-
 
 add_facet_region!(
     config, "outlet",
@@ -252,7 +240,7 @@ end
 )
 
 #we might want to add something akin to distribute_over_set_volume!(du += input_wattage)
-total_heating_volume = get_cell_set_total_volume(grid, "wall")
+total_heating_volume = get_cell_set_total_volume(grid, "wall", geo)
 
 input_wattage = 100.0 # W
 corrected_volumetric_heating = input_wattage / total_heating_volume
@@ -274,13 +262,11 @@ add_region!(
             phys
         )
         #internal physics
-        #no internal physics in this region
         
         #sources
         du.temp[cell_id] += vol * corrected_volumetric_heating
 
         #boundary conditions
-        #no boundary conditions in this region
 
         #capacities
         cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
@@ -296,7 +282,9 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     geo.cell_neighbor_map,
     geo.cell_volumes, geo.cell_centroids,
     geo.connection_areas, geo.connection_normals, geo.connection_distances,
-    geo.unconnected_areas,
+
+    geo.unconnected_cell_face_map, 
+    geo.cell_face_areas, geo.cell_face_normals,
 
     system.connection_groups, system.phys, system.cell_phys_id_map,
     system.regions_phys_func_cells,
@@ -304,7 +292,7 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
 )
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
-t0, tMax = 0.0, 1000000.0
+t0, tMax = 0.0, 0.2
 desired_steps = 10
 dt = tMax / desired_steps
 tspan = (t0, tMax)
@@ -318,11 +306,11 @@ detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 
 p_guess = 0.0
 
-test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.2), p_guess)
+#test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.2), p_guess)
 
-@time sol = solve(test_prob, Tsit5())
+#@time sol = solve(test_prob, Tsit5())
 
-#=
+
 jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0, u0, detector)
 
@@ -334,7 +322,7 @@ implicit_prob = ODEProblem(ode_func, u0, tspan, p_guess)
 VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
 
 rebuild_u_named(sol.u, u_proto)[60].mass_fractions
-=#
+
 
 record_sol = true
 
