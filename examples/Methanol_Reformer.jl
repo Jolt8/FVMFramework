@@ -113,8 +113,10 @@ add_region!(
 add_boundary!(
     config, "internal_cells";
     fixed_conditions=ComponentVector(
-    #nothing here means everything is free
+        #nothing here means everything is free
+        temp=ustrip(270.0u"°C" |> u"K")
     )
+    #FIX ME: BCS are not being applied properly
 )
 
 du0, u0, geo, system = finish_fvm_config(config)
@@ -130,7 +132,7 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f!(
 )
 #just re-add t to the FVM_iter_f! function above to make it compatible with implicit solving
 
-t0, tMax = 0.0, 100000.0
+t0, tMax = 0.0, 1000000.0
 desired_steps = 10
 dt = tMax / desired_steps
 tspan = (t0, tMax)
@@ -152,9 +154,9 @@ ode_func = ODEFunction(f_closure_implicit, jac_prototype=float.(jac_sparsity))
 implicit_prob = ODEProblem(ode_func, u0, tspan, p_guess)
 
 @time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
-VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
+#VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
 
-rebuild_u_named(sol.u, u_proto)[1].mass_fractions
+rebuild_u_named(sol.u, u_proto)[60].mass_fractions
 
 record_sol = false
 
@@ -162,8 +164,7 @@ sim_file = @__FILE__
 
 u_named = rebuild_u_named_vel(sol.u, u_proto)
 
-typeof(u_named[1].velocity)
-#the velocities are constricted into a 3 long vec for each cell
+sum(u_named[95].mass_fractions[:, 1])
 
 if record_sol == true
     sol_to_vtk(sol, u_named, grid, sim_file)
