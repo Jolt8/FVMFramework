@@ -41,7 +41,7 @@ end
 
 function rebuild_fvm_geometry(
         cell_neighbor_map, neighbor_map_respective_node_ids::Vector{NTuple{4, Int}}, 
-        unconnected_cell_face_map, unconnected_map_respective_node_ids::Vector{NTuple{4, Int}}, 
+        all_cell_face_map, map_respective_node_ids::Vector{NTuple{4, Int}}, 
         node_coordinates, nodes_of_cells
     )
     #The cells_data and connections map are still causing GC
@@ -95,7 +95,7 @@ function rebuild_fvm_geometry(
         total_area_vec = area_vec_1 + area_vec_2
         total_area = norm(total_area_vec)
 
-        #make sure it's actuall ypointing away
+        #make sure it's actually pointing away
         vec_AB = cell_centroids[neighbor_id] - cell_centroids[cell_id]
         if dot(total_area_vec, vec_AB) < 0
             total_area_vec = -total_area_vec
@@ -112,14 +112,15 @@ function rebuild_fvm_geometry(
         connection_distances[i] = dist
     end
     
-    unconnected_areas = fill(zero(SVector{6, T}), n_cells)
-    unconnected_normals = fill(zero(SVector{6, CoordType}), n_cells)
+    cell_face_areas = fill(zero(SVector{6, T}), n_cells)
+    cell_face_normals = fill(zero(SVector{6, CoordType}), n_cells)
     
-    #= if the above breaks:
-    unconnected_areas = Vector{SVector{6, T}}(undef, n_cells)
-    unconnected_normals = Vector{SVector{6, CoordType}}(undef, n_cells)
-
-    for facet_idx in 1:6
+    #if the above breaks:
+    #unconnected_areas = Vector{SVector{6, T}}(undef, n_cells)
+    #unconnected_normals = Vector{SVector{6, CoordType}}(undef, n_cells)
+    
+    
+    for (i, (cell_id, face_idx)) in enumerate(all_cell_face_map)
         areas = MVector{6, T}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         normals = MVector{6, CoordType}(
             (0.0, 0.0, 0.0), 
@@ -130,26 +131,7 @@ function rebuild_fvm_geometry(
             (0.0, 0.0, 0.0)
         )
         
-        *fill areas and normals*
-
-        push!(unconnected_areas[i], areas)
-        push!(unconnected_normals[i], areas)
-    end
-    =# 
-    
-    
-    for (i, (cell_id, face_idx)) in enumerate(unconnected_cell_face_map)
-        areas = MVector{6, T}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        normals = MVector{6, CoordType}(
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0)
-        )
-        
-        face_node_indices = unconnected_map_respective_node_ids[i] #unconnected_map_respective_node_ids[i] looks like (1, 4, 7, 21) 
+        face_node_indices = map_respective_node_ids[i] #unconnected_map_respective_node_ids[i] looks like (1, 4, 7, 21) 
         node_1_coords = node_coordinates[face_node_indices[1]]
         node_2_coords = node_coordinates[face_node_indices[2]]
         node_3_coords = node_coordinates[face_node_indices[3]]
@@ -171,9 +153,9 @@ function rebuild_fvm_geometry(
 
         normals[face_idx] = normalize(vec_out)
 
-        unconnected_areas[cell_id] = SVector(areas)
-        unconnected_normals[cell_id] = SVector(normals)
+        cell_face_areas[cell_id] = SVector(areas)
+        cell_face_normals[cell_id] = SVector(normals)
     end
     
-    return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, unconnected_areas, unconnected_normals
+    return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, cell_face_areas, cell_face_normals
 end

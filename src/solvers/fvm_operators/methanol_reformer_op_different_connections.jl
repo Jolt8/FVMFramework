@@ -67,19 +67,19 @@ function connection_catagorizer!(connection_groups::MethanolReformerConnectionGr
 end
 
 function methanol_reformer_f_test!(
-        du, u, p, t,
-        cell_neighbor_map,
-        cell_volumes, cell_centroids,
-        connection_areas, connection_normals, connection_distances,
-        #cell volumes and cell centroids are accessed at the id of the cell
-        unconnected_areas,
-        #connection areas, normals, and distances are simply accessed by their location in the 
-        #list which corresponds to the respective connection in cell_neighbor_map
+    du, u, p, t,
+    cell_neighbor_map,
+    cell_volumes, cell_centroids,
+    connection_areas, connection_normals, connection_distances,
+    #cell volumes and cell centroids are accessed at the id of the cell
+    unconnected_areas,
+    #connection areas, normals, and distances are simply accessed by their location in the 
+    #list which corresponds to the respective connection in cell_neighbor_map
 
-        connection_groups::MethanolReformerConnectionGroups, phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
-        regions_phys_func_cells::Vector{Tuple{AbstractPhysics, Function, Vector{Int}}},
-        ax,
-    )
+    connection_groups::MethanolReformerConnectionGroups, phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
+    regions_phys_func_cells::Vector{Tuple{AbstractPhysics,Function,Vector{Int}}},
+    ax,
+)
 
     #A_Ea_pairs = eachcol(reshape(p, :, n_reactions))
     #unflattened_p would be [[reaction_1_kf_A, reaction_1_kf_Ea], [reaction_2_kf_A, reaction_2_kf_Ea], etc..] 
@@ -173,7 +173,7 @@ function methanol_reformer_f_test!(
     change_in_molar_concentrations_cache = zeros(eltype(u.mass_fractions), length(u.mass_fractions[:, 1]))
     molar_concentrations_cache = zeros(eltype(u.mass_fractions), length(u.mass_fractions[:, 1])) #just using mass fractions for cell 1, this may cause some issues later!
     net_rates_cache = zeros(eltype(u.mass_fractions), length(phys[1].chemical_reactions))
-    
+
     # ---- Internal Physics, Sources, Boundary Conditions, and Capacities ----
     for (region_phys, region_function!, region_cells) in regions_phys_func_cells
         for cell_id in region_cells
@@ -189,16 +189,14 @@ function methanol_reformer_f_test!(
     end
 end
 
+#VERY IMPORTANT !!!!
 #= For future reference when getting properties using u[field]:
     u_cv.temp[cell_id] = val
         works!
-
     u_cv[field][cell_id] = val
         fails :(
-
     view(u_cv, field)[cell_id] = val
         works!
-
     getproperty(u_cv, field)[cell_id] = val
         works!
 =#

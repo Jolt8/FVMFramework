@@ -159,11 +159,41 @@ add_region!(
     end
 )
 
+geo = build_fvm_geo_into_struct(grid)
+
+total_heating_volume = 0.0
+
+for cell_id in eachindex(geo.cell_volumes)
+    if cell_id in getcellset(grid, "heating_areas")
+        total_heating_volume += geo.cell_volumes[cell_id]
+    end
+end
+
+get_cell_ids_in_facet_set(grid, "inlet")
+
+function get_all_cells_areas(grid)
+
+
+function get_facet_set_total_area(grid, set_name, geo)
+    cell_ids_in_facet_set(grid, set_name)
+
+    for cell_id in eachindex(geo.)
+
+for cell_id in eachindex(geo.cell_volumes)
+    if cell_id in get_facet_set(grid, "heating_areas")
+        total_heating_volume += geo.cell_volumes[cell_id]
+    end
+end
+
+total_heating_volume
+
+input_wattage = 100.0 # W
+corrected_volumetric_heating = input_wattage / total_heating_volume
 
 desired_m_dot = 0.2u"g/s" |> u"kg/s"
 
 #we should probably create methods to automatically copy the parameters from other already defined regions
-#=
+
 add_facet_region!(
     config, "inlet",
     initial_conditions=ComponentVector(
@@ -207,7 +237,53 @@ add_facet_region!(
         cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, rho, phys)
     end
 )
-=#
+
+
+add_facet_region!(
+    config, "outlet",
+    initial_conditions=ComponentVector(
+        vel_x=0.0, vel_y=1.0, vel_z=0.0,
+        pressure=ustrip(0.9u"atm" |> u"Pa"),
+        mass_fractions=initial_mass_fractions,
+        temp=ustrip(270.0u"°C" |> u"K")
+    ),
+    region_physics=reforming_area_physics,
+    region_function=function inlet_area!(
+            du, u, cell_id, 
+            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+            vol, rho, phys
+        )
+        #internal physics
+        react_cell!(
+            cell_id, du, u,
+            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+            vol, rho,
+            phys,
+        )
+
+        #sources
+        du.pressure[cell_id] += desired_m_dot
+
+        #boundary conditions
+        du.vel_x[cell_id] = 0.0
+        u.vel_x[cell_id] = 0.0
+
+        du.vel_y[cell_id] = 0.0
+        u.vel_y[cell_id] = 1.0
+
+        du.vel_z[cell_id] = 0.0
+        u.vel_z[cell_id] = 0.0
+
+        du.mass_fractions .= 0.0
+        u.mass_fractions = initial_mass_fractions
+
+        #capacities
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
+        cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, rho, phys)
+    end
+)
+
+
 
 
 add_region!(
@@ -312,10 +388,11 @@ detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 
 p_guess = 0.0
 
-#test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.0000001), p_guess)
+test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.2), p_guess)
 
-#solve(test_prob, Tsit5())
+@time sol = solve(test_prob, Tsit5())
 
+#=
 jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0, u0, detector)
 
@@ -327,14 +404,15 @@ implicit_prob = ODEProblem(ode_func, u0, tspan, p_guess)
 VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
 
 rebuild_u_named(sol.u, u_proto)[60].mass_fractions
+=#
 
-record_sol = false
+record_sol = true
 
 sim_file = @__FILE__
 
 u_named = rebuild_u_named_vel(sol.u, u_proto)
 
-sum(u_named[95].mass_fractions[:, 1])
+sum(u_named[80].mass_fractions[1:5, 1:18000])
 
 if record_sol == true
     sol_to_vtk(sol, u_named, grid, sim_file)

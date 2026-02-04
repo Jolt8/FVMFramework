@@ -21,3 +21,9 @@ TODO:
     - Create methods for interfacing with other FVM or DG solvers like Trixi.jl or Oceanigans.jl
 
     - Create methods that run multiple physics functions inside them like fluid_fluid_flux!(...) that does continuity_and_momentum_darcy, diffusion_temp_exchange!, species_advection!, enthalpy_advection!, etc.
+
+    - Create methods to more easily diagnose problems through logging. Graphing a certain variable over time would be very useful
+
+    - Create a dedicated method for distributing a BC over a set of cell volumes or set of cell areas 
+
+    - Improve access of mass fractions 

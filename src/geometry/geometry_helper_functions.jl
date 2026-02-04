@@ -72,14 +72,14 @@ function get_neighbor_map(grid)
 
     cell_neighbor_pairs = Tuple{Int, Int}[]
 
-    n_nodes_per_facet = length(get_face_nodes(grid, 1, 1))
-    neighbor_map_respective_node_ids = NTuple{n_nodes_per_facet, Int}[]
+    n_nodes_per_face = length(get_face_nodes(grid, 1, 1))
+    neighbor_map_respective_node_ids = NTuple{n_nodes_per_face, Int}[]
 
     n_cells = length(grid.cells)
 
     top = ExclusiveTopology(grid)
     for cell_id in 1:n_cells
-        for face_idx in 1:nfacets(grid.cells[cell_id])
+        for face_idx in 1:nfaces(grid.cells[cell_id])
             neighbor_info = top.face_face_neighbor[cell_id, face_idx]
 
             if !isempty(neighbor_info)
@@ -93,7 +93,7 @@ function get_neighbor_map(grid)
                     respective_nodes = get_face_nodes(grid, cell_id, face_idx)
                     
                     push!(cell_neighbor_pairs, (cell_id, neighbor_id))
-                    push!(neighbor_map_respective_node_ids, ntuple(i -> respective_nodes[i], n_nodes_per_facet))
+                    push!(neighbor_map_respective_node_ids, ntuple(i -> respective_nodes[i], n_nodes_per_face))
                 end
             end
         end
@@ -109,14 +109,14 @@ function get_unconnected_map(grid)
     #respective node idxs of cell face (ex. (2, 8, 44, 38))
 
     n_cells = length(grid.cells)
-    n_nodes_per_facet = length(get_face_nodes(grid, 1, 1))
+    n_nodes_per_face = length(get_face_nodes(grid, 1, 1))
 
     unconnected_cell_face_map = NTuple{2, Int}[]
-    unconnected_map_respective_node_ids = NTuple{n_nodes_per_facet, Int}[]
+    unconnected_map_respective_node_ids = NTuple{n_nodes_per_face, Int}[]
 
     top = ExclusiveTopology(grid)
     for cell_id in 1:n_cells
-        for face_idx in 1:nfacets(grid.cells[cell_id])
+        for face_idx in 1:nfaces(grid.cells[cell_id])
             neighbor_info = top.face_face_neighbor[cell_id, face_idx]
 
             if isempty(neighbor_info) #note that were checking if it isempty here, not !isempty like above
@@ -124,8 +124,34 @@ function get_unconnected_map(grid)
                 respective_nodes = get_face_nodes(grid, cell_id, face_idx)
 
                 push!(unconnected_cell_face_map, (cell_id, face_idx))
-                push!(unconnected_map_respective_node_ids, ntuple(i -> respective_nodes[i], n_nodes_per_facet))
+                push!(unconnected_map_respective_node_ids, ntuple(i -> respective_nodes[i], n_nodes_per_face))
             end
+        end
+    end
+    return unconnected_cell_face_map, unconnected_map_respective_node_ids
+end
+
+
+function get_cell_face_map(grid)
+    #returns:
+    #list of faces for each cell (ex. (1, 5) (cell_1's 5th face_idx))
+    #respective node idxs of cell face (ex. (2, 8, 44, 38))
+
+    n_cells = length(grid.cells)
+    n_nodes_per_face = length(get_face_nodes(grid, 1, 1))
+
+    unconnected_cell_face_map = NTuple{2, Int}[]
+    unconnected_map_respective_node_ids = NTuple{n_nodes_per_face, Int}[]
+
+    top = ExclusiveTopology(grid)
+    for cell_id in 1:n_cells
+        for face_idx in 1:nfaces(grid.cells[cell_id])
+            neighbor_info = top.face_face_neighbor[cell_id, face_idx]
+
+            respective_nodes = get_face_nodes(grid, cell_id, face_idx)
+
+            push!(unconnected_cell_face_map, (cell_id, face_idx))
+            push!(unconnected_map_respective_node_ids, ntuple(i -> respective_nodes[i], n_nodes_per_face))
         end
     end
     return unconnected_cell_face_map, unconnected_map_respective_node_ids

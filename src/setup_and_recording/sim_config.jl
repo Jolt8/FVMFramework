@@ -32,6 +32,18 @@ end
 #Axis{(vel_x = ViewAxis(1:1, Shaped1DAxis((1,))), vel_y = ViewAxis(2:2, Shaped1DAxis((1,))), vel_z = ViewAxis(3:3, Shaped1DAxis((1,))), 
 #pressure = ViewAxis(4:4, Shaped1DAxis((1,))), mass_fractions = ViewAxis(5:9, ShapedAxis((5, 1))), temp = ViewAxis(10:10, Shaped1DAxis((1,))))}
 
+#VERY IMPORTANT!!!!
+#= For future reference when getting properties using u[field]:
+    u_cv.temp[cell_id] = val
+        works!
+    u_cv[field][cell_id] = val
+        fails :(
+    view(u_cv, field)[cell_id] = val
+        works!
+    getproperty(u_cv, field)[cell_id] = val
+        works!
+=#
+
 function add_region!(
     config, name;
     initial_conditions,
@@ -44,7 +56,7 @@ function add_region!(
     for cell_id in region_cells
         for field in propertynames(initial_conditions)
             if ndims(getproperty(config.u_proto, field)) > 1 #for mass fractions
-                getproperty(config.u_proto, field)[:, cell_id] .= initial_conditions[field]
+                getproperty(config.u_proto, field)[:, cell_id] = initial_conditions[field]
             else
                 getproperty(config.u_proto, field)[cell_id] = initial_conditions[field]
             end
