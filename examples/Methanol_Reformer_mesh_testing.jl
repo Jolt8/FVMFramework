@@ -1,11 +1,16 @@
 using Revise
+using Logging
+
+ENV["JULIA_PKG_PRESERVE_TIERED_INSTALLED"] == true
+ENV["JULIA_PKG_PRESERVE_TIERED_INSTALLED"] = true
 
 using FVMFramework
+
 #I think this take a long time because Enzyme (despite not being installed) throws a warning from DiffEqBaseEnzyme.jl
 
 using Ferrite
 using FerriteGmsh
-using DifferentialEquations
+using OrdinaryDiffEq
 using SparseArrays
 using ComponentArrays
 using NonlinearSolve
@@ -15,7 +20,7 @@ using StaticArrays
 
 using Unitful
 
-grid = togrid("C://Users//wille//Desktop//FreeCad Projects//Methanol Reformer//MeOH for gmsh.msh")
+grid = togrid("C://Users//wille//Desktop//FreeCad Projects//Methanol Reformer//MeOH for gmsh 3.msh")
 
 grid.cellsets
 grid.facetsets
@@ -92,7 +97,7 @@ reforming_area_physics = MethanolReformerPhysics(
     237.0, # k (W/(m*K))
     4.184, # cp (J/(kg*K))
     1e-5, # mu (Pa*s)
-    0.6e-3, # permeability (m^2)
+    0.6e-11, # permeability (m^2)
     species_molecular_weights,
     [MSR_rxn, MD_rxn, WGS_rxn], # chemical_reactions
     [1250.0, 1250.0, 1250.0], # cell_kg_cat_per_m3_for_each_reaction
@@ -105,16 +110,16 @@ add_region!(
     config, "reforming_area";
     initial_conditions=ComponentVector(
         vel_x=0.0, vel_y=0.0, vel_z=0.0,
-        pressure=ustrip(1.0u"atm" |> u"Pa"),
+        pressure=100000.0,
         mass_fractions=initial_mass_fractions,
         temp=ustrip(270.0u"°C" |> u"K")
     ),
-    region_physics = reforming_area_physics,
+    region_physics=reforming_area_physics,
     region_function=function reforming_area!(
-            du, u, cell_id, 
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-            vol, rho, phys
-        )
+        du, u, cell_id,
+        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+        vol, rho, phys
+    )
         #internal physics
         react_cell!(
             cell_id, du, u,
@@ -135,31 +140,33 @@ add_region!(
 
 geo = build_fvm_geo_into_struct(grid)
 
+geo.cell_volumes
+
 geo.cell_face_areas
 
-getfacetset(grid, "inlet")
-inlet_total_area = get_facet_set_total_area(grid, "inlet", geo)
-inlet_cells_respective_areas = get_facet_set_cells_respective_areas(grid, "inlet", geo)
+getcellset(grid, "inlet")
+inlet_total_volume = get_cell_set_total_volume(grid, "inlet", geo)
+#this should be 1e-8, which it is 
 
 desired_m_dot = ustrip(0.2u"g/s" |> u"kg/s")
-corrected_m_dot_per_area = desired_m_dot / inlet_total_area
+corrected_m_dot_per_volume = desired_m_dot / inlet_total_volume
 
 #we should probably create methods to automatically copy the parameters from other already defined regions
 
-add_facet_region!(
+add_region!(
     config, "inlet",
     initial_conditions=ComponentVector(
         vel_x=0.0, vel_y=1.0, vel_z=0.0,
-        pressure=ustrip(1.0u"atm" |> u"Pa"),
+        pressure=110000.0,
         mass_fractions=initial_mass_fractions,
         temp=ustrip(270.0u"°C" |> u"K")
     ),
     region_physics=reforming_area_physics,
     region_function=function inlet_area!(
-            du, u, cell_id, 
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-            vol, rho, phys
-        )
+        du, u, cell_id,
+        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+        vol, rho, phys
+    )
         #internal physics
         react_cell!(
             cell_id, du, u,
@@ -169,14 +176,11 @@ add_facet_region!(
         )
 
         #sources
-        du.pressure[cell_id] += corrected_m_dot_per_area * inlet_cells_respective_areas[cell_id]
+        du.pressure[cell_id] += corrected_m_dot_per_volume * vol
 
         #boundary conditions
-        du.vel_y[cell_id] = 0.0
-        u.vel_y[cell_id] = 1.0
 
         du.mass_fractions .= 0.0
-        u.mass_fractions = initial_mass_fractions
 
         #capacities
         cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
@@ -184,20 +188,20 @@ add_facet_region!(
     end
 )
 
-add_facet_region!(
+add_region!(
     config, "outlet",
     initial_conditions=ComponentVector(
         vel_x=0.0, vel_y=1.0, vel_z=0.0,
-        pressure=ustrip(1.0u"atm" |> u"Pa"),
+        pressure=90000.0,
         mass_fractions=initial_mass_fractions,
         temp=ustrip(270.0u"°C" |> u"K")
     ),
     region_physics=reforming_area_physics,
     region_function=function inlet_area!(
-            du, u, cell_id, 
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-            vol, rho, phys
-        )
+        du, u, cell_id,
+        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+        vol, rho, phys
+    )
         #internal physics
         react_cell!(
             cell_id, du, u,
@@ -207,7 +211,8 @@ add_facet_region!(
         )
 
         #sources
-        du.pressure[cell_id] -= corrected_m_dot_per_area * inlet_cells_respective_areas[cell_id]
+        du.pressure[cell_id] = 0.0
+        #NOTE: setting the pressure to 0.0 here causes the simulation to crash with dtNaN
 
         #boundary conditions
 
@@ -228,15 +233,15 @@ add_region!(
         921.0, # cp (J/(kg*K))
     ),
     region_function=function wall_area!(du, u, cell_id, vol, rho, phys)
-    #internal physics
-    
-    #sources
+        #internal physics
 
-    #boundary conditions
+        #sources
 
-    #capacities
-    cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
-end
+        #boundary conditions
+
+        #capacities
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
+    end
 )
 
 #we might want to add something akin to distribute_over_set_volume!(du += input_wattage)
@@ -256,15 +261,15 @@ add_region!(
         921.0, # cp (J/(kg*K))
     ),
     region_function=function wall_area!(
-            du, u, cell_id, 
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-            vol, rho, 
-            phys
-        )
+        du, u, cell_id,
+        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+        vol, rho,
+        phys
+    )
         #internal physics
-        
+
         #sources
-        du.temp[cell_id] += vol * corrected_volumetric_heating
+        du.temp[cell_id] += corrected_volumetric_heating * vol
 
         #boundary conditions
 
@@ -281,35 +286,29 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     du, u, p, t,
     geo.cell_neighbor_map,
     geo.cell_volumes, geo.cell_centroids,
-    geo.connection_areas, geo.connection_normals, geo.connection_distances,
-
-    geo.unconnected_cell_face_map, 
-    geo.cell_face_areas, geo.cell_face_normals,
-
-    system.connection_groups, system.phys, system.cell_phys_id_map,
+    geo.connection_areas, geo.connection_normals, geo.connection_distances, geo.unconnected_cell_face_map,
+    geo.cell_face_areas, geo.cell_face_normals, system.connection_groups, system.phys, system.cell_phys_id_map,
     system.regions_phys_func_cells,
     system.u_axes
 )
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
-t0, tMax = 0.0, 0.2
-desired_steps = 10
-dt = tMax / desired_steps
-tspan = (t0, tMax)
-t = t0:dt:tMax;
-
-#test_prob = ODEProblem(f_closure_implicit, u0, tspan, p_guess)
-#@time sol = solve(test_prob, Tsit5())
+t0, tMax = 0.0, 1000.0
+tspan = (0.0, 1000.0)
 
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 #not sure if pure TracerSparsityDetector is faster
 
 p_guess = 0.0
 
-#test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.2), p_guess)
 
-#@time sol = solve(test_prob, Tsit5())
+desired_steps = 100
+save_interval = (tspan[end] / desired_steps)
 
+test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.0005), p_guess, saveat=save_interval)
+@time sol = solve(test_prob, Tsit5())
+
+#holy moly, this is soooo stiff, even with just 0.000005 s of sim time, it has to take 1700 steps! It also took 356 seconds 
 
 jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0, u0, detector)
@@ -317,20 +316,40 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype=float.(jac_sparsity))
 
 implicit_prob = ODEProblem(ode_func, u0, tspan, p_guess)
+#=
+desired_steps = 20
+save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
-VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
+VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), saveat=save_interval)
+#I've heard that algebraicmultigrid is only better for more than 1e6 cells
+=#
+#TODO for tomorrow
+# - check darcy weisbach flow to make sure that differences in pressure are actually being applied
+# - It appears that the pressure in the inlet isn't leading to any flux so that's most likely the problem
 
-rebuild_u_named(sol.u, u_proto)[60].mass_fractions
 
+#this errored with: 
+#=
+The profile data buffer is full; profiling probably terminated
+│ before your program finished. To profile for longer runs, call
+│ `Profile.init()` with a larger buffer and/or larger delay.
+=#
 
-record_sol = true
+rebuild_u_named(sol.u, u_proto)[25].mass_fractions
+
+record_sol = false
 
 sim_file = @__FILE__
 
 u_named = rebuild_u_named_vel(sol.u, u_proto)
 
-sum(u_named[80].mass_fractions[1:5, 1:18000])
+test1 = u_named[1].pressure[9167]
+
+test2 = u_named[25].pressure[9167]
+
+test1 == test2
+
 
 if record_sol == true
     sol_to_vtk(sol, u_named, grid, sim_file)
