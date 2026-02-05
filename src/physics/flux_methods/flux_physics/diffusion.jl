@@ -6,23 +6,22 @@ end
 
 function diffusion_mass_fraction_exchange!(
         #mutated vars
-        du_species_mass_fractions_a, du_species_mass_fractions_b,
-        #u data
-        species_mass_fractions_a, species_mass_fractions_b,
+        du, u, idx_a, idx_b,
         #geometry data
-        area, dist,
+        area, norm, dist,
         #props
-        diffusion_coeff_a, diffusion_coeff_b,
+        rho_a, rho_b,
+        #diffusion_coeff_a, diffusion_coeff_b, #not sure if these are even necessary
         species_diffusion_coeffs_a, species_diffusion_coeffs_b
         #other data
     )
 
     rho_avg = 0.5 * (rho_a + rho_b)
 
-    for i in eachindex(species_mass_fractions_a)
+    for i in eachindex(u.mass_fractions[:, idx_a])
         diffusion_coeff_effective = harmonic_mean(species_diffusion_coeffs_a[i], species_diffusion_coeffs_b[i])
-        numerical_flux = species_numerical_flux(rho_avg, diffusion_coeff_effective, species_mass_fractions_a[i], species_mass_fractions_b[i], area, dist)
-        du_species_mass_fractions_a -= numerical_flux
-        du_species_mass_fractions_b += numerical_flux
+        numerical_flux = species_numerical_flux(rho_avg, diffusion_coeff_effective, u.mass_fractions[i, idx_a], u.mass_fractions[i, idx_b], area, dist)
+        du.mass_fractions[i, idx_a] -= numerical_flux
+        du.mass_fractions[i, idx_b] += numerical_flux
     end
 end
