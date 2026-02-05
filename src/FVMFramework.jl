@@ -1,7 +1,7 @@
 module FVMFramework
 
 using Ferrite
-using DifferentialEquations
+using OrdinaryDiffEq
 using LinearAlgebra
 using SparseArrays
 using SciMLSensitivity
@@ -18,6 +18,7 @@ using StaticArrays
 using ProfileView
 using Dates
 using WriteVTK
+using PreallocationTools
 
 import AlgebraicMultigrid
 import SparseConnectivityTracer
