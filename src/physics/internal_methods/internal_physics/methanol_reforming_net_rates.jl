@@ -53,7 +53,7 @@ function PAM_reaction(rxn, molar_concentrations, T)
     P_CH3OH = pp[1]
     P_H2O = pp[2]
     P_CO = pp[3]
-    P_H2 = pp[4]
+    P_H2 = max(pp[4], 1e-9)
     P_CO2 = pp[5]
 
     K_CH3O = van_t_hoff(rxn.adsorption_A_vec[1], rxn.adsorption_dH_vec[1], T)
