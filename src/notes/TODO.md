@@ -23,6 +23,7 @@ TODO:
     - Create methods that run multiple physics functions inside them like fluid_fluid_flux!(...) that does continuity_and_momentum_darcy, diffusion_temp_exchange!, species_advection!, enthalpy_advection!, etc.
 
     - Create methods to more easily diagnose problems through logging. Graphing a certain variable over time would be very useful
+        - this really needs to be worked on 
 
     - Create a dedicated method for distributing a BC over a set of cell volumes or set of cell areas 
 
