@@ -74,10 +74,8 @@ function methanol_reformer_f_test!(
     connection_areas, connection_normals, connection_distances,
     #connection areas, normals, and distances are simply accessed by their location in the 
     #list which corresponds to the respective connection in cell_neighbor_map
-    unconnected_cell_face_map, 
-    cell_face_areas, cell_face_normals,
-    
-    connection_groups::MethanolReformerConnectionGroups, phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
+    unconnected_cell_face_map,
+    cell_face_areas, cell_face_normals, connection_groups::MethanolReformerConnectionGroups, phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
     regions_phys_func_cells::Vector{Tuple{AbstractPhysics,Function,Vector{Int}}},
     ax,
 )
@@ -96,23 +94,37 @@ function methanol_reformer_f_test!(
     for (conn_idx, (idx_a, idx_b)) in connection_groups.fluid_fluid
         phys_a_id = cell_phys_id_map[idx_a]
         phys_b_id = cell_phys_id_map[idx_b]
-        #in the future to maybe reduce cache misses, we could access phys by phys[cell_id] instead
 
         area = connection_areas[conn_idx]
         dist = connection_distances[conn_idx]
         norm = connection_normals[conn_idx]
 
+        #rm println("idx_a, ", idx_a, "  idx_b, ", idx_b)
+        #rm println("area, ", area, "  dist, ", dist, "  norm, ", norm)
+
         rho_a = get_cell_rho(u, phys[phys_a_id], idx_a)
         rho_b = get_cell_rho(u, phys[phys_b_id], idx_b)
 
+        #rm println("rho_a, ", rho_a, "  rho_b, ", rho_b)
+
         #mutating-ish, it mutates du.pressure for a and b
         face_m_dot = continuity_and_momentum_darcy(
-            du, u, #if we need views later view(du, :)
+            du, u, 
             idx_a, idx_b,
             area, norm, dist,
             rho_a, rho_b,
             phys[phys_a_id], phys[phys_b_id],
         )
+
+        if face_m_dot != 0.0
+            println("idx_a, ", idx_a)
+            println("idx_b, ", idx_b)
+            println("pressure a, ", u.pressure[idx_a])
+            println("pressure b, ", u.pressure[idx_b])
+            println("face_m_dot, ", face_m_dot)
+        end
+
+        #println("face_m_dot, ", face_m_dot)
 
         diffusion_temp_exchange!(
             du, u,
@@ -134,6 +146,14 @@ function methanol_reformer_f_test!(
             face_m_dot,
             area, norm, dist,
             phys[phys_a_id], phys[phys_b_id],
+        )
+
+        diffusion_mass_fraction_exchange!(
+            du, u,
+            idx_a, idx_b,
+            area, norm, dist,
+            rho_a, rho_b,
+            [1e-5, 1e-5, 1e-5, 1e-5, 1e-5], [1e-5, 1e-5, 1e-5, 1e-5, 1e-5]
         )
     end
 
@@ -186,11 +206,56 @@ function methanol_reformer_f_test!(
                 change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
                 vol, rho, region_phys
             )
+
+            #=
+            try 
+            region_function!(
+                du, u, cell_id,
+                change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+                vol, rho, region_phys
+            )
+            catch e
+                println("vel_x, ", u.vel_x[cell_id])
+                println("vel_y, ", u.vel_y[cell_id])
+                println("vel_z, ", u.vel_z[cell_id])
+                println("pressure, ", u.pressure[cell_id])
+                println("temp, ", u.temp[cell_id])
+                println("mass_fractions, ", u.mass_fractions[:, cell_id])
+
+                println("vol, ", vol)
+                println("rho, ", rho)
+            end
+            =#
         end
+    end
+
+    for cell_id in eachindex(du.vel_x)
+        #=
+        if du.vel_x[cell_id] != 0.0
+            println(du.vel_x[cell_id])
+        end
+        if du.vel_y[cell_id] != 0.0
+            println(du.vel_y[cell_id])
+        end
+        if du.vel_z[cell_id] != 0.0
+            println(du.vel_z[cell_id])
+        end
+        if du.pressure[cell_id] != 0.0
+            println(du.pressure[cell_id])
+        end
+        #=
+        if du.temp[cell_id] != 0.0
+            println(du.temp[cell_id])
+        end
+        =#
+        if du.mass_fractions[:, cell_id] != [0.0, 0.0, 0.0, 0.0, 0.0]
+            println(du.mass_fractions[:, cell_id])
+        end
+        =#
     end
 end
 
-#VERY IMPORTANT !!!!
+#VERY IMPORTANT!!!!
 #= For future reference when getting properties using u[field]:
     u_cv.temp[cell_id] = val
         works!

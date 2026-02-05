@@ -24,9 +24,10 @@ function continuity_and_momentum_darcy(
     mu_avg = 0.5 * (phys_a.mu + phys_b.mu)
     permeability_avg = 0.5 * (phys_a.permeability + phys_b.permeability)
 
+    #println("pressure_a, ", pressure_a, "  pressure_b, ", pressure_b, "rho_avg, ", rho_avg, "  mu_avg, ", mu_avg, "  permeability_avg, ", permeability_avg)
+
     face_m_dot = get_darcy_mass_flux(rho_avg, permeability_avg, mu_avg, pressure_a, pressure_b, area, dist)
 
-    #perhaps we should save the vol_a and vol_b division for the capacity functions later
     du.pressure[idx_a] -= face_m_dot
     du.pressure[idx_b] += face_m_dot
 

@@ -338,7 +338,7 @@ The profile data buffer is full; profiling probably terminated
 
 rebuild_u_named(sol.u, u_proto)[25].mass_fractions
 
-record_sol = false
+record_sol = true
 
 sim_file = @__FILE__
 
@@ -346,9 +346,9 @@ u_named = rebuild_u_named_vel(sol.u, u_proto)
 
 test1 = u_named[1].pressure[9167]
 
-test2 = u_named[25].pressure[9167]
+#test2 = u_named[25].pressure[9167]
 
-test1 == test2
+#test1 == test2
 
 
 if record_sol == true

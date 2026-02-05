@@ -36,21 +36,22 @@ function net_reaction_rate(chemical_reaction::PowerLawReaction, molar_concentrat
 end
 
 function react_cell!(
-    #input idxs 
-    cell_id,
-    #mutated vars
-    du,
-    #u data
-    u,
-    #caches (also mutated)
-    change_in_molar_concetrations_cache, molar_concentrations_cache, net_rates_cache,
-    #geometry data
-    vol,
-    #props
-    rho,
-    #phys data
-    phys
-)
+        #input idxs 
+        cell_id,
+        #mutated vars
+        du,
+        #u data
+        u,
+        #caches (also mutated)
+        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+        #geometry data
+        vol,
+        #props
+        rho,
+        #phys data
+        phys
+    )
+    change_in_molar_concentrations_cache .= 0.0
 
     for (species_id, species_mass_fraction) in enumerate(u.mass_fractions[:, cell_id])
         molar_concentrations_cache[species_id] = (rho * species_mass_fraction) / phys.species_molecular_weights[species_id]
@@ -76,10 +77,10 @@ function react_cell!(
     for (species_id, species_molar_concentration) in enumerate(molar_concentrations_cache)
         for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
             stoich = reaction.all_stoich_coeffs[species_id]
-            change_in_molar_concetrations_cache[species_id] += net_rates_cache[reaction_id] * stoich
+            change_in_molar_concentrations_cache[species_id] += net_rates_cache[reaction_id] * stoich
         end
 
-        du.mass_fractions[species_id, cell_id] += (change_in_molar_concetrations_cache[species_id] * phys.species_molecular_weights[species_id]) / rho
+        du.mass_fractions[species_id, cell_id] += (change_in_molar_concentrations_cache[species_id] * phys.species_molecular_weights[species_id]) / rho
         # rate (mol/(m3*s)) * MW (g/mol) / rho (g/m3) = unitless/s
     end
 

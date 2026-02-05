@@ -46,6 +46,5 @@ function sol_to_vtk(sol, u_named, grid, sim_file)
             pvd[t] = vtk
         end
     end
-    println("hi")
     vtk_save(pvd)
 end
