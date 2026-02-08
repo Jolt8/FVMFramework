@@ -1,3 +1,5 @@
+#COMMITING BEFORE SWITCHING TO A CELL CENTRIC CONNECTION MAP
+
 function calculate_tetra_volume(p)
     volume = (1 / 6) * abs(dot(p[1] - p[4], cross_product((p[2] - p[4]), (p[3] - p[4]))))
 
