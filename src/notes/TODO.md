@@ -38,3 +38,6 @@ TODO:
     - Create a method for doing distributing computing by recruiting my home PC as a worker to prevent having to do simulation on my laptop in class
 
     - Multithreading is coming! 
+
+    - Implement a method within the connecitons constructor that always puts a certain type of connection first. For example, always putting fluids first instead of solids in fluid_solid connections to make sure that the rho of idx_a can be found via cell_rho_ideal!() and the rho of idx_b can be accessed by phys[phys_b].rho. This would prevent dynamic dispatch which is nice and is significantly more scalable as long as the user remembers what order they put the priority list in.
+        - the priority list would look something like: AbstractPhysics[MethanolReformingArea, FluidPhysics, SolidPhysics, etc...]
