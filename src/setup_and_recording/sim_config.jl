@@ -103,11 +103,7 @@ struct FVMSystem
     u_axes::Axis
 end
 
-function finish_fvm_config(
-    config, 
-    connection_catagorizer!, connection_groups::AbstractConnectionGroup,
-    )
-
+function finish_fvm_config(config, connection_catagorizer!, connection_groups::AbstractConnectionGroup)
     n_cells = length(config.geo.cell_volumes)
 
     phys = AbstractPhysics[]
@@ -126,14 +122,14 @@ function finish_fvm_config(
         end
     end
 
-    for (conn_idx, (idx_a, idx_b)) in enumerate(config.geo.cell_neighbor_map)
+    for (idx_a, idx_b) in config.geo.cell_neighbors
         a_phys_id = cell_phys_id_map[idx_a]
         b_phys_id = cell_phys_id_map[idx_b]
         
         phys_a = phys[a_phys_id]
         phys_b = phys[b_phys_id]
 
-        connection_catagorizer!(connection_groups, conn_idx, idx_a, idx_b, typeof(phys_a), typeof(phys_b))
+        connection_catagorizer!(connection_groups, idx_a, idx_b, typeof(phys_a), typeof(phys_b))
     end
 
     u0 = Vector(config.u_proto)

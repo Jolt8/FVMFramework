@@ -6,13 +6,10 @@ function get_darcy_mass_flux(rho_avg, permeability, viscosity, pressure_a, press
 end
 
 function continuity_and_momentum_darcy(
-    #NOTE!!:
-    #this also returns face_m_dot even though it's a f!() function
+    #NOTE!!: this also returns face_m_dot even though it's a f!() function
     du, u,
     idx_a, idx_b,
-    #geometry data
     area, norm, dist,
-    #other props 
     rho_a, rho_b, #kinda a u value because it changes with time but not explicitly tracked through u values
     phys_a, phys_b
     )
@@ -24,12 +21,9 @@ function continuity_and_momentum_darcy(
     mu_avg = 0.5 * (phys_a.mu + phys_b.mu)
     permeability_avg = 0.5 * (phys_a.permeability + phys_b.permeability)
 
-    #println("pressure_a, ", pressure_a, "  pressure_b, ", pressure_b, "rho_avg, ", rho_avg, "  mu_avg, ", mu_avg, "  permeability_avg, ", permeability_avg)
-
     face_m_dot = get_darcy_mass_flux(rho_avg, permeability_avg, mu_avg, pressure_a, pressure_b, area, dist)
 
     du.pressure[idx_a] -= face_m_dot
-    du.pressure[idx_b] += face_m_dot
 
     return face_m_dot
 end

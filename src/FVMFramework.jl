@@ -19,6 +19,7 @@ using ProfileView
 using Dates
 using WriteVTK
 using PreallocationTools
+using Polyester
 
 import AlgebraicMultigrid
 import SparseConnectivityTracer

@@ -1,90 +1,130 @@
 abstract type FVMGeometry end
 
 struct FVMGeometryTetra{T,CoordType} <: FVMGeometry
-    cell_neighbor_map::Vector{Tuple{Int, Int}}
     cell_volumes::Vector{T}
     cell_centroids::Vector{CoordType}
-    connection_areas::Vector{T}
-    connection_normals::Vector{CoordType}
-    connection_distances::Vector{T}
+    cell_neighbors::Vector{Tuple{Int, Int}}
+    cell_neighbor_areas::Vector{T}
+    cell_neighbor_normals::Vector{CoordType}
+    cell_neighbor_distances::Vector{T}
     unconnected_cell_face_map::Vector{Tuple{Int, Int}}
-    cell_face_areas::Vector{SVector{4, T}}
-    cell_face_normals::Vector{SVector{4, CoordType}}
+    cell_face_areas::Vector{MVector{6, T}}
+    cell_face_normals::Vector{MVector{6, CoordType}}
 end
 
 struct FVMGeometryHexa{T,CoordType} <: FVMGeometry
-    cell_neighbor_map::Vector{Tuple{Int, Int}}
     cell_volumes::Vector{T}
     cell_centroids::Vector{CoordType}
-    connection_areas::Vector{T}
-    connection_normals::Vector{CoordType}
-    connection_distances::Vector{T}
+    cell_neighbors::Vector{Tuple{Int, Int}}
+    cell_neighbor_areas::Vector{T}
+    cell_neighbor_normals::Vector{CoordType}
+    cell_neighbor_distances::Vector{T}
     unconnected_cell_face_map::Vector{Tuple{Int, Int}}
-    cell_face_areas::Vector{SVector{6, T}}
-    cell_face_normals::Vector{SVector{6, CoordType}}
+    cell_face_areas::Vector{MVector{6, T}}
+    cell_face_normals::Vector{MVector{6, CoordType}}
 end
 
-function compress_geo_to_struct(
-    grid::Grid{3,Tetrahedron,Float64},
-    cell_neighbor_map,
-    cell_volumes, cell_centroids,
-    connection_areas, connection_normals, connection_distances,
-    unconnected_cell_face_map,
-    cell_face_areas, cell_face_normals)
+function compress_geo_to_struct_tetra(
+        grid::Grid{3, Tetrahedron, Float64}, top,
+        cell_volumes, cell_centroids, 
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances, 
+        cell_face_areas, cell_face_normals,
+
+        initial_node_coordinates, nodes_of_cells,
+        cell_neighbors, cell_neighbors_node_ids,
+        cell_face_map, map_respective_node_ids
+    )
+
+    rebuild_fvm_geometry_tetra!(
+        #mutated vars
+        cell_volumes, cell_centroids, 
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances, 
+        cell_face_areas, cell_face_normals,
+
+        #non-mutated vars
+        initial_node_coordinates, nodes_of_cells,
+        cell_neighbors, cell_neighbors_node_ids,
+        cell_face_map, map_respective_node_ids
+    )
+
+    unconnected_cell_face_map = get_unconnected_map(grid, top)
 
     return FVMGeometryTetra(
-        cell_neighbor_map,
         cell_volumes, cell_centroids,
-        connection_areas, connection_normals, connection_distances,
-        unconnected_cell_face_map,
-        cell_face_areas, cell_face_normals
+        cell_neighbors,
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        unconnected_cell_face_map, cell_face_areas, cell_face_normals
     )
 end
 
 function compress_geo_to_struct(
-    grid::Grid{3,Hexahedron,Float64},
-    cell_neighbor_map,
-    cell_volumes, cell_centroids,
-    connection_areas, connection_normals, connection_distances,
-    unconnected_cell_face_map,
-    cell_face_areas, cell_face_normals)
+        grid::Grid{3, Hexahedron, Float64}, top,
+        cell_volumes, cell_centroids, 
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances, 
+        cell_face_areas, cell_face_normals,
+
+        initial_node_coordinates, nodes_of_cells,
+        cell_neighbors, cell_neighbors_node_ids,
+        cell_face_map, map_respective_node_ids
+    )
+
+    rebuild_fvm_geometry_hexa!(
+        #mutated vars
+        cell_volumes, cell_centroids, 
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances, 
+        cell_face_areas, cell_face_normals,
+
+        #non-mutated vars
+        initial_node_coordinates, nodes_of_cells,
+        cell_neighbors, cell_neighbors_node_ids,
+        cell_face_map, map_respective_node_ids
+    )
+
+    unconnected_cell_face_map = get_unconnected_map(grid, top)
 
     return FVMGeometryHexa(
-        cell_neighbor_map,
+        cell_neighbors,
         cell_volumes, cell_centroids,
-        cell_connection_areas, cell_connection_normals, cell_connection_distances,
-        unconnected_cell_face_map,
-        cell_face_areas, cell_face_normals
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        unconnected_cell_face_map, cell_face_areas, cell_face_normals
     )
 end
 
 function build_fvm_geo_into_struct(grid)
-    initial_node_coordinates = get_node_coordinates(grid)
+    top = ExclusiveTopology(grid)
 
-    cell_neighbor_map, neighbor_map_respective_node_ids = get_neighbor_map(grid)
+    initial_node_coordinates = get_node_coordinates(grid)
+    nodes_of_cells = get_nodes_of_cells(grid)
+
+    cell_neighbors, cell_neighbors_node_ids = get_cell_neighbors(grid, top)
 
     cell_face_map, map_respective_node_ids = get_cell_face_map(grid)
 
-    unconnected_cell_face_map, unconnected_map_respective_node_ids = get_unconnected_map(grid)
-    #unconnected_map_respective_node_ids is now unused
+    CoordType = eltype(initial_node_coordinates)
+    T = eltype(CoordType)
 
-    nodes_of_cells = get_nodes_of_cells(grid)
+    n_cells = length(nodes_of_cells)
+    cell_volumes = Vector{T}(undef, n_cells)
+    cell_centroids = Vector{CoordType}(undef, n_cells)
 
-    cell_volumes, cell_centroids, #cell volumes and cell centroids are accessed at the id of the cell
-    connection_areas, connection_normals, connection_distances, #connection areas, normals, and distances are simply accessed by their location in the list which corresponds to the respective connection in cell_neighbor_map
-    cell_face_areas, cell_face_normals = rebuild_fvm_geometry(
-        cell_neighbor_map, neighbor_map_respective_node_ids,
-        cell_face_map, map_respective_node_ids,
-        initial_node_coordinates, nodes_of_cells
-    )
-    
+    n_cell_neighbors = length(cell_neighbors)
+    cell_neighbor_areas = Vector{MVector{4, T}}(undef, n_cell_neighbors)
+    cell_neighbor_normals = Vector{MVector{4, CoordType}}(undef, n_cell_neighbors)
+    cell_neighbor_distances = Vector{MVector{4, T}}(undef, n_cell_neighbors)
+
+    cell_face_areas = fill(zero(MVector{4, T}), n_cells)
+    cell_face_normals = fill(zero(MVector{4, CoordType}), n_cells)
+
     #we use the dynamic dispatch of compress_geo_to_struct to prevent having to check the grid's type with if statements
+    #the reason this mutates is that it will be later used for geometry optimization which is one of the biggest applications of this framework
     return compress_geo_to_struct(
-        grid,
-        cell_neighbor_map,
-        cell_volumes, cell_centroids,
-        connection_areas, connection_normals, connection_distances,
-        unconnected_cell_face_map,
-        cell_face_areas, cell_face_normals
+        grid, top,
+        cell_volumes, cell_centroids, 
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances, 
+        cell_face_areas, cell_face_normals,
+
+        initial_node_coordinates, nodes_of_cells,
+        cell_neighbors, cell_neighbors_node_ids,
+        cell_face_map, map_respective_node_ids
     )
 end

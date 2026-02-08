@@ -3,6 +3,7 @@ struct MethanolReformerPhysics <: AbstractFluidPhysics
     cp::Float64
     mu::Float64
     permeability::Float64
+    species_diffusion_coeffs::Vector{Float64}
     species_molecular_weights::Vector{Float64}
     chemical_reactions::Vector{AbstractReaction}
     cell_kg_cat_per_m3_for_each_reaction::Vector{Float64}
@@ -15,21 +16,23 @@ struct WallPhysics <: AbstractSolidPhysics
 end
 
 struct MethanolReformerConnectionGroups <: AbstractConnectionGroup
-    fluid_fluid::Vector{Tuple{Int, Tuple{Int, Int}}} #connection idx, (cell idx a, cell idx b)
-    solid_solid::Vector{Tuple{Int, Tuple{Int, Int}}}
-    fluid_solid::Vector{Tuple{Int, Tuple{Int, Int}}}
+    fluid_fluid::Vector{Vector{Int}}
+    solid_solid::Vector{Vector{Int}}
+    fluid_solid::Vector{Vector{Int}}
+    solid_fluid::Vector{Vector{Int}}
 end
 
-function methanol_reformer_init_conn_groups()
+function methanol_reformer_init_conn_groups(grid)
+    n_cells = length(grid.cells)
     return MethanolReformerConnectionGroups(
-        Tuple{Int, Tuple{Int, Int}}[],
-        Tuple{Int, Tuple{Int, Int}}[],
-        Tuple{Int, Tuple{Int, Int}}[]
+        [Vector{Int}() for _ in 1:n_cells],
+        [Vector{Int}() for _ in 1:n_cells],
+        [Vector{Int}() for _ in 1:n_cells],
+        [Vector{Int}() for _ in 1:n_cells]
     )
 end
 
-#this fucking sucks, but I can't think of anything better, there's got to be a way to leverage 
-#dynamic dispatch, but I can't think of anything
+#this fucking sucks, but I can't think of anything better, there's got to be a way to leverage dynamic dispatch, but I can't think of anything
 #perhaps a function like apply_flux!(args) that takes in all the things needed to do a 
 #flux calculation, but dynamically dispatches depending on the type of a_phys and b_phys
 #the only issue with this is that instead of allowing the CPU to perform the same operations for a set like 
@@ -55,216 +58,268 @@ end
 =#
 # I honestly think the above is worse
 
-function connection_catagorizer!(connection_groups::MethanolReformerConnectionGroups, conn_idx, idx_a, idx_b, type_a, type_b)
+function connection_catagorizer!(connection_groups::MethanolReformerConnectionGroups, idx_a, idx_b, type_a, type_b)
     if type_a <: AbstractFluidPhysics && type_b <: AbstractFluidPhysics
-        push!(connection_groups.fluid_fluid, (conn_idx, (idx_a, idx_b)))
+        push!(connection_groups.fluid_fluid[idx_a], idx_b)
     elseif type_a <: AbstractSolidPhysics && type_b <: AbstractSolidPhysics
-        push!(connection_groups.solid_solid, (conn_idx, (idx_a, idx_b)))
+        push!(connection_groups.solid_solid[idx_a], idx_b)
     elseif (type_a <: AbstractFluidPhysics && type_b <: AbstractSolidPhysics)
-        push!(connection_groups.fluid_solid, (conn_idx, (idx_a, idx_b)))
+        push!(connection_groups.fluid_solid[idx_a], idx_b)
     elseif (type_a <: AbstractSolidPhysics && type_b <: AbstractFluidPhysics) 
-        push!(connection_groups.fluid_solid, (conn_idx, (idx_b, idx_a)))
-        #notice how idx_a and idx_b are swapped here because we always want to ensure that fluids become before solids
-        #this is done to prevent having to do dynamic dispatch when getting cell rho because we always know that 
-        #we can use EOS for the first idx and get the rho property for the second idx
+        push!(connection_groups.solid_fluid[idx_a], idx_b)
     end
 end
 
-function methanol_reformer_f_test!(
-    du, u, p, t,
-    cell_neighbor_map,
-    cell_volumes, cell_centroids,
-    #cell volumes and cell centroids are accessed at the id of the cell
-    connection_areas, connection_normals, connection_distances,
-    #connection areas, normals, and distances are simply accessed by their location in the 
-    #list which corresponds to the respective connection in cell_neighbor_map
-    unconnected_cell_face_map,
-    cell_face_areas, cell_face_normals, connection_groups::MethanolReformerConnectionGroups, phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
-    regions_phys_func_cells::Vector{Tuple{AbstractPhysics,Function,Vector{Int}}},
-    ax,
+function fluid_fluid_flux!(
+        du, u, idx_a, idx_b, face_idx,
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        phys_a, phys_b,
+        rho_cache, mw_avg_cache,
+        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+    )
+    area = cell_neighbor_areas[idx_a][face_idx]
+    dist = cell_neighbor_distances[idx_a][face_idx]
+    norm = cell_neighbor_normals[idx_a][face_idx]
+
+    rho_a = rho_ideal!(u, idx_a, rho_cache, mw_avg_cache)
+    rho_b = rho_ideal!(u, idx_b, rho_cache, mw_avg_cache)
+
+    #mutating-ish, it mutates du.pressure for a
+    face_m_dot = continuity_and_momentum_darcy(
+        du, u, 
+        idx_a, idx_b,
+        area, norm, dist,
+        rho_a, rho_b,
+        phys_a, phys_b
+    )
+    
+    diffusion_temp_exchange!(
+        du, u,
+        idx_a, idx_b,
+        area, norm, dist,
+        phys_a, phys_b
+    )
+
+    all_species_advection!(
+        du, u,
+        idx_a, idx_b,
+        area, norm, dist,
+        phys_a, phys_b,
+        face_m_dot
+    )
+
+    enthalpy_advection!(
+        du, u,
+        idx_a, idx_b,
+        area, norm, dist,
+        phys_a, phys_b,
+        face_m_dot
+    )
+
+    diffusion_mass_fraction_exchange!(
+        du, u,
+        idx_a, idx_b,
+        area, norm, dist,
+        rho_a, rho_b,
+        phys_a, phys_b
+    )
+end
+
+function solid_solid_flux!(
+        du, u, idx_a, idx_b, face_idx,
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        phys_a, phys_b,
+        rho_cache, mw_avg_cache,
+        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+    )
+    area = cell_neighbor_areas[idx_a][face_idx]
+    dist = cell_neighbor_distances[idx_a][face_idx]
+    norm = cell_neighbor_normals[idx_a][face_idx]
+    
+    rho_a = phys_a.rho
+    rho_b = phys_b.rho
+
+    #hmm, perhaps these physics functions need to be more strictly typed
+    #Checking profview, I'm getting some runtime dispatch and GC here, I don't know why 
+    diffusion_temp_exchange!(
+        du, u,
+        idx_a, idx_b,
+        area, norm, dist,
+        phys_a, phys_b
+    )
+end
+
+function fluid_solid_flux!(
+    du, u, idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+    phys_a, phys_b,
     rho_cache, mw_avg_cache,
     change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-)
+    )
+    area = cell_neighbor_areas[idx_a][face_idx]
+    dist = cell_neighbor_distances[idx_a][face_idx]
+    norm = cell_neighbor_normals[idx_a][face_idx]
 
-    #A_Ea_pairs = eachcol(reshape(p, :, n_reactions))
-    #unflattened_p would be [[reaction_1_kf_A, reaction_1_kf_Ea], [reaction_2_kf_A, reaction_2_kf_Ea], etc..] 
+    rho_a = rho_ideal!(u, idx_a, rho_cache, mw_avg_cache)
+    rho_b = phys_b.rho
+
+    diffusion_temp_exchange!(
+        du, u,
+        idx_a, idx_b,
+        area, norm, dist,
+        phys_a, phys_b
+    )
+end
+
+function solid_fluid_flux(
+    du, u, idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+    phys_a, phys_b,
+    rho_cache, mw_avg_cache,
+    change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+    )
+    area = cell_neighbor_areas[idx_a][face_idx]
+    dist = cell_neighbor_distances[idx_a][face_idx]
+    norm = cell_neighbor_normals[idx_a][face_idx]
+    
+    rho_a = phys_a.rho
+    rho_b = rho_ideal!(u, idx_b, rho_cache, mw_avg_cache)
+    
+    diffusion_temp_exchange!(
+        du, u,
+        idx_a, idx_b,
+        area, norm, dist,
+        phys_a, phys_b
+    )
+end
+
+function methanol_reformer_f_test!(
+        du, u, p, t,
+        cell_neighbor_map,
+        cell_volumes, cell_centroids,
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        unconnected_cell_face_map,
+        cell_face_areas, cell_face_normals, connection_groups::MethanolReformerConnectionGroups, 
+        phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
+        regions_phys_func_cells::Vector{Tuple{AbstractPhysics,Function,Vector{Int}}},
+        ax,
+        rho_cache, mw_avg_cache,
+        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+    )
 
     u = ComponentVector(u, ax)
     du = ComponentVector(du, ax)
-
     du .= 0.0
 
     rho_cache = get_tmp(rho_cache, u)
+    rho_cache .*= 0.0
+    
     mw_avg_cache = get_tmp(mw_avg_cache, u)
-
-    rho_cache .= 0.0
-    mw_avg_cache .= 0.0
+    mw_avg_cache .*= 0.0
 
     change_in_molar_concentrations_cache = get_tmp(change_in_molar_concentrations_cache, u)
+    change_in_molar_concentrations_cache .*= 0.0
+
     molar_concentrations_cache = get_tmp(molar_concentrations_cache, u) #just using mass fractions for cell 1, this may cause some issues later!
+    molar_concentrations_cache .*= 0.0
+
     net_rates_cache = get_tmp(net_rates_cache, u)
-    
-    change_in_molar_concentrations_cache .= 0.0
-    molar_concentrations_cache .= 0.0
-    net_rates_cache .= 0.0
-    #even though react_cell!() already sets change_in_molar_concentrations_cache to .= 0.0, we're just doing .* 0.0 to all to make sure
-
-    n_cells = length(cell_volumes)
-
-    for cell_id in eachindex(rho_cache)
-        phys_id = cell_phys_id_map[cell_id]
-        cell_rho!(u, phys[phys_id], cell_id, rho_cache, mw_avg_cache)
-    end
+    net_rates_cache .*= 0.0
+    #even though react_cell!() already sets change_in_molar_concentrations_cache to .= 0.0, we're just doing .*= 0.0 to all to make sure
 
 
-    #connections loop
-    for (conn_idx, (idx_a, idx_b)) in connection_groups.fluid_fluid
-        phys_a_id = cell_phys_id_map[idx_a]
-        phys_b_id = cell_phys_id_map[idx_b]
 
-        area = connection_areas[conn_idx]
-        dist = connection_distances[conn_idx]
-        norm = connection_normals[conn_idx]
-
-        #rm println("idx_a, ", idx_a, "  idx_b, ", idx_b)
-        #rm println("area, ", area, "  dist, ", dist, "  norm, ", norm)
-
-        rho_a = rho_cache[idx_a]
-        rho_b = rho_cache[idx_b]
-
-        #rm println("rho_a, ", rho_a, "  rho_b, ", rho_b)
-
-        #mutating-ish, it mutates du.pressure for a and b
-        face_m_dot = continuity_and_momentum_darcy(
-            du, u, 
-            idx_a, idx_b,
-            area, norm, dist,
-            rho_a, rho_b,
-            phys[phys_a_id], phys[phys_b_id],
-        )
-
-        #= 
-        #we do a little debugging
-        if u.pressure[idx_a] != u.pressure[idx_b]
-            println("idx_a, ", idx_a)
-            println("idx_b, ", idx_b)
-            println("pressure a, ", u.pressure[idx_a])
-            println("pressure b, ", u.pressure[idx_b])
-            println("rho_a, ", rho_a)
-            println("rho_b, ", rho_b)
-            println("mu_a, ", phys[phys_a_id].mu)
-            println("mu_b, ", phys[phys_b_id].mu)
-            println("permeability_a, ", phys[phys_a_id].permeability)
-            println("permeability_b, ", phys[phys_b_id].permeability)
-            println("area, ", area)
-            println("dist, ", dist)
-            println("face_m_dot, ", face_m_dot)
-            println(" ")
-            println("mw_avg a, ", get_mw_avg(u.mass_fractions[:, idx_a], phys[phys_a_id].species_molecular_weights))
-            println("mw_avg b, ", get_mw_avg(u.mass_fractions[:, idx_b], phys[phys_b_id].species_molecular_weights))
-            println("temp a, ", u.temp[idx_a])
-            println("temp b, ", u.temp[idx_b])
-            println("R_gas, ", R_gas)
-            println("rho_a, ", (u.pressure[idx_a] * get_mw_avg(u.mass_fractions[:, idx_a], phys[phys_a_id].species_molecular_weights)) / (R_gas * u.temp[idx_a]))
-            println("rho_b, ", (u.pressure[idx_b] * get_mw_avg(u.mass_fractions[:, idx_b], phys[phys_b_id].species_molecular_weights)) / (R_gas * u.temp[idx_b]))
+    #= 
+    #idea for how we could easily handle fluxes  
+    #this would allow us to easily create "hidden" connections for specific types like MethanolReformerPhysics instead of AbstractFluidPhysics
+    for (two_phys, connection_function!, group_cells) in connection_groups_two_phys_func_cells
+        for (idx_a, idx_a_neighbors) in enumerate(group_cells)
+            for (face_idx, idx_b) in enumerate(idx_a_neighbors)
+                #the only thing that I don't like about doing this is that whenever an error occurs, the error message just tells you
+                #connection_function! errored rather than whatever specific connection_function errored
+                #further, profview can't tell you what specific conneciton_function is causing issues
+                connecton_function!(
+                    du, u, idx_a, idx_b,
+                    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+                    phys[1], phys[2],
+                    rho_cache, mw_avg_cache,
+                    change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+                )
+            end
         end
-        =#
+    end
+    =#
 
-        #println("face_m_dot, ", face_m_dot)
-        
-        diffusion_temp_exchange!(
-            du, u,
-            idx_a, idx_b,
-            area, dist,
-            phys[phys_a_id], phys[phys_b_id],
-        )
+    #connections loops
+    #look into storing this data into a CSR in the future
+    @batch for (idx_a, idx_a_neighbors) in enumerate(connection_groups.fluid_fluid)
+        for (face_idx, idx_b) in enumerate(idx_a_neighbors)
+            phys_a = phys[cell_phys_id_map[idx_a]]
+            phys_b = phys[cell_phys_id_map[idx_b]]
 
-        all_species_advection!(
-            du, u,
-            idx_a, idx_b,
-            face_m_dot,
-            area, norm, dist
-        )
-
-        enthalpy_advection!(
-            du, u,
-            idx_a, idx_b,
-            face_m_dot,
-            area, norm, dist,
-            phys[phys_a_id], phys[phys_b_id],
-        )
-
-        diffusion_mass_fraction_exchange!(
-            du, u,
-            idx_a, idx_b,
-            area, norm, dist,
-            rho_a, rho_b,
-            [1e-5, 1e-5, 1e-5, 1e-5, 1e-5], [1e-5, 1e-5, 1e-5, 1e-5, 1e-5]
-        )
+            fluid_fluid_flux!(
+                du, u, idx_a, idx_b, face_idx,
+                cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+                phys_a, phys_b,
+                rho_cache, mw_avg_cache,
+                change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+            )
+        end
     end
 
-    for (conn_idx, (idx_a, idx_b)) in connection_groups.solid_solid
-        phys_a_id = cell_phys_id_map[idx_a]
-        phys_b_id = cell_phys_id_map[idx_b]
+    @batch for (idx_a, idx_a_neighbors) in enumerate(connection_groups.solid_solid)
+        for (face_idx, idx_b) in enumerate(idx_a_neighbors)
+            phys_a = phys[cell_phys_id_map[idx_a]]
+            phys_b = phys[cell_phys_id_map[idx_b]]
 
-        area = connection_areas[conn_idx]
-        dist = connection_distances[conn_idx]
-        norm = connection_normals[conn_idx]
-
-        #hmm, perhaps these physics functions need to be more strictly typed
-        #Checking profview, I'm getting some runtime dispatch and GC here, I don't know why 
-        diffusion_temp_exchange!(
-            du, u,
-            idx_a, idx_b,
-            area, dist,
-            phys[phys_a_id], phys[phys_b_id],
-        )
+            solid_solid_flux!(
+                du, u, idx_a, idx_b, face_idx,
+                cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+                phys_a, phys_b,
+                rho_cache, mw_avg_cache,
+                change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+            )
+        end
     end
 
-    for (conn_idx, (idx_a, idx_b)) in connection_groups.fluid_solid
-        phys_a_id = cell_phys_id_map[idx_a]
-        phys_b_id = cell_phys_id_map[idx_b]
+    @batch for (idx_a, idx_a_neighbors) in enumerate(connection_groups.fluid_solid)
+        for (face_idx, idx_b) in enumerate(idx_a_neighbors)
+            phys_a = phys[cell_phys_id_map[idx_a]]
+            phys_b = phys[cell_phys_id_map[idx_b]]
 
-        area = connection_areas[conn_idx]
-        dist = connection_distances[conn_idx]
-        norm = connection_normals[conn_idx]
+            fluid_solid_flux!(
+                du, u, idx_a, idx_b, face_idx,
+                cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+                phys_a, phys_b,
+                rho_cache, mw_avg_cache,
+                change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+            )
+        end
+    end
 
-        diffusion_temp_exchange!(
-            du, u,
-            idx_a, idx_b,
-            area, dist,
-            phys[phys_a_id], phys[phys_b_id],
-        )
+    @batch for (idx_a, idx_a_neighbors) in enumerate(connection_groups.solid_fluid)
+        for (face_idx, idx_b) in enumerate(idx_a_neighbors)
+            phys_a = phys[cell_phys_id_map[idx_a]]
+            phys_b = phys[cell_phys_id_map[idx_b]]
+
+            solid_fluid_flux!(
+                du, u, idx_a, idx_b, face_idx,
+                cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+                phys_a, phys_b,
+                rho_cache, mw_avg_cache,
+                change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+            )
+        end
     end
 
     # ---- Internal Physics, Sources, Boundary Conditions, and Capacities ----
-    for (region_phys, region_function!, region_cells) in regions_phys_func_cells
+    @batch for (region_phys, region_function!, region_cells) in regions_phys_func_cells
         for cell_id in region_cells
             region_function!(
                 du, u, cell_id,
                 change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
                 cell_volumes[cell_id], rho_cache[cell_id], region_phys
             )
-
-            #=
-            try 
-            region_function!(
-                du, u, cell_id,
-                change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-                vol, rho, region_phys
-            )
-            catch e
-                println("vel_x, ", u.vel_x[cell_id])
-                println("vel_y, ", u.vel_y[cell_id])
-                println("vel_z, ", u.vel_z[cell_id])
-                println("pressure, ", u.pressure[cell_id])
-                println("temp, ", u.temp[cell_id])
-                println("mass_fractions, ", u.mass_fractions[:, cell_id])
-
-                println("vol, ", vol)
-                println("rho, ", rho)
-            end
-            =#
         end
     end
 end
