@@ -15,16 +15,16 @@ struct WallPhysics <: AbstractSolidPhysics
 end
 
 struct MethanolReformerConnectionGroups <: AbstractConnectionGroup
-    fluid_fluid::Vector{Tuple{Int,Tuple{Int,Int}}} #connection idx, (cell idx a, cell idx b)
-    solid_solid::Vector{Tuple{Int,Tuple{Int,Int}}}
-    fluid_solid::Vector{Tuple{Int,Tuple{Int,Int}}}
+    fluid_fluid::Vector{Tuple{Int, Tuple{Int, Int}}} #connection idx, (cell idx a, cell idx b)
+    solid_solid::Vector{Tuple{Int, Tuple{Int, Int}}}
+    fluid_solid::Vector{Tuple{Int, Tuple{Int, Int}}}
 end
 
 function methanol_reformer_init_conn_groups()
     return MethanolReformerConnectionGroups(
-        Tuple{Int,Tuple{Int,Int}}[],
-        Tuple{Int,Tuple{Int,Int}}[],
-        Tuple{Int,Tuple{Int,Int}}[]
+        Tuple{Int, Tuple{Int, Int}}[],
+        Tuple{Int, Tuple{Int, Int}}[],
+        Tuple{Int, Tuple{Int, Int}}[]
     )
 end
 
@@ -60,9 +60,13 @@ function connection_catagorizer!(connection_groups::MethanolReformerConnectionGr
         push!(connection_groups.fluid_fluid, (conn_idx, (idx_a, idx_b)))
     elseif type_a <: AbstractSolidPhysics && type_b <: AbstractSolidPhysics
         push!(connection_groups.solid_solid, (conn_idx, (idx_a, idx_b)))
-    elseif (type_a <: AbstractSolidPhysics && type_b <: AbstractFluidPhysics) ||
-           (type_a <: AbstractFluidPhysics && type_b <: AbstractSolidPhysics)
+    elseif (type_a <: AbstractFluidPhysics && type_b <: AbstractSolidPhysics)
         push!(connection_groups.fluid_solid, (conn_idx, (idx_a, idx_b)))
+    elseif (type_a <: AbstractSolidPhysics && type_b <: AbstractFluidPhysics) 
+        push!(connection_groups.fluid_solid, (conn_idx, (idx_b, idx_a)))
+        #notice how idx_a and idx_b are swapped here because we always want to ensure that fluids become before solids
+        #this is done to prevent having to do dynamic dispatch when getting cell rho because we always know that 
+        #we can use EOS for the first idx and get the rho property for the second idx
     end
 end
 
