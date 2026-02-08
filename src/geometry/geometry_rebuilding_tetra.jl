@@ -16,19 +16,19 @@ function calculate_tri_face_area(face_node_coordiantes)
     return norm(total_area_vec)
 end
 
-function rebuild_fvm_geometry(
-    cell_neighbors, cell_neighbors_node_ids::Vector{MVector{4, SVector{3, Int}}},
-    all_cell_face_map, map_respective_node_ids::Vector{NTuple{3, Int}},
-    node_coordinates, nodes_of_cells
-)
-    #The cells_data and connections map are still causing GC
+function rebuild_fvm_geometry_tetra!(
+        #mutated vars
+        cell_volumes, cell_centroids, 
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances, 
+        cell_face_areas, cell_face_normals,
+
+        #unmutated vars
+        node_coordinates, nodes_of_cells,
+        cell_neighbors, cell_neighbors_node_ids::Vector{MVector{4, SVector{3, Int}}},
+        all_cell_face_map, map_respective_node_ids::Vector{NTuple{3, Int}}
+    )
     CoordType = eltype(node_coordinates)
     T = eltype(CoordType)
-
-    n_cells = length(nodes_of_cells)
-
-    cell_volumes = Vector{T}(undef, n_cells)
-    cell_centroids = Vector{CoordType}(undef, n_cells)
 
     for cell_id in eachindex(nodes_of_cells)
         cell_nodes = nodes_of_cells[cell_id]
@@ -47,17 +47,11 @@ function rebuild_fvm_geometry(
         cell_centroids[cell_id] = cent
     end
 
-    n_cell_neighbors = length(cell_neighbors)
-
-    connection_areas = Vector{MVector{4, T}}(undef, n_cell_neighbors)
-    connection_normals = Vector{MVector{4, CoordType}}(undef, n_cell_neighbors)
-    connection_distances = Vector{MVector{4, T}}(undef, n_cell_neighbors)
-
     #for geometry optimization in the future, we might want to store a separate version of cell_neighbors that doesn't contain duplicates
     #this would only require making normals negative for the neighboring cell and would reduce the math needed
-    for this_cell_neighbors in cell_neighbors
+    for (cell_id, this_cell_neighbors) in enumerate(cell_neighbors)
         for (face_idx, neighbor_id) in enumerate(this_cell_neighbors)
-            face_node_indices = cell_neighbors_node_ids[face_idx] #cell_neighbors_node_ids[face_idx] looks like (1, 4, 7) 
+            face_node_indices = cell_neighbors_node_ids[cell_id][face_idx] #cell_neighbors_node_ids[face_idx] looks like (1, 4, 7) 
             node_1_coords = node_coordinates[face_node_indices[1]]
             node_2_coords = node_coordinates[face_node_indices[2]]
             node_3_coords = node_coordinates[face_node_indices[3]]
@@ -79,14 +73,11 @@ function rebuild_fvm_geometry(
             #get distance
             dist = norm(cell_centroids[cell_id] - cell_centroids[neighbor_id])
 
-            connection_areas[cell_id][face_idx] = total_area
-            connection_normals[cell_id][face_idx] = cell_normal
-            connection_distances[cell_id][face_idx] = dist
+            cell_neighbor_areas[cell_id][face_idx] = total_area
+            cell_neighbor_normals[cell_id][face_idx] = cell_normal
+            cell_neighbor_distances[cell_id][face_idx] = dist
         end
     end
-
-    cell_face_areas = fill(zero(MVector{4, T}), n_cells)
-    cell_face_normals = fill(zero(MVector{4, CoordType}), n_cells)
 
     for (i, (cell_id, face_idx)) in enumerate(all_cell_face_map)
         face_node_indices = map_respective_node_ids[i] #unconnected_map_respective_node_ids[i] looks like (1, 4, 7) 
@@ -104,6 +95,4 @@ function rebuild_fvm_geometry(
 
         cell_face_normals[cell_id][face_idx] = normalize(vec_out)
     end
-
-    return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, cell_face_areas, cell_face_normals
 end
