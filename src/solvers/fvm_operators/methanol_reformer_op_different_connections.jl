@@ -78,6 +78,8 @@ function methanol_reformer_f_test!(
     cell_face_areas, cell_face_normals, connection_groups::MethanolReformerConnectionGroups, phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
     regions_phys_func_cells::Vector{Tuple{AbstractPhysics,Function,Vector{Int}}},
     ax,
+    rho_cache, mw_avg_cache,
+    change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
 )
 
     #A_Ea_pairs = eachcol(reshape(p, :, n_reactions))
@@ -88,7 +90,28 @@ function methanol_reformer_f_test!(
 
     du .= 0.0
 
+    rho_cache = get_tmp(rho_cache, u)
+    mw_avg_cache = get_tmp(mw_avg_cache, u)
+
+    rho_cache .= 0.0
+    mw_avg_cache .= 0.0
+
+    change_in_molar_concentrations_cache = get_tmp(change_in_molar_concentrations_cache, u)
+    molar_concentrations_cache = get_tmp(molar_concentrations_cache, u) #just using mass fractions for cell 1, this may cause some issues later!
+    net_rates_cache = get_tmp(net_rates_cache, u)
+    
+    change_in_molar_concentrations_cache .= 0.0
+    molar_concentrations_cache .= 0.0
+    net_rates_cache .= 0.0
+    #even though react_cell!() already sets change_in_molar_concentrations_cache to .= 0.0, we're just doing .* 0.0 to all to make sure
+
     n_cells = length(cell_volumes)
+
+    for cell_id in eachindex(rho_cache)
+        phys_id = cell_phys_id_map[cell_id]
+        cell_rho!(u, phys[phys_id], cell_id, rho_cache, mw_avg_cache)
+    end
+
 
     #connections loop
     for (conn_idx, (idx_a, idx_b)) in connection_groups.fluid_fluid
@@ -102,8 +125,8 @@ function methanol_reformer_f_test!(
         #rm println("idx_a, ", idx_a, "  idx_b, ", idx_b)
         #rm println("area, ", area, "  dist, ", dist, "  norm, ", norm)
 
-        rho_a = get_cell_rho(u, phys[phys_a_id], idx_a)
-        rho_b = get_cell_rho(u, phys[phys_b_id], idx_b)
+        rho_a = rho_cache[idx_a]
+        rho_b = rho_cache[idx_b]
 
         #rm println("rho_a, ", rho_a, "  rho_b, ", rho_b)
 
@@ -116,16 +139,35 @@ function methanol_reformer_f_test!(
             phys[phys_a_id], phys[phys_b_id],
         )
 
-        if face_m_dot != 0.0
+        #= 
+        #we do a little debugging
+        if u.pressure[idx_a] != u.pressure[idx_b]
             println("idx_a, ", idx_a)
             println("idx_b, ", idx_b)
             println("pressure a, ", u.pressure[idx_a])
             println("pressure b, ", u.pressure[idx_b])
+            println("rho_a, ", rho_a)
+            println("rho_b, ", rho_b)
+            println("mu_a, ", phys[phys_a_id].mu)
+            println("mu_b, ", phys[phys_b_id].mu)
+            println("permeability_a, ", phys[phys_a_id].permeability)
+            println("permeability_b, ", phys[phys_b_id].permeability)
+            println("area, ", area)
+            println("dist, ", dist)
             println("face_m_dot, ", face_m_dot)
+            println(" ")
+            println("mw_avg a, ", get_mw_avg(u.mass_fractions[:, idx_a], phys[phys_a_id].species_molecular_weights))
+            println("mw_avg b, ", get_mw_avg(u.mass_fractions[:, idx_b], phys[phys_b_id].species_molecular_weights))
+            println("temp a, ", u.temp[idx_a])
+            println("temp b, ", u.temp[idx_b])
+            println("R_gas, ", R_gas)
+            println("rho_a, ", (u.pressure[idx_a] * get_mw_avg(u.mass_fractions[:, idx_a], phys[phys_a_id].species_molecular_weights)) / (R_gas * u.temp[idx_a]))
+            println("rho_b, ", (u.pressure[idx_b] * get_mw_avg(u.mass_fractions[:, idx_b], phys[phys_b_id].species_molecular_weights)) / (R_gas * u.temp[idx_b]))
         end
+        =#
 
         #println("face_m_dot, ", face_m_dot)
-
+        
         diffusion_temp_exchange!(
             du, u,
             idx_a, idx_b,
@@ -165,6 +207,8 @@ function methanol_reformer_f_test!(
         dist = connection_distances[conn_idx]
         norm = connection_normals[conn_idx]
 
+        #hmm, perhaps these physics functions need to be more strictly typed
+        #Checking profview, I'm getting some runtime dispatch and GC here, I don't know why 
         diffusion_temp_exchange!(
             du, u,
             idx_a, idx_b,
@@ -189,22 +233,13 @@ function methanol_reformer_f_test!(
         )
     end
 
-    #these are necessary because we can't pass in caches very easily so this will have to do for now. 
-    #this is not ideal and should be changed in the future
-    change_in_molar_concentrations_cache = zeros(eltype(u.mass_fractions), length(u.mass_fractions[:, 1]))
-    molar_concentrations_cache = zeros(eltype(u.mass_fractions), length(u.mass_fractions[:, 1])) #just using mass fractions for cell 1, this may cause some issues later!
-    net_rates_cache = zeros(eltype(u.mass_fractions), length(phys[1].chemical_reactions))
-
     # ---- Internal Physics, Sources, Boundary Conditions, and Capacities ----
     for (region_phys, region_function!, region_cells) in regions_phys_func_cells
         for cell_id in region_cells
-            vol = cell_volumes[cell_id]
-            rho = get_cell_rho(u, region_phys, cell_id)
-
             region_function!(
                 du, u, cell_id,
                 change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-                vol, rho, region_phys
+                cell_volumes[cell_id], rho_cache[cell_id], region_phys
             )
 
             #=
@@ -227,31 +262,6 @@ function methanol_reformer_f_test!(
             end
             =#
         end
-    end
-
-    for cell_id in eachindex(du.vel_x)
-        #=
-        if du.vel_x[cell_id] != 0.0
-            println(du.vel_x[cell_id])
-        end
-        if du.vel_y[cell_id] != 0.0
-            println(du.vel_y[cell_id])
-        end
-        if du.vel_z[cell_id] != 0.0
-            println(du.vel_z[cell_id])
-        end
-        if du.pressure[cell_id] != 0.0
-            println(du.pressure[cell_id])
-        end
-        #=
-        if du.temp[cell_id] != 0.0
-            println(du.temp[cell_id])
-        end
-        =#
-        if du.mass_fractions[:, cell_id] != [0.0, 0.0, 0.0, 0.0, 0.0]
-            println(du.mass_fractions[:, cell_id])
-        end
-        =#
     end
 end
 

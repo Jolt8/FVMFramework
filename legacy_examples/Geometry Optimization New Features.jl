@@ -21,7 +21,7 @@ grid_dimensions = (10, 5, 5)
 left = Ferrite.Vec{3}((0.0, 0.0, 0.0))
 right = Ferrite.Vec{3}((1.0, 1.0, 1.0))
 grid = generate_grid(Hexahedron, grid_dimensions, left, right)
-
+#=
 function get_node_coordinates(grid)
     n_nodes = length(grid.nodes)
 
@@ -434,6 +434,7 @@ function rebuild_fvm_geometry(
     end
     return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, unconnected_areas
 end
+=#
 
 #=
 NOTE TO FUTURE SELF ON PURE MUTATION:

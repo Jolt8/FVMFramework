@@ -50,6 +50,9 @@ export rebuild_fvm_geometry
 include("geometry/geometry_building.jl")
 export build_fvm_geo_into_struct, FVMGeometry, FVMGeometryTetra, FVMGeometryHexa
 
+include("geometry/topology_checking.jl")
+export check_cellset_connectivity, check_grid_connectivity
+
 # ----- Physics ----
 #   ---- Physics Types ----
 include("physics_types/abstract_physics_types.jl")
@@ -88,7 +91,7 @@ include("physics/physics_helper_functions.jl")
 export upwind, harmonic_mean #for fluxes
 export R_gas #constant referenced almost everywhere
 export van_t_hoft, arrenhius_k, K_gibbs_free #for chemical reactions
-export get_mw_avg, get_cell_rho, get_cell_cp #other misc props
+export mw_avg!, cell_rho!, get_cell_cp #other misc props
 
 # ----- Setup and Recording Methods -----
 #   ---- Sim Config ----
@@ -111,6 +114,11 @@ export rebuild_u_named, rebuild_u_named_vel
 #   ---- Preconditioners ----
 include("solvers/preconditioners.jl")
 export iluzero, algebraicmultigrid
+
+#   ---- Callbacks ----
+#       --- Progress Callbacks
+include("solvers/callbacks/progress_callbacks.jl")
+export show_t_progress, approximate_time_to_finish_cb
 
 #   ---- FVM Operators ----
 include("solvers/fvm_operators/methanol_reformer_op_different_connections.jl")

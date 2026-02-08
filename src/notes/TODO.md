@@ -24,6 +24,9 @@ TODO:
 
     - Create methods to more easily diagnose problems through logging. Graphing a certain variable over time would be very useful
         - this really needs to be worked on 
+        - Just some brainstorming:
+            - It would be nice if every single variable was tracked
+            - This could probably be achieevd through a debug version of each flux and internal physics function where if problems emerge such as values like NaN, Inf, -
 
     - Create a dedicated method for distributing a BC over a set of cell volumes or set of cell areas 
 

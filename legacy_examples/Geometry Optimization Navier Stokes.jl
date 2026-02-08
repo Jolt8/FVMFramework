@@ -21,7 +21,7 @@ grid_dimensions = (3, 3, 3)
 left = Ferrite.Vec{3}((0.0, 0.0, 0.0))
 right = Ferrite.Vec{3}((1.0, 1.0, 1.0))
 grid = generate_grid(Hexahedron, grid_dimensions, left, right)
-
+#=
 function get_node_coordinates(grid)
     n_nodes = length(grid.nodes)
 
@@ -447,13 +447,12 @@ function rebuild_fvm_geometry(
     end
     return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, unconnected_areas, unconnected_normals
 end
-
+=#
 #=
 NOTE TO FUTURE SELF ON PURE MUTATION:
     - Check Geometry Optimization Notes.txt or Geometry Optimization Only Mutation.jl for a full write-up 
     - TLDR: don't pass in a geometry cache or node_coordinates cache into FVM_iter_f! to avoid GC in creating new vectors in rebuild_fvm_geometry
 =#
-
 
 abstract type AbstractBC end
 

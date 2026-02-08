@@ -17,13 +17,14 @@ using NonlinearSolve
 import SparseConnectivityTracer, ADTypes
 using ILUZero
 using StaticArrays
+using PreallocationTools
+using ForwardDiff
 
 using Unitful
 
-grid = togrid("C://Users//wille//Desktop//FreeCad Projects//Methanol Reformer//MeOH for gmsh 3.msh")
+grid = togrid("C://Users//wille//Desktop//FreeCad Projects//Methanol Reformer//output.msh")
 
 grid.cellsets
-grid.facetsets
 
 #for CH3OH, HCOO, OH
 van_t_hoff_A_vec = [1.7e-6, 4.74e-13, 3.32e-14]
@@ -156,7 +157,7 @@ corrected_m_dot_per_volume = desired_m_dot / inlet_total_volume
 add_region!(
     config, "inlet",
     initial_conditions=ComponentVector(
-        vel_x=0.0, vel_y=1.0, vel_z=0.0,
+        vel_x=0.0, vel_y=-1.0, vel_z=0.0,
         pressure=110000.0,
         mass_fractions=initial_mass_fractions,
         temp=ustrip(270.0u"°C" |> u"K")
@@ -168,12 +169,14 @@ add_region!(
         vol, rho, phys
     )
         #internal physics
+        #=
         react_cell!(
             cell_id, du, u,
             change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
             vol, rho,
             phys,
         )
+            =#
 
         #sources
         du.pressure[cell_id] += corrected_m_dot_per_volume * vol
@@ -203,16 +206,17 @@ add_region!(
         vol, rho, phys
     )
         #internal physics
+        #=
         react_cell!(
             cell_id, du, u,
             change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
             vol, rho,
             phys,
         )
+            =#
 
         #sources
-        du.pressure[cell_id] = 0.0
-        #NOTE: setting the pressure to 0.0 here causes the simulation to crash with dtNaN
+        du.pressure[cell_id] *= 0.0
 
         #boundary conditions
 
@@ -245,7 +249,7 @@ add_region!(
 )
 
 #we might want to add something akin to distribute_over_set_volume!(du += input_wattage)
-total_heating_volume = get_cell_set_total_volume(grid, "wall", geo)
+total_heating_volume = get_cell_set_total_volume(grid, "heating_areas", geo)
 
 input_wattage = 100.0 # W
 corrected_volumetric_heating = input_wattage / total_heating_volume
@@ -282,6 +286,14 @@ connection_groups = methanol_reformer_init_conn_groups()
 
 du0, u0, geo, system = finish_fvm_config(config, connection_catagorizer!, connection_groups)
 
+N::Int = ForwardDiff.pickchunksize(length(u0))
+rho_cache = DiffCache(zeros(length(grid.cells)), N)
+mw_avg_cache = DiffCache(zeros(length(grid.cells)), N)
+
+change_in_molar_concentrations_cache = DiffCache(zeros(length(u_proto.mass_fractions[:, 1])), N)
+molar_concentrations_cache = DiffCache(zeros(length(u_proto.mass_fractions[:, 1])), N) #just using mass fractions for cell 1, this may cause some issues later!
+net_rates_cache = DiffCache(zeros(length(reforming_area_physics.chemical_reactions)), N)
+
 f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     du, u, p, t,
     geo.cell_neighbor_map,
@@ -289,24 +301,25 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     geo.connection_areas, geo.connection_normals, geo.connection_distances, geo.unconnected_cell_face_map,
     geo.cell_face_areas, geo.cell_face_normals, system.connection_groups, system.phys, system.cell_phys_id_map,
     system.regions_phys_func_cells,
-    system.u_axes
+    system.u_axes,
+    rho_cache, mw_avg_cache,
+    change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
 )
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
-t0, tMax = 0.0, 1000.0
-tspan = (0.0, 1000.0)
+t0 = 0.0
+tMax = 1000.0
+tspan = (t0, tMax)
 
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 #not sure if pure TracerSparsityDetector is faster
 
 p_guess = 0.0
 
+#test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.0000001), p_guess)
+#@time sol = solve(test_prob, Tsit5(), callback = approximate_time_to_finish_cb)
 
-desired_steps = 100
-save_interval = (tspan[end] / desired_steps)
-
-test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.0005), p_guess, saveat=save_interval)
-@time sol = solve(test_prob, Tsit5())
+#somehow adding reactions makes this less stiff
 
 #holy moly, this is soooo stiff, even with just 0.000005 s of sim time, it has to take 1700 steps! It also took 356 seconds 
 
@@ -316,18 +329,20 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype=float.(jac_sparsity))
 
 implicit_prob = ODEProblem(ode_func, u0, tspan, p_guess)
-#=
-desired_steps = 20
+
+desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
-#@time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true))
-VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), saveat=save_interval)
+@time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
+#VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), saveat=save_interval, callback=approximate_time_to_finish_cb)
 #I've heard that algebraicmultigrid is only better for more than 1e6 cells
-=#
-#TODO for tomorrow
-# - check darcy weisbach flow to make sure that differences in pressure are actually being applied
-# - It appears that the pressure in the inlet isn't leading to any flux so that's most likely the problem
 
+#FIXME: for some reason whenever the callback triggers, two copies of the callback's timestamp is written into the sol.u
+#for example:
+# 100.0 (normal)
+# 146.129038123 (not normal)
+# 146.129038123 (not normal)
+# 150.0 (normal)
 
 #this errored with: 
 #=
@@ -336,7 +351,6 @@ The profile data buffer is full; profiling probably terminated
 │ `Profile.init()` with a larger buffer and/or larger delay.
 =#
 
-rebuild_u_named(sol.u, u_proto)[25].mass_fractions
 
 record_sol = true
 
@@ -344,12 +358,11 @@ sim_file = @__FILE__
 
 u_named = rebuild_u_named_vel(sol.u, u_proto)
 
-test1 = u_named[1].pressure[9167]
+grid.cellsets["reforming_area"]
 
-#test2 = u_named[25].pressure[9167]
+u_named[1].pressure[6389]
 
-#test1 == test2
-
+u_named[end].pressure[6389]
 
 if record_sol == true
     sol_to_vtk(sol, u_named, grid, sim_file)

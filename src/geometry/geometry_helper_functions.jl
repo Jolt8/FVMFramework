@@ -64,6 +64,7 @@ function get_face_nodes(grid, cell_id, face_idx)
     return face_nodes
 end
 
+#this is currently broken, different regions/cell_sets do not seem to be considered neighbors 
 function get_neighbor_map(grid)
     nodes_of_cells = get_nodes_of_cells(grid)
     #returns:

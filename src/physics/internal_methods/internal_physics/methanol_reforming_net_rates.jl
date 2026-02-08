@@ -71,13 +71,27 @@ end
 
 
 function net_reaction_rate(rxn::MSRReaction, molar_concentrations, T, kf_A, kf_Ea, kr_A, kr_Ea)
+    
     P_CH3OH, P_H2O, P_CO, P_H2, P_CO2, 
     K_CH3O, K_HCOO, K_OH, 
     DEN = PAM_reaction(rxn, molar_concentrations, T)
 
+    #=
+    println("P_CH3OH, ", P_CH3OH)
+    println("P_H2O, ", P_H2O)
+    println("P_CO, ", P_CO)
+    println("P_H2, ", P_H2)
+    println("P_CO2, ", P_CO2)
+    println("K_CH3O, ", K_CH3O)
+    println("K_HCOO, ", K_HCOO)
+    println("K_OH, ", K_OH)
+    println("DEN, ", DEN)
+    println("")
+    =#
+
     k_MSR = rxn.kf_A * exp(-rxn.kf_Ea / (R_gas * T))
-    #K_eq_MSR = K_gibbs_free(rxn.K_gibbs_free_ref_temp, T, rxn.delta_gibbs_free_energy, rxn.heat_of_reaction)
-    K_eq_MSR = 100000.0
+    K_eq_MSR = K_gibbs_free(rxn.K_gibbs_free_ref_temp, T, rxn.delta_gibbs_free_energy, rxn.heat_of_reaction)
+    
     driving_force = 1.0 - ( (P_CO2 * P_H2^3) / (K_eq_MSR * P_CH3OH * P_H2O) )
     
     rate = (k_MSR * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2) #max just to ensure we don't divide by zero
@@ -86,6 +100,7 @@ function net_reaction_rate(rxn::MSRReaction, molar_concentrations, T, kf_A, kf_E
 end
 
 function net_reaction_rate(rxn::MDReaction, molar_concentrations, T, kf_A, kf_Ea, kr_A, kr_Ea)
+    
     P_CH3OH, P_H2O, P_CO, P_H2, P_CO2, 
     K_CH3O, K_HCOO, K_OH, 
     DEN = PAM_reaction(rxn, molar_concentrations, T)
@@ -100,6 +115,7 @@ function net_reaction_rate(rxn::MDReaction, molar_concentrations, T, kf_A, kf_Ea
 end
 
 function net_reaction_rate(rxn::WGSReaction, molar_concentrations, T, kf_A, kf_Ea, kr_A, kr_Ea)
+    
     P_CH3OH, P_H2O, P_CO, P_H2, P_CO2, 
     K_CH3O, K_HCOO, K_OH, 
     DEN = PAM_reaction(rxn, molar_concentrations, T)
