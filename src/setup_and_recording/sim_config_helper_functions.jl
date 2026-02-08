@@ -34,7 +34,6 @@ function get_facet_set_cells_respective_areas(grid, set_name, geo)
     return cell_ids_respective_areas
 end
 
-
 function get_cell_ids_in_facet_set(grid, set_name)
     cell_ids_in_facet_set = Int[]
 

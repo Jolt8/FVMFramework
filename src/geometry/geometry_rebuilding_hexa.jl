@@ -96,13 +96,13 @@ function rebuild_fvm_geometry(
             total_area_vec = area_vec_1 + area_vec_2
             total_area = norm(total_area_vec)
 
-            #make sure it's actually pointing away
+            #get normal
+            #make sure the cell's normal is actually pointing away
             vec_AB = cell_centroids[neighbor_id] - cell_centroids[cell_id]
             if dot(total_area_vec, vec_AB) < 0
                 total_area_vec = -total_area_vec
             end
 
-            #get normal
             cell_normal = normalize(total_area_vec)
 
             #get distance 
@@ -115,26 +115,9 @@ function rebuild_fvm_geometry(
     end
     
     cell_face_areas = fill(zero(MVector{6, T}), n_cells)
-    cell_face_normals = fill(zero(MVector{6, CoordType}), n_cells)
+    cell_face_normals = fill(zero(MVector{6, CoordType}), n_cells)    
     
-    #if the above breaks:
-    #unconnected_areas = Vector{SVector{6, T}}(undef, n_cells)
-    #unconnected_normals = Vector{SVector{6, CoordType}}(undef, n_cells)
-    
-    
-    for (i, (cell_id, face_idx)) in enumerate(all_cell_face_map)
-        #=
-        areas = MVector{6, T}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        normals = MVector{6, CoordType}(
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0), 
-            (0.0, 0.0, 0.0)
-        )
-        =#
-        
+    for (i, (cell_id, face_idx)) in enumerate(all_cell_face_map)     
         face_node_indices = map_respective_node_ids[i] #unconnected_map_respective_node_ids[i] looks like (1, 4, 7, 21) 
         node_1_coords = node_coordinates[face_node_indices[1]]
         node_2_coords = node_coordinates[face_node_indices[2]]
@@ -156,19 +139,7 @@ function rebuild_fvm_geometry(
         vec_out = (node_1_coords + node_2_coords + node_3_coords + node_4_coords) / 4 - cell_centroids[cell_id]
 
         cell_face_normals[cell_id][face_idx] = normalize(vec_out)
-
-        #cell_face_areas[cell_id] = SVector(areas)
-        #cell_face_normals[cell_id] = SVector(normals)
-    end
-
-    frozen_areas = Vector{SVector{6, T}}(undef, n_cells)
-    frozen_normals = Vector{SVector{6, CoordType}}(undef, n_cells)
-
-    #we freeze them back into SVectors
-    for cell_id in eachindex(cell_face_areas)
-        frozen_areas[cell_id] = SVector(cell_face_areas[cell_id])
-        frozen_normals[cell_id] = SVector(cell_face_normals[cell_id])
     end
     
-    return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, frozen_areas, frozen_normals
+    return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, cell_face_areas, cell_face_normals
 end

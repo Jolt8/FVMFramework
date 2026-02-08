@@ -49,12 +49,12 @@ function rebuild_fvm_geometry(
 
     n_cell_neighbors = length(cell_neighbors)
 
-    connection_areas = Vector{T}(undef, n_cell_neighbors)
-    connection_normals = Vector{CoordType}(undef, n_cell_neighbors)
-    #the above connection_normals causes some GC (4% of optimization runtime)
-    connection_distances = Vector{T}(undef, n_cell_neighbors)
+    connection_areas = Vector{MVector{4, T}}(undef, n_cell_neighbors)
+    connection_normals = Vector{MVector{4, CoordType}}(undef, n_cell_neighbors)
+    connection_distances = Vector{MVector{4, T}}(undef, n_cell_neighbors)
 
-
+    #for geometry optimization in the future, we might want to store a separate version of cell_neighbors that doesn't contain duplicates
+    #this would only require making normals negative for the neighboring cell and would reduce the math needed
     for this_cell_neighbors in cell_neighbors
         for (face_idx, neighbor_id) in enumerate(this_cell_neighbors)
             face_node_indices = cell_neighbors_node_ids[face_idx] #cell_neighbors_node_ids[face_idx] looks like (1, 4, 7) 
@@ -62,26 +62,26 @@ function rebuild_fvm_geometry(
             node_2_coords = node_coordinates[face_node_indices[2]]
             node_3_coords = node_coordinates[face_node_indices[3]]
 
-            #get_area
+            #get area
             total_area_vec = 0.5 * cross_product(node_2_coords - node_1_coords, node_3_coords - node_1_coords)
 
             total_area = norm(total_area_vec)
 
-            #make sure it's actually pointing away
+            #get normal
+            #make sure the cell's normal is actually pointing away
             vec_AB = cell_centroids[neighbor_id] - cell_centroids[cell_id]
             if dot(total_area_vec, vec_AB) < 0
                 total_area_vec = -total_area_vec
             end
 
-            #get normal
             cell_normal = normalize(total_area_vec)
 
-            #get distance 
+            #get distance
             dist = norm(cell_centroids[cell_id] - cell_centroids[neighbor_id])
 
-            connection_areas[i] = total_area
-            connection_normals[i] = cell_normal
-            connection_distances[i] = dist
+            connection_areas[cell_id][face_idx] = total_area
+            connection_normals[cell_id][face_idx] = cell_normal
+            connection_distances[cell_id][face_idx] = dist
         end
     end
 
@@ -94,7 +94,6 @@ function rebuild_fvm_geometry(
         node_2_coords = node_coordinates[face_node_indices[2]]
         node_3_coords = node_coordinates[face_node_indices[3]]
 
-        #get_area
         total_area_vec = 0.5 * cross_product(node_2_coords - node_1_coords, node_3_coords - node_1_coords)
 
         total_area = norm(total_area_vec)
@@ -106,5 +105,5 @@ function rebuild_fvm_geometry(
         cell_face_normals[cell_id][face_idx] = normalize(vec_out)
     end
 
-    return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, frozen_areas, frozen_normals
+    return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, cell_face_areas, cell_face_normals
 end
