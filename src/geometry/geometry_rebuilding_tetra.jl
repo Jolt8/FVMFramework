@@ -17,7 +17,7 @@ function calculate_tri_face_area(face_node_coordiantes)
 end
 
 function rebuild_fvm_geometry(
-    cell_neighbor_map, neighbor_map_respective_node_ids::Vector{NTuple{3, Int}},
+    cell_neighbors, cell_neighbors_node_ids::Vector{MVector{4, SVector{3, Int}}},
     all_cell_face_map, map_respective_node_ids::Vector{NTuple{3, Int}},
     node_coordinates, nodes_of_cells
 )
@@ -47,40 +47,42 @@ function rebuild_fvm_geometry(
         cell_centroids[cell_id] = cent
     end
 
-    n_connections = length(cell_neighbor_map)
+    n_cell_neighbors = length(cell_neighbors)
 
-    connection_areas = Vector{T}(undef, n_connections)
-    connection_normals = Vector{CoordType}(undef, n_connections)
+    connection_areas = Vector{T}(undef, n_cell_neighbors)
+    connection_normals = Vector{CoordType}(undef, n_cell_neighbors)
     #the above connection_normals causes some GC (4% of optimization runtime)
-    connection_distances = Vector{T}(undef, n_connections)
+    connection_distances = Vector{T}(undef, n_cell_neighbors)
 
 
-    for (i, (cell_id, neighbor_id)) in enumerate(cell_neighbor_map)
-        face_node_indices = neighbor_map_respective_node_ids[i] #map_respective_node_ids[i] looks like (1, 4, 7, 21) 
-        node_1_coords = node_coordinates[face_node_indices[1]]
-        node_2_coords = node_coordinates[face_node_indices[2]]
-        node_3_coords = node_coordinates[face_node_indices[3]]
+    for this_cell_neighbors in cell_neighbors
+        for (face_idx, neighbor_id) in enumerate(this_cell_neighbors)
+            face_node_indices = cell_neighbors_node_ids[face_idx] #cell_neighbors_node_ids[face_idx] looks like (1, 4, 7) 
+            node_1_coords = node_coordinates[face_node_indices[1]]
+            node_2_coords = node_coordinates[face_node_indices[2]]
+            node_3_coords = node_coordinates[face_node_indices[3]]
 
-        #get_area
-        total_area_vec = 0.5 * cross_product(node_2_coords - node_1_coords, node_3_coords - node_1_coords)
+            #get_area
+            total_area_vec = 0.5 * cross_product(node_2_coords - node_1_coords, node_3_coords - node_1_coords)
 
-        total_area = norm(total_area_vec)
+            total_area = norm(total_area_vec)
 
-        #make sure it's actuall ypointing away
-        vec_AB = cell_centroids[neighbor_id] - cell_centroids[cell_id]
-        if dot(total_area_vec, vec_AB) < 0
-            total_area_vec = -total_area_vec
+            #make sure it's actually pointing away
+            vec_AB = cell_centroids[neighbor_id] - cell_centroids[cell_id]
+            if dot(total_area_vec, vec_AB) < 0
+                total_area_vec = -total_area_vec
+            end
+
+            #get normal
+            cell_normal = normalize(total_area_vec)
+
+            #get distance 
+            dist = norm(cell_centroids[cell_id] - cell_centroids[neighbor_id])
+
+            connection_areas[i] = total_area
+            connection_normals[i] = cell_normal
+            connection_distances[i] = dist
         end
-
-        #get normal
-        cell_normal = normalize(total_area_vec)
-
-        #get distance 
-        dist = norm(cell_centroids[cell_id] - cell_centroids[neighbor_id])
-
-        connection_areas[i] = total_area
-        connection_normals[i] = cell_normal
-        connection_distances[i] = dist
     end
 
     cell_face_areas = fill(zero(MVector{4, T}), n_cells)
@@ -93,8 +95,8 @@ function rebuild_fvm_geometry(
 
     for (i, (cell_id, face_idx)) in enumerate(all_cell_face_map)
         #=
-        curr_areas = MVector{4,T}(0.0, 0.0, 0.0, 0.0)
-        curr_normals = MVector{4,CoordType}(
+        curr_areas = MVector{4, T}(0.0, 0.0, 0.0, 0.0)
+        curr_normals = MVector{4, CoordType}(
             (0.0, 0.0, 0.0),
             (0.0, 0.0, 0.0),
             (0.0, 0.0, 0.0),
