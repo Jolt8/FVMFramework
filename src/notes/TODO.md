@@ -34,3 +34,7 @@ TODO:
 
     - Add a method to finish_fvm_config(...) to take all cells that are not under a cell set and add them to a default set with either a user defined default region or a default default region with no physics or variables 
         - We would also have to exclude it from the connections map
+
+    - Create a method for doing distributing computing by recruiting my home PC as a worker to prevent having to do simulation on my laptop in class
+
+    - Multithreading is coming! 

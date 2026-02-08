@@ -52,7 +52,7 @@ function compress_geo_to_struct(
     return FVMGeometryHexa(
         cell_neighbor_map,
         cell_volumes, cell_centroids,
-        connection_areas, connection_normals, connection_distances,
+        cell_connection_areas, cell_connection_normals, cell_connection_distances,
         unconnected_cell_face_map,
         cell_face_areas, cell_face_normals
     )

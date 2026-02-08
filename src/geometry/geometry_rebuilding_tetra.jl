@@ -88,22 +88,7 @@ function rebuild_fvm_geometry(
     cell_face_areas = fill(zero(MVector{4, T}), n_cells)
     cell_face_normals = fill(zero(MVector{4, CoordType}), n_cells)
 
-    #= if the above breaks:
-    areas = Vector{SVector{4, T}}(undef, n_cells)
-    normals = Vector{SVector{4, CoordType}}(undef, n_cells)
-    =#
-
     for (i, (cell_id, face_idx)) in enumerate(all_cell_face_map)
-        #=
-        curr_areas = MVector{4, T}(0.0, 0.0, 0.0, 0.0)
-        curr_normals = MVector{4, CoordType}(
-            (0.0, 0.0, 0.0),
-            (0.0, 0.0, 0.0),
-            (0.0, 0.0, 0.0),
-            (0.0, 0.0, 0.0),
-        )
-        =#
-
         face_node_indices = map_respective_node_ids[i] #unconnected_map_respective_node_ids[i] looks like (1, 4, 7) 
         node_1_coords = node_coordinates[face_node_indices[1]]
         node_2_coords = node_coordinates[face_node_indices[2]]
@@ -119,18 +104,6 @@ function rebuild_fvm_geometry(
         vec_out = (node_1_coords + node_2_coords + node_3_coords) / 3 - cell_centroids[cell_id]
 
         cell_face_normals[cell_id][face_idx] = normalize(vec_out)
-
-        #cell_face_areas[cell_id] = SVector(areas)
-        #cell_face_normals[cell_id] = SVector(normals)
-    end
-
-    frozen_areas = Vector{SVector{4, T}}(undef, n_cells)
-    frozen_normals = Vector{SVector{4, CoordType}}(undef, n_cells)
-
-    #we freeze them back into SVectors
-    for cell_id in eachindex(cell_face_areas)
-        frozen_areas[cell_id] = SVector(cell_face_areas[cell_id])
-        frozen_normals[cell_id] = SVector(cell_face_normals[cell_id])
     end
 
     return cell_volumes, cell_centroids, connection_areas, connection_normals, connection_distances, frozen_areas, frozen_normals

@@ -67,6 +67,7 @@ function add_region!(
 end
 
 #this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
+#this needs to be updated, it currently doesn't work
 function add_facet_region!(
         config, name;
         initial_conditions,
