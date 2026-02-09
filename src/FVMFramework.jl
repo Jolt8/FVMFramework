@@ -40,13 +40,13 @@ import Logging
 # ----- Geometry -----
 include("geometry/geometry_helper_functions.jl")
 export get_node_coordinates, get_cell_topology, get_nodes_of_cells, get_face_nodes
-export get_neighbor_map, get_unconnected_map, cross_product
+export get_cell_neighbors, get_unconnected_map, get_cell_face_map, cross_product
 
 include("geometry/geometry_rebuilding_tetra.jl")
-export rebuild_fvm_geometry
+export rebuild_fvm_geometry_tetra!
 
 include("geometry/geometry_rebuilding_hexa.jl")
-export rebuild_fvm_geometry
+export rebuild_fvm_geometry_hexa!
 
 include("geometry/geometry_building.jl")
 export build_fvm_geo_into_struct, FVMGeometry, FVMGeometryTetra, FVMGeometryHexa
@@ -92,7 +92,7 @@ include("physics/physics_helper_functions.jl")
 export upwind, harmonic_mean #for fluxes
 export R_gas #constant referenced almost everywhere
 export van_t_hoft, arrenhius_k, K_gibbs_free #for chemical reactions
-export mw_avg!, cell_rho!, get_cell_cp #other misc props
+export mw_avg!, rho_ideal!, get_cell_cp #other misc props
 
 # ----- Setup and Recording Methods -----
 #   ---- Sim Config ----

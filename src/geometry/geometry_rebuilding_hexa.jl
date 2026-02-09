@@ -47,7 +47,7 @@ function rebuild_fvm_geometry_hexa!(
 
         #unmutated vars
         node_coordinates, nodes_of_cells,
-        cell_neighbors, cell_neighbors_node_ids::Vector{MVector{6, SVector{4, Int}}}, 
+        cell_neighbors, cell_neighbors_node_ids, 
         all_cell_face_map, map_respective_node_ids::Vector{NTuple{4, Int}}
     )
     CoordType = eltype(node_coordinates)
@@ -70,8 +70,8 @@ function rebuild_fvm_geometry_hexa!(
         cell_centroids[cell_id] = cent
     end
 
-    for (cell_id, this_cell_neighbors) in enumerate(cell_neighbors)
-        for (face_idx, neighbor_id) in enumerate(this_cell_neighbors)
+    for (cell_id, this_cell_neighbors) in cell_neighbors
+        for (neighbor_id, face_idx) in this_cell_neighbors
             face_node_indices = cell_neighbors_node_ids[cell_id][face_idx] #cell_neighbors_node_ids[face_idx] looks like (1, 4, 7, 21) 
             node_1_coords = node_coordinates[face_node_indices[1]]
             node_2_coords = node_coordinates[face_node_indices[2]]

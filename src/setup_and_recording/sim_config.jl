@@ -49,7 +49,7 @@ function add_region!(
     initial_conditions,
     region_physics,
     region_function,
-    )
+)
 
     region_cells = collect(getcellset(config.grid, name))
 
@@ -69,14 +69,14 @@ end
 #this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
 #this needs to be updated, it currently doesn't work
 function add_facet_region!(
-        config, name;
-        initial_conditions,
-        region_physics,
-        region_function,
-    )
+    config, name;
+    initial_conditions,
+    region_physics,
+    region_function,
+)
 
     region_cells = get_cell_ids_in_facet_set(config.grid, name)
-    
+
     for cell_id in region_cells
         for field in propertynames(initial_conditions)
             if ndims(getproperty(config.u_proto, field)) > 1 #for mass fractions
@@ -94,6 +94,7 @@ end
 
 #we should probably find a way to make the creation of these structs automatic 
 abstract type AbstractConnectionGroup end
+finalize_connection_groups(groups::AbstractConnectionGroup) = groups
 
 struct FVMSystem
     connection_groups::AbstractConnectionGroup
@@ -117,26 +118,30 @@ function finish_fvm_config(config, connection_catagorizer!, connection_groups::A
         push!(regions_phys_func_cells, (region.region_physics, region.region_function, region.region_cells))
         push!(phys, region.region_physics)
 
-        for cell_id in region.region_cells
+        @batch for cell_id in region.region_cells
             cell_phys_id_map[cell_id] = i
         end
     end
 
-    for (idx_a, idx_b) in config.geo.cell_neighbors
-        a_phys_id = cell_phys_id_map[idx_a]
-        b_phys_id = cell_phys_id_map[idx_b]
-        
-        phys_a = phys[a_phys_id]
-        phys_b = phys[b_phys_id]
+    @batch for (idx_a, idx_a_neighbors) in config.geo.cell_neighbors
+        current_connection = (idx_a, Int[]) #(cell_id, Vector{neighbor_ids})
+        for (idx_b, face_idx) in idx_a_neighbors
+            if idx_b <= 0
+                continue
+            end
+            phys_a = phys[cell_phys_id_map[idx_a]]
+            phys_b = phys[cell_phys_id_map[idx_b]]
 
-        connection_catagorizer!(connection_groups, idx_a, idx_b, typeof(phys_a), typeof(phys_b))
+            push!(current_connection[2], idx_b)
+            connection_catagorizer!(connection_groups, current_connection, idx_a, idx_b, face_idx, typeof(phys_a), typeof(phys_b))
+        end
     end
 
     u0 = Vector(config.u_proto)
     du0 = u0 .* 0.0
 
     return du0, u0, config.geo, FVMSystem(
-        connection_groups, phys, cell_phys_id_map,
+        finalize_connection_groups(connection_groups), phys, cell_phys_id_map,
         regions_phys_func_cells,
         config.u_axes,
     )

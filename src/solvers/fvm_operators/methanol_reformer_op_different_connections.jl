@@ -16,67 +16,58 @@ struct WallPhysics <: AbstractSolidPhysics
 end
 
 struct MethanolReformerConnectionGroups <: AbstractConnectionGroup
-    fluid_fluid::Vector{Vector{Int}}
-    solid_solid::Vector{Vector{Int}}
-    fluid_solid::Vector{Vector{Int}}
-    solid_fluid::Vector{Vector{Int}}
+    fluid_fluid::Vector{Tuple{Int, Vector{Tuple{Int,Int}}}}
+    solid_solid::Vector{Tuple{Int, Vector{Tuple{Int,Int}}}}
+    fluid_solid::Vector{Tuple{Int, Vector{Tuple{Int,Int}}}}
+    solid_fluid::Vector{Tuple{Int, Vector{Tuple{Int,Int}}}}
+end
+
+struct MethanolReformerConnectionGroupsBuilder <: AbstractConnectionGroup
+    fluid_fluid::Vector{Vector{Tuple{Int, Int}}}
+    solid_solid::Vector{Vector{Tuple{Int, Int}}}
+    fluid_solid::Vector{Vector{Tuple{Int, Int}}}
+    solid_fluid::Vector{Vector{Tuple{Int, Int}}}
 end
 
 function methanol_reformer_init_conn_groups(grid)
     n_cells = length(grid.cells)
-    return MethanolReformerConnectionGroups(
-        [Vector{Int}() for _ in 1:n_cells],
-        [Vector{Int}() for _ in 1:n_cells],
-        [Vector{Int}() for _ in 1:n_cells],
-        [Vector{Int}() for _ in 1:n_cells]
+    return MethanolReformerConnectionGroupsBuilder(
+        [Vector{Tuple{Int, Int}}() for _ in 1:n_cells],
+        [Vector{Tuple{Int, Int}}() for _ in 1:n_cells],
+        [Vector{Tuple{Int, Int}}() for _ in 1:n_cells],
+        [Vector{Tuple{Int, Int}}() for _ in 1:n_cells]
     )
 end
 
-#this fucking sucks, but I can't think of anything better, there's got to be a way to leverage dynamic dispatch, but I can't think of anything
-#perhaps a function like apply_flux!(args) that takes in all the things needed to do a 
-#flux calculation, but dynamically dispatches depending on the type of a_phys and b_phys
-#the only issue with this is that instead of allowing the CPU to perform the same operations for a set like 
-#fluid_fluid, the methods would randomly change each time (bad for SIMD I think)
-#another method would be to create a function that acts like connection catagorizer below, but pushes depending on the types
-#ex. :
-#=
-function connection_catagorizer(connection_groups::MethanolReformerConnectionGroups, conn_idx, idx_a, idx_b, a_phys_type::Type{<:AbstractFluidPhysics}, b_phys_type::Type{<:AbstractFluidPhysics})
-    push!(connection_groups.fluid_fluid, (conn_idx, (idx_a, idx_b)))
+#this is to remove cells that have no connecitons in each connection group 
+function finalize_connection_groups(builder::MethanolReformerConnectionGroupsBuilder)
+    return MethanolReformerConnectionGroups(
+        [(idx_a, builder.fluid_fluid[idx_a]) for idx_a in 1:length(builder.fluid_fluid) if !isempty(builder.fluid_fluid[idx_a])],
+        [(idx_a, builder.solid_solid[idx_a]) for idx_a in 1:length(builder.solid_solid) if !isempty(builder.solid_solid[idx_a])],
+        [(idx_a, builder.fluid_solid[idx_a]) for idx_a in 1:length(builder.fluid_solid) if !isempty(builder.fluid_solid[idx_a])],
+        [(idx_a, builder.solid_fluid[idx_a]) for idx_a in 1:length(builder.solid_fluid) if !isempty(builder.solid_fluid[idx_a])]
+    )
 end
 
-function connection_catagorizer(connection_groups::MethanolReformerConnectionGroups, conn_idx, idx_a, idx_b, a_phys_type::Type{<:AbstractSolidPhysics}, b_phys_type::Type{<:AbstractSolidPhysics})
-    push!(connection_groups.solid_solid, (conn_idx, (idx_a, idx_b)))
-end
-
-function connection_catagorizer(connection_groups::MethanolReformerConnectionGroups, conn_idx, idx_a, idx_b, a_phys_type::Type{<:AbstractFluidPhysics}, b_phys_type::Type{<:AbstractSolidPhysics})
-    push!(connection_groups.fluid_solid, (conn_idx, (idx_a, idx_b)))
-end
-
-function connection_catagorizer(connection_groups::MethanolReformerConnectionGroups, conn_idx, idx_a, idx_b, a_phys_type::Type{<:AbstractSolidPhysics}, b_phys_type::Type{<:AbstractFluidPhysics})
-    push!(connection_groups.solid_fluid, (conn_idx, (idx_a, idx_b)))
-end
-=#
-# I honestly think the above is worse
-
-function connection_catagorizer!(connection_groups::MethanolReformerConnectionGroups, idx_a, idx_b, type_a, type_b)
+function connection_catagorizer!(builder::MethanolReformerConnectionGroupsBuilder, current_connection, idx_a, idx_b, face_idx, type_a, type_b)
     if type_a <: AbstractFluidPhysics && type_b <: AbstractFluidPhysics
-        push!(connection_groups.fluid_fluid[idx_a], idx_b)
+        push!(builder.fluid_fluid[idx_a], (idx_b, face_idx))
     elseif type_a <: AbstractSolidPhysics && type_b <: AbstractSolidPhysics
-        push!(connection_groups.solid_solid[idx_a], idx_b)
+        push!(builder.solid_solid[idx_a], (idx_b, face_idx))
     elseif (type_a <: AbstractFluidPhysics && type_b <: AbstractSolidPhysics)
-        push!(connection_groups.fluid_solid[idx_a], idx_b)
-    elseif (type_a <: AbstractSolidPhysics && type_b <: AbstractFluidPhysics) 
-        push!(connection_groups.solid_fluid[idx_a], idx_b)
-    end
+        push!(builder.fluid_solid[idx_a], (idx_b, face_idx))
+    elseif (type_a <: AbstractSolidPhysics && type_b <: AbstractFluidPhysics)
+        push!(builder.solid_fluid[idx_a], (idx_b, face_idx))
+    end 
 end
 
 function fluid_fluid_flux!(
-        du, u, idx_a, idx_b, face_idx,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        phys_a, phys_b,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    du, u, idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+    phys_a, phys_b,
+    rho_cache, mw_avg_cache,
+    change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+)
     area = cell_neighbor_areas[idx_a][face_idx]
     dist = cell_neighbor_distances[idx_a][face_idx]
     norm = cell_neighbor_normals[idx_a][face_idx]
@@ -86,13 +77,13 @@ function fluid_fluid_flux!(
 
     #mutating-ish, it mutates du.pressure for a
     face_m_dot = continuity_and_momentum_darcy(
-        du, u, 
+        du, u,
         idx_a, idx_b,
         area, norm, dist,
         rho_a, rho_b,
         phys_a, phys_b
     )
-    
+
     diffusion_temp_exchange!(
         du, u,
         idx_a, idx_b,
@@ -126,16 +117,16 @@ function fluid_fluid_flux!(
 end
 
 function solid_solid_flux!(
-        du, u, idx_a, idx_b, face_idx,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        phys_a, phys_b,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    du, u, idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+    phys_a, phys_b,
+    rho_cache, mw_avg_cache,
+    change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+)
     area = cell_neighbor_areas[idx_a][face_idx]
     dist = cell_neighbor_distances[idx_a][face_idx]
     norm = cell_neighbor_normals[idx_a][face_idx]
-    
+
     rho_a = phys_a.rho
     rho_b = phys_b.rho
 
@@ -155,7 +146,7 @@ function fluid_solid_flux!(
     phys_a, phys_b,
     rho_cache, mw_avg_cache,
     change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+)
     area = cell_neighbor_areas[idx_a][face_idx]
     dist = cell_neighbor_distances[idx_a][face_idx]
     norm = cell_neighbor_normals[idx_a][face_idx]
@@ -171,20 +162,20 @@ function fluid_solid_flux!(
     )
 end
 
-function solid_fluid_flux(
+function solid_fluid_flux!(
     du, u, idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     phys_a, phys_b,
     rho_cache, mw_avg_cache,
     change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+)
     area = cell_neighbor_areas[idx_a][face_idx]
     dist = cell_neighbor_distances[idx_a][face_idx]
     norm = cell_neighbor_normals[idx_a][face_idx]
-    
+
     rho_a = phys_a.rho
     rho_b = rho_ideal!(u, idx_b, rho_cache, mw_avg_cache)
-    
+
     diffusion_temp_exchange!(
         du, u,
         idx_a, idx_b,
@@ -195,13 +186,12 @@ end
 
 function methanol_reformer_f_test!(
         du, u, p, t,
-        cell_neighbor_map,
         cell_volumes, cell_centroids,
         cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        unconnected_cell_face_map,
-        cell_face_areas, cell_face_normals, connection_groups::MethanolReformerConnectionGroups, 
+        unconnected_cell_face_map, cell_face_areas, cell_face_normals,
+        connection_groups::MethanolReformerConnectionGroups,
         phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int},
-        regions_phys_func_cells::Vector{Tuple{AbstractPhysics,Function,Vector{Int}}},
+        regions_phys_func_cells::Vector{Tuple{AbstractPhysics, Function, Vector{Int}}},
         ax,
         rho_cache, mw_avg_cache,
         change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
@@ -212,19 +202,19 @@ function methanol_reformer_f_test!(
     du .= 0.0
 
     rho_cache = get_tmp(rho_cache, u)
-    rho_cache .*= 0.0
-    
+    rho_cache .= 0.0
+
     mw_avg_cache = get_tmp(mw_avg_cache, u)
-    mw_avg_cache .*= 0.0
+    mw_avg_cache .= 0.0
 
     change_in_molar_concentrations_cache = get_tmp(change_in_molar_concentrations_cache, u)
-    change_in_molar_concentrations_cache .*= 0.0
+    change_in_molar_concentrations_cache .= 0.0
 
     molar_concentrations_cache = get_tmp(molar_concentrations_cache, u) #just using mass fractions for cell 1, this may cause some issues later!
-    molar_concentrations_cache .*= 0.0
+    molar_concentrations_cache .= 0.0
 
     net_rates_cache = get_tmp(net_rates_cache, u)
-    net_rates_cache .*= 0.0
+    net_rates_cache .= 0.0
     #even though react_cell!() already sets change_in_molar_concentrations_cache to .= 0.0, we're just doing .*= 0.0 to all to make sure
 
 
@@ -250,11 +240,20 @@ function methanol_reformer_f_test!(
     end
     =#
 
+    #instead of updating rho in each flux and internal physics, we could do an initial property retrieval loop
+    #the only disadvantage is that once again, solids can't do rho_ideal!() and just have phys.rho
+    #=
+    @batch for cell_id in eachindex(cell_volumes)
+        mw_avg!(u, cell_id, molecular_weights, mw_avg_cache)
+        rho_ideal!(u, cell_id, rho_cache, mw_avg_cache)
+    end
+    =#
+
     #connections loops
     #look into storing this data into a CSR in the future
-    @batch for (idx_a, idx_a_neighbors) in enumerate(connection_groups.fluid_fluid)
-        for (face_idx, idx_b) in enumerate(idx_a_neighbors)
-            phys_a = phys[cell_phys_id_map[idx_a]]
+    @batch for (idx_a, neighbors) in connection_groups.fluid_fluid
+        phys_a = phys[cell_phys_id_map[idx_a]]
+        for (idx_b, face_idx) in neighbors
             phys_b = phys[cell_phys_id_map[idx_b]]
 
             fluid_fluid_flux!(
@@ -267,9 +266,9 @@ function methanol_reformer_f_test!(
         end
     end
 
-    @batch for (idx_a, idx_a_neighbors) in enumerate(connection_groups.solid_solid)
-        for (face_idx, idx_b) in enumerate(idx_a_neighbors)
-            phys_a = phys[cell_phys_id_map[idx_a]]
+    @batch for (idx_a, neighbors) in connection_groups.solid_solid
+        phys_a = phys[cell_phys_id_map[idx_a]]
+        for (idx_b, face_idx) in neighbors
             phys_b = phys[cell_phys_id_map[idx_b]]
 
             solid_solid_flux!(
@@ -282,9 +281,9 @@ function methanol_reformer_f_test!(
         end
     end
 
-    @batch for (idx_a, idx_a_neighbors) in enumerate(connection_groups.fluid_solid)
-        for (face_idx, idx_b) in enumerate(idx_a_neighbors)
-            phys_a = phys[cell_phys_id_map[idx_a]]
+    @batch for (idx_a, neighbors) in connection_groups.fluid_solid
+        phys_a = phys[cell_phys_id_map[idx_a]]
+        for (idx_b, face_idx) in neighbors
             phys_b = phys[cell_phys_id_map[idx_b]]
 
             fluid_solid_flux!(
@@ -297,9 +296,9 @@ function methanol_reformer_f_test!(
         end
     end
 
-    @batch for (idx_a, idx_a_neighbors) in enumerate(connection_groups.solid_fluid)
-        for (face_idx, idx_b) in enumerate(idx_a_neighbors)
-            phys_a = phys[cell_phys_id_map[idx_a]]
+    @batch for (idx_a, neighbors) in connection_groups.solid_fluid
+        phys_a = phys[cell_phys_id_map[idx_a]]
+        for (idx_b, face_idx) in neighbors
             phys_b = phys[cell_phys_id_map[idx_b]]
 
             solid_fluid_flux!(
@@ -318,7 +317,8 @@ function methanol_reformer_f_test!(
             region_function!(
                 du, u, cell_id,
                 change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-                cell_volumes[cell_id], rho_cache[cell_id], region_phys
+                rho_cache, mw_avg_cache,
+                cell_volumes[cell_id], region_phys
             )
         end
     end

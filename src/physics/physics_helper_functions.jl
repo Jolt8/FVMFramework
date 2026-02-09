@@ -29,6 +29,8 @@ function rho_ideal!(
     rho_cache[cell_id] = (u.pressure[cell_id] * mw_avg_cache[cell_id]) / (R_gas * u.temp[cell_id])
 end
 
+#this is the thing I was talking about to avoid dynamic dispatch
+#do not use these
 function cell_rho!(u, phys::AbstractSolidPhysics, cell_id, rho_cache, mw_avg_cache)
     return rho_cache[cell_id] = phys.rho
 end

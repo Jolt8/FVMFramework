@@ -99,6 +99,7 @@ reforming_area_physics = MethanolReformerPhysics(
     4.184, # cp (J/(kg*K))
     1e-5, # mu (Pa*s)
     0.6e-11, # permeability (m^2)
+    [1e-5, 1e-5, 1e-5, 1e-5, 1e-5], #diffusion coefficients (m^2/s)
     species_molecular_weights,
     [MSR_rxn, MD_rxn, WGS_rxn], # chemical_reactions
     [1250.0, 1250.0, 1250.0], # cell_kg_cat_per_m3_for_each_reaction
@@ -117,10 +118,18 @@ add_region!(
     ),
     region_physics=reforming_area_physics,
     region_function=function reforming_area!(
-        du, u, cell_id,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-        vol, rho, phys
-    )
+            du, u, cell_id,
+            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+            rho_cache, mw_avg_cache,
+            vol, phys
+        )
+        #property retrieval
+        mw_avg!(u, cell_id, phys.species_molecular_weights, mw_avg_cache)
+        rho_ideal!(u, cell_id, rho_cache, mw_avg_cache)
+
+        rho = rho_cache[cell_id]
+        #rho = @view rho_cache[cell_id][1] #not sure if the above allocates
+
         #internal physics
         react_cell!(
             cell_id, du, u,
@@ -164,10 +173,18 @@ add_region!(
     ),
     region_physics=reforming_area_physics,
     region_function=function inlet_area!(
-        du, u, cell_id,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-        vol, rho, phys
-    )
+            du, u, cell_id,
+            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+            rho_cache, mw_avg_cache,
+            vol, phys
+        )
+        #property retrieval
+        mw_avg!(u, cell_id, phys.species_molecular_weights, mw_avg_cache)
+        rho_ideal!(u, cell_id, rho_cache, mw_avg_cache)
+
+        rho = rho_cache[cell_id]
+        #rho = @view rho_cache[cell_id][1] #not sure if the above allocates
+
         #internal physics
         #=
         react_cell!(
@@ -201,10 +218,18 @@ add_region!(
     ),
     region_physics=reforming_area_physics,
     region_function=function inlet_area!(
-        du, u, cell_id,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-        vol, rho, phys
-    )
+            du, u, cell_id,
+            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+            rho_cache, mw_avg_cache,
+            vol, phys
+        )
+        #property retrieval
+        mw_avg!(u, cell_id, phys.species_molecular_weights, mw_avg_cache)
+        rho_ideal!(u, cell_id, rho_cache, mw_avg_cache)
+
+        rho = rho_cache[cell_id]
+        #rho = @view rho_cache[cell_id][1] #not sure if the above allocates
+
         #internal physics
         #=
         react_cell!(
@@ -236,7 +261,15 @@ add_region!(
         2700.0, # rho (kg/m^3)
         921.0, # cp (J/(kg*K))
     ),
-    region_function=function wall_area!(du, u, cell_id, vol, rho, phys)
+    region_function=function wall_area!(
+            du, u, cell_id,
+            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+            rho_cache, mw_avg_cache,
+            vol, phys
+        )
+        #property retrieval
+        rho = phys.rho
+
         #internal physics
 
         #sources
@@ -265,11 +298,14 @@ add_region!(
         921.0, # cp (J/(kg*K))
     ),
     region_function=function wall_area!(
-        du, u, cell_id,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-        vol, rho,
-        phys
-    )
+            du, u, cell_id,
+            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
+            rho_cache, mw_avg_cache,
+            vol, phys
+        )
+        #property retrieval
+        rho = phys.rho
+
         #internal physics
 
         #sources
@@ -282,11 +318,12 @@ add_region!(
     end
 )
 
-connection_groups = methanol_reformer_init_conn_groups()
+connection_groups = methanol_reformer_init_conn_groups(grid)
 
 du0, u0, geo, system = finish_fvm_config(config, connection_catagorizer!, connection_groups)
 
 N::Int = ForwardDiff.pickchunksize(length(u0))
+
 rho_cache = DiffCache(zeros(length(grid.cells)), N)
 mw_avg_cache = DiffCache(zeros(length(grid.cells)), N)
 
@@ -296,10 +333,10 @@ net_rates_cache = DiffCache(zeros(length(reforming_area_physics.chemical_reactio
 
 f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     du, u, p, t,
-    geo.cell_neighbor_map,
     geo.cell_volumes, geo.cell_centroids,
-    geo.connection_areas, geo.connection_normals, geo.connection_distances, geo.unconnected_cell_face_map,
-    geo.cell_face_areas, geo.cell_face_normals, system.connection_groups, system.phys, system.cell_phys_id_map,
+    geo.cell_neighbor_areas, geo.cell_neighbor_normals, geo.cell_neighbor_distances, 
+    geo.unconnected_cell_face_map, geo.cell_face_areas, geo.cell_face_normals, 
+    system.connection_groups, system.phys, system.cell_phys_id_map,
     system.regions_phys_func_cells,
     system.u_axes,
     rho_cache, mw_avg_cache,
@@ -316,8 +353,8 @@ detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 
 p_guess = 0.0
 
-#test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.0000001), p_guess)
-#@time sol = solve(test_prob, Tsit5(), callback = approximate_time_to_finish_cb)
+test_prob = ODEProblem(f_closure_implicit, u0, (0.0, 0.00000001), p_guess)
+@time sol = solve(test_prob, Tsit5(), callback = approximate_time_to_finish_cb)
 
 #somehow adding reactions makes this less stiff
 
