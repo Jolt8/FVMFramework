@@ -47,14 +47,14 @@ struct WGSReaction <: AbstractReaction
 end
 
 function PAM_reaction(rxn, molar_concentrations, T)
-    pp = molar_concentrations .* ((R_gas * T) * 1e-5)
     #we divide by 1e-5 because PAM parameters are typically in bar
     # methanol, water, carbon_monoxide, hydrogen, carbon_dioxide
-    P_CH3OH = pp[1]
-    P_H2O = pp[2]
-    P_CO = pp[3]
-    P_H2 = max(pp[4], 1e-9)
-    P_CO2 = pp[5]
+    conversion_factor = ((R_gas * T) * 1e-5)
+    P_CH3OH = molar_concentrations[1] * conversion_factor
+    P_H2O = molar_concentrations[2] * conversion_factor
+    P_CO = molar_concentrations[3] * conversion_factor
+    P_H2 = max((molar_concentrations[4] * conversion_factor), 1e-9)
+    P_CO2 = molar_concentrations[5] * conversion_factor
 
     K_CH3O = van_t_hoff(rxn.adsorption_A_vec[1], rxn.adsorption_dH_vec[1], T)
     K_HCOO = van_t_hoff(rxn.adsorption_A_vec[2], rxn.adsorption_dH_vec[2], T)
@@ -71,7 +71,6 @@ end
 
 
 function net_reaction_rate(rxn::MSRReaction, molar_concentrations, T, kf_A, kf_Ea, kr_A, kr_Ea)
-    
     P_CH3OH, P_H2O, P_CO, P_H2, P_CO2, 
     K_CH3O, K_HCOO, K_OH, 
     DEN = PAM_reaction(rxn, molar_concentrations, T)
@@ -100,7 +99,6 @@ function net_reaction_rate(rxn::MSRReaction, molar_concentrations, T, kf_A, kf_E
 end
 
 function net_reaction_rate(rxn::MDReaction, molar_concentrations, T, kf_A, kf_Ea, kr_A, kr_Ea)
-    
     P_CH3OH, P_H2O, P_CO, P_H2, P_CO2, 
     K_CH3O, K_HCOO, K_OH, 
     DEN = PAM_reaction(rxn, molar_concentrations, T)

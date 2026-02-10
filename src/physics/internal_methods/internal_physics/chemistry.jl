@@ -35,26 +35,21 @@ function net_reaction_rate(chemical_reaction::PowerLawReaction, molar_concentrat
     return net_reaction_rate
 end
 
+#I think I know what is causing the slowdown here, the reaciton dynamic dispatch seems to be causing some issues
+#whenever a reactin property is grabbed using reaciton.something, it causes GC
+
 function react_cell!(
-        #input idxs 
-        cell_id,
-        #mutated vars
-        du,
-        #u data
-        u,
+        du, u, cell_id,
+        rho,
         #caches (also mutated)
         change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
-        #geometry data
-        vol,
-        #props
-        rho,
-        #phys data
+        vol, 
         phys
     )
     change_in_molar_concentrations_cache .= 0.0
 
-    for (species_id, species_mass_fraction) in enumerate(u.mass_fractions[:, cell_id])
-        molar_concentrations_cache[species_id] = (rho * species_mass_fraction) / phys.species_molecular_weights[species_id]
+    for species_id in eachindex(molar_concentrations_cache)
+        molar_concentrations_cache[species_id] = (rho * u.mass_fractions[species_id, cell_id]) / phys.species_molecular_weights[species_id]
     end
 
     for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
@@ -62,30 +57,28 @@ function react_cell!(
         kf_Ea = reaction.kf_Ea
 
         #find reverse pre exponential_factor
-        K_ref = K_gibbs_free(reaction.K_gibbs_free_ref_temp, u.temp[cell_id], reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
+        K_ref = K_gibbs_free(reaction.K_gibbs_free_ref_temp, u.temp[cell_id], reaction.delta_gibbs_free_energy, reaction.heat_of_reaction) #this causes GC
 
-        kr_A = (kf_A / K_ref) * exp(-reaction.heat_of_reaction / (R_gas * u.temp[cell_id]))
+        kr_A = (kf_A / K_ref) * exp(-reaction.heat_of_reaction / (R_gas * u.temp[cell_id])) #this causes GC
 
         #find reverse Ea
-        kr_Ea = kf_Ea - reaction.heat_of_reaction
+        kr_Ea = kf_Ea - reaction.heat_of_reaction #this causes GC
 
-        net_rates_cache[reaction_id] = net_reaction_rate(reaction, molar_concentrations_cache, u.temp[cell_id], kf_A, kf_Ea, kr_A, kr_Ea) * phys.cell_kg_cat_per_m3_for_each_reaction[reaction_id]
+        net_rates_cache[reaction_id] = net_reaction_rate(reaction, molar_concentrations_cache, u.temp[cell_id], kf_A, kf_Ea, kr_A, kr_Ea) * phys.cell_kg_cat_per_m3_for_each_reaction[reaction_id] #this causes GC
         #rate returned by net_reactions_rate is in mol / (kg_cat * s), so we times by the cell's kg_cat / m3
         #rate is now in mol / (m3 * s)
     end
 
-    for (species_id, species_molar_concentration) in enumerate(molar_concentrations_cache)
+    for species_id in eachindex(molar_concentrations_cache)
         for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
-            stoich = reaction.all_stoich_coeffs[species_id]
-            change_in_molar_concentrations_cache[species_id] += net_rates_cache[reaction_id] * stoich
+            change_in_molar_concentrations_cache[species_id] += net_rates_cache[reaction_id] * reaction.all_stoich_coeffs[species_id] #this causes GC
         end
-
         du.mass_fractions[species_id, cell_id] += (change_in_molar_concentrations_cache[species_id] * phys.species_molecular_weights[species_id]) / rho
         # rate (mol/(m3*s)) * MW (g/mol) / rho (g/m3) = unitless/s
     end
 
     for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
-        du.temp[cell_id] += net_rates_cache[reaction_id] * (-reaction.heat_of_reaction) * vol
+        du.temp[cell_id] += net_rates_cache[reaction_id] * (-reaction.heat_of_reaction) * vol #this causes GC
         # rate (mol/(m3*s)) * H (J/mol) * vol (m3) = J/s = Watts
     end
 end
