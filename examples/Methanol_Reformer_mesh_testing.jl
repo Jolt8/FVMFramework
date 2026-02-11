@@ -26,88 +26,18 @@ grid = togrid("C://Users//wille//Desktop//FreeCad Projects//Methanol Reformer//o
 
 grid.cellsets
 
-#for CH3OH, HCOO, OH
-van_t_hoff_A_vec = [1.7e-6, 4.74e-13, 3.32e-14]
-van_t_hoff_dH_vec = [-46800.0, -115000.0, -110000.0]
-
-MSR_rxn = MSRReaction(
-    49500.0,    # Delta H (Endothermic) [J/mol]
-    -3800.0,    # Delta Gibbs free at 298.15K [J/mol]
-    298.15,     # ref temp [K]
-    1.25e7,     # kf_A (Pre-exponential factor)
-    103000.0,   # kf_Ea (Activation Energy) [J/mol]
-    [1, 2],     # reactant_ids: Methanol, Water
-    [1, 1],     # reactant_stoich_coeffs
-    [5, 4],     # product_ids: CO2, Hydrogen
-    [1, 3],     # product_stoich_coeffs: 1 CO2 + 3 H2
-    [-1, -1, 0, 3, 1], # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
-)
-
-MD_rxn = MDReaction(
-    90200.0,    # Delta H (Endothermic) [J/mol]
-    24800.0,    # Delta Gibbs free at 298.15K [J/mol]
-    298.15,     # ref temp [K]
-    1.15e11,    # kf_A
-    170000.0,   # kf_Ea [J/mol]
-    [1],        # reactant_ids: Methanol
-    [1],        # reactant_stoich_coeffs
-    [3, 4],     # product_ids: CO, Hydrogen
-    [1, 2],     # product_stoich_coeffs: 1 CO + 2 H2
-    [-1, 0, 1, 2, 0], # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
-)
-
-WGS_rxn = WGSReaction(
-    -41100.0,   # Delta H (Exothermic) [J/mol]
-    -28600.0,   # Delta Gibbs free at 298.15K [J/mol]
-    298.15,     # ref temp [K]
-    3.65e7,     # kf_A (Note: often adjusted depending on specific catalyst)
-    87500.0,    # kf_Ea [J/mol]
-    [3, 2],     # reactant_ids: CO, Water
-    [1, 1],     # reactant_stoich_coeffs
-    [5, 4],     # product_ids: CO2, Hydrogen
-    [1, 1],     # product_stoich_coeffs
-    [0, -1, -1, 1, 1], # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
-)
-
-species_molecular_weights = [0.03204, 0.01802, 0.02801, 0.00202, 0.04401]
-
-# methanol, water, carbon_monoxide, hydrogen, carbon_dioxide
-initial_mass_fractions = [1.0, 1.3, 0.0001, 0.02, 0.0001]
-
-initial_mass_fractions = initial_mass_fractions ./ sum(initial_mass_fractions)
-
 n_cells = length(grid.cells)
 u_proto = ComponentArray(
     vel_x=zeros(n_cells), vel_y=zeros(n_cells), vel_z=zeros(n_cells),
     pressure=zeros(n_cells),
-    mass_fractions=zeros(length(initial_mass_fractions), n_cells),
+    mass_fractions=ComponentVector(methanol = zeros(n_cells), water = zeros(n_cells), carbon_monoxide = zeros(n_cells), hydrogen = zeros(n_cells), carbon_dioxide = zeros(n_cells)),
     temp=zeros(n_cells)
 )
 
 config = create_fvm_config(grid, u_proto)
 
-#each region_function will have internal_physics (non-connecting), then sources, then boundary conditions, then capacities
-
-reforming_area_physics = MethanolReformerPhysics(
-    237.0, # k (W/(m*K))
-    4.184, # cp (J/(kg*K))
-    1e-5, # mu (Pa*s)
-    0.6e-11, # permeability (m^2)
-    [1e-5, 1e-5, 1e-5, 1e-5, 1e-5], #diffusion coefficients (m^2/s)
-    species_molecular_weights,
-    [MSR_rxn, MD_rxn, WGS_rxn], # chemical_reactions
-    [1250.0, 1250.0, 1250.0], # cell_kg_cat_per_m3_for_each_reaction
-)
-
 #in the future, we may want to add a method to make all cells that are not under a cell set 
 #become part of a default set with no internal physics or variables 
-
 
 #controller logic
 #We're just going to make this monitor one u field for now 
@@ -127,7 +57,6 @@ temp_controller = PIDController(
     1e7, #initial watts / m^3
     0.0, 1e8 # min/max watts / m^3
 )
-integral_error = 0.0
 
 #this will probably have to be converted into an integrator internally to get previous temperature and to prevent excessive cache usage
 
@@ -138,11 +67,8 @@ add_controller!(config,
     controller=temp_controller,
     monitored_cellset="reforming_area",
     affected_cellset="heating_area",
-    controller_function=function pid_temp_controller(
-        du, u, monitored_cells, affected_cells, controller_id,
-        controller, 
-        cell_volumes
-    )
+    controller_function=
+    function pid_temp_controller(du, u, monitored_cells, affected_cells, controller_id, controller, cell_volumes)
         field = propertynames(controller.desired_value_comp_vector)[1]
         desired = getproperty(controller.desired_value_comp_vector, field) #desired will be a single scalar value
         measured_vec = getproperty(u, field)
@@ -180,6 +106,83 @@ add_controller!(config,
     end
 )
 
+
+#for CH3OH, HCOO, OH
+van_t_hoff_A_vec = ComponentVector(CH3O = 1.7e-6, HCOO = 4.74e-13, OH = 3.32e-14)
+van_t_hoff_dH_vec = ComponentVector(CH3O = -46800.0, HCOO = -115000.0, OH = -110000.0)
+
+MSR_rxn = ComponentVector(
+    delta_H = 49500.0, # [J/mol]
+    delta_G_ref = -3800.0, # [J/mol]
+    ref_temp = 298.15, # [K]
+    kf_A = 1.25e7, # [s^-1]
+    kf_Ea = 103000.0, # [J/mol]
+    reactant_ids = ComponentVector(methanol = 1, water = 2), # reactant_ids: Methanol, Water
+    reactant_stoich_coeffs = ComponentVector(methanol = 1, water = 1), # reactant_stoich_coeffs
+    product_ids = ComponentVector(carbon_dioxide = 5, hydrogen = 4),     # product_ids: CO2, Hydrogen
+    product_stoich_coeffs = ComponentVector(carbon_dioxide = 1, hydrogen = 3),     # product_stoich_coeffs: 1 CO2 + 3 H2
+    stoich_coeffs = ComponentVector(methanol = -1, water = -1, carbon_monoxide = 0, hydrogen = 3, carbon_dioxide = 1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec = van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+)
+
+MD_rxn = ComponentVector(
+    delta_H = 90200.0, # [J/mol]
+    delta_G_ref = 24800.0, # [J/mol]
+    ref_temp = 298.15, # [K]
+    kf_A = 1.15e11, # [s^-1]
+    kf_Ea = 170000.0, # [J/mol]
+    reactant_ids = ComponentVector(methanol = 1), # reactant_ids: Methanol
+    reactant_stoich_coeffs = ComponentVector(methanol = 1), # reactant_stoich_coeffs
+    product_ids = ComponentVector(carbon_monoxide = 3, hydrogen = 4), # product_ids: CO, Hydrogen
+    product_stoich_coeffs = ComponentVector(carbon_monoxide = 1, hydrogen = 2), # product_stoich_coeffs: 1 CO + 2 H2
+    stoich_coeffs = ComponentVector(methanol = -1, water = 0, carbon_monoxide = 1, hydrogen = 2, carbon_dioxide = 0), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+)
+
+WGS_rxn = ComponentVector(
+    delta_H = -41100.0, # [J/mol]
+    delta_G_ref = -28600.0, # [J/mol]
+    ref_temp = 298.15, # [K]
+    kf_A = 3.65e7, # [s^-1]
+    kf_Ea = 87500.0, # [J/mol]
+    reactant_ids = ComponentVector(carbon_monoxide = 3, water = 2), # reactant_ids: CO, Water
+    reactant_stoich_coeffs = ComponentVector(carbon_monoxide = 1, water = 1), # reactant_stoich_coeffs
+    product_ids = ComponentVector(carbon_dioxide = 5, hydrogen = 4), # product_ids: CO2, Hydrogen
+    product_stoich_coeffs = ComponentVector(carbon_dioxide = 1, hydrogen = 1), # product_stoich_coeffs: 1 CO2 + 1 H2
+    stoich_coeffs = ComponentVector(methanol = 0, water = -1, carbon_monoxide = -1, hydrogen = 1, carbon_dioxide = 1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+)
+
+species_molecular_weights = ComponentVector(methanol = 0.03204, water = 0.01802, carbon_monoxide = 0.02801, hydrogen = 0.00202, carbon_dioxide = 0.04401)
+
+# methanol, water, carbon_monoxide, hydrogen, carbon_dioxide
+initial_mass_fractions = ComponentVector(methanol = 1.0, water = 1.3, carbon_monoxide = 0.0001, hydrogen = 0.02, carbon_dioxide = 0.0001)
+
+initial_mass_fractions = initial_mass_fractions ./ sum(initial_mass_fractions)
+
+reforming_area_properties = ComponentVector(
+    k=237.0, # k (W/(m*K))
+    cp=4.184, # cp (J/(kg*K))
+    mu=1e-5, # mu (Pa*s)
+    permeability=0.6e-11, # permeability (m^2)
+    diffusion_coefficients=ComponentVector(methanol = 1e-5, water = 1e-5, carbon_monoxide = 1e-5, hydrogen = 1e-5, carbon_dioxide = 1e-5), #diffusion coefficients (m^2/s) 
+    #FIXME: this is going to be tricky, diffusion coefficients should use the same [:, cell_id] that mass fractions use
+    species_molecular_weights=species_molecular_weights,
+    reactions = ComponentVector(
+        MSR_rxn = MSR_rxn,
+        MD_rxn = MD_rxn,
+        WGS_rxn = WGS_rxn
+    ),
+    reactions_kg_cat=ComponentVector(MSR_rxn = 1250.0, MD_rxn = 1250.0, WGS_rxn = 1250.0), # cell_kg_cat_per_m3_for_each_reaction
+)
+
+#this is another special case, I don't think it would be wise to store the chemical reaction struct within the u_vec
+#thus, we could probably use another component array to store the properties of the reaction
+#ex. reaction.delta_H, reaction.ref_temp
+
 add_region!(
     config, "reforming_area";
     initial_conditions=ComponentVector(
@@ -188,26 +191,18 @@ add_region!(
         mass_fractions=initial_mass_fractions,
         temp=ustrip(270.0u"°C" |> u"K")
     ),
+    properties=reforming_area_properties,
     region_physics=reforming_area_physics,
-    region_function=function reforming_area!(
-        du, u, phys, cell_id, 
-        vol,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    region_function=
+    function reforming_area!(du, u, phys, cell_id, vol)
         #property updating/retrieval
-        mw_avg!(u, cell_id, phys.species_molecular_weights, mw_avg_cache)
-        rho_ideal!(u, cell_id, rho_cache, mw_avg_cache)
-
-        rho = rho_cache[cell_id]
-        #rho = @view rho_cache[cell_id][1] #not sure if the above allocates
+        mw_avg!(u, cell_id, phys.species_molecular_weights)
+        rho_ideal!(u, cell_id)
 
         #internal physics
 
         react_cell!(
             du, u, cell_id,
-            rho,
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
             vol,
             phys
         )
@@ -217,20 +212,13 @@ add_region!(
         #boundary conditions
 
         #capacities
-        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
-        cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, rho, phys)
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, phys)
+        cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, phys)
     end
 )
 
-geo = build_fvm_geo_into_struct(grid)
-
-geo.cell_volumes
-
-geo.cell_face_areas
-
-getcellset(grid, "inlet")
-inlet_total_volume = get_cell_set_total_volume(grid, "inlet", geo)
-#this should be 1e-8, which it is 
+inlet_total_volume = get_cell_set_total_volume(grid, "inlet", config.geo)
+#this should be 1e-8 [m^3], which it is
 
 desired_m_dot = ustrip(0.2u"g/s" |> u"kg/s")
 corrected_m_dot_per_volume = desired_m_dot / inlet_total_volume
@@ -246,29 +234,20 @@ add_region!(
         temp=ustrip(270.0u"°C" |> u"K")
     ),
     region_physics=reforming_area_physics,
-    region_function=function inlet_area!(
-        du, u, phys, cell_id, 
-        vol,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    region_function=
+    function inlet_area!(du, u, phys, cell_id, vol)
         #property retrieval
-        mw_avg!(u, cell_id, phys.species_molecular_weights, mw_avg_cache)
-        rho_ideal!(u, cell_id, rho_cache, mw_avg_cache)
-
-        rho = rho_cache[cell_id]
-        #rho = @view rho_cache[cell_id][1] #not sure if the above allocates
+        mw_avg!(u, cell_id, phys.species_molecular_weights)
+        rho_ideal!(u, cell_id)
 
         #internal physics
         #=
         react_cell!(
             du, u, cell_id,
-            rho_cache[cell_id],
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
             vol, 
             phys
         )
-            =#
+        =#
 
         #sources
         du.pressure[cell_id] += corrected_m_dot_per_volume * vol
@@ -278,8 +257,8 @@ add_region!(
         du.mass_fractions[:, cell_id] .= 0.0
 
         #capacities
-        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
-        cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, rho, phys)
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, phys)
+        cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, phys)
     end
 )
 
@@ -292,25 +271,16 @@ add_region!(
         temp=ustrip(270.0u"°C" |> u"K")
     ),
     region_physics=reforming_area_physics,
-    region_function=function outlet_area!(
-        du, u, phys, cell_id, 
-        vol,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    region_function=
+    function outlet_area!(du, u, phys, cell_id, vol)
         #property retrieval
-        mw_avg!(u, cell_id, phys.species_molecular_weights, mw_avg_cache)
-        rho_ideal!(u, cell_id, rho_cache, mw_avg_cache)
-
-        rho = rho_cache[cell_id]
-        #rho = @view rho_cache[cell_id][1] #not sure if the above allocates
+        mw_avg!(u, cell_id, phys.species_molecular_weights)
+        rho_ideal!(u, cell_id)
 
         #internal physics
         #=
         react_cell!(
             du, u, cell_id,
-            rho_cache[cell_id],
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
             vol, 
             phys
         )
@@ -322,8 +292,8 @@ add_region!(
         #boundary conditions
 
         #capacities
-        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
-        cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, rho, phys)
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, phys)
+        cap_mass_flux_to_pressure_change!(du, u, cell_id, vol, phys)
     end
 )
 
@@ -332,18 +302,15 @@ add_region!(
     initial_conditions=ComponentVector(
         temp=ustrip(270.0u"°C" |> u"K")
     ),
-    region_physics=WallPhysics(
-        237.0, # k (W/(m*K))
-        2700.0, # rho (kg/m^3)
-        921.0, # cp (J/(kg*K))
+    region_physics=ComponentVector(
+        k=237.0, # k (W/(m*K))
+        rho=2700.0, # rho (kg/m^3)
+        cp=921.0, # cp (J/(kg*K))
     ),
-    region_function=function wall_area!(
-        du, u, phys, cell_id, 
-        vol,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    region_function=
+    function wall_area!(du, u, phys, cell_id, vol)
         #property retrieval
+        #oh, this is an issue, how do we pass in rho for solids?
         rho = phys.rho
 
         #internal physics
@@ -353,7 +320,7 @@ add_region!(
         #boundary conditions
 
         #capacities
-        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, phys)
     end
 )
 
@@ -368,17 +335,13 @@ add_region!(
     initial_conditions=ComponentVector(
         temp=ustrip(270.0u"°C" |> u"K")
     ),
-    region_physics=WallPhysics(
-        237.0, # k (W/(m*K))
-        2700.0, # rho (kg/m^3)
+    region_physics=ComponentVector(
+        k=237.0, # k (W/(m*K))
+        rho=2700.0, # rho (kg/m^3)
         921.0, # cp (J/(kg*K))
     ),
-    region_function=function heating_area!(
-        du, u, phys, cell_id, 
-        vol,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    region_function=
+    function heating_area!(du, u, phys, cell_id, vol)
         #property retrieval
         rho = phys.rho
 
@@ -391,31 +354,27 @@ add_region!(
         #boundary conditions
 
         #capacities
-        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, rho, phys)
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol, phys)
     end
 )
 
-#connection functions
+#Connection functions
 function fluid_fluid_flux!(
-        du, u, phys_a, phys_b,
-        idx_a, idx_b, face_idx,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
-    mw_avg!(u, idx_a, phys_a.species_molecular_weights, mw_avg_cache) 
-    rho_ideal!(u, idx_a, rho_cache, mw_avg_cache)
+    du, u, phys_a, phys_b,
+    idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+)
+    mw_avg!(u, idx_a, phys_a.species_molecular_weights)
+    rho_ideal!(u, idx_a)
 
-    mw_avg!(u, idx_b, phys_b.species_molecular_weights, mw_avg_cache) 
-    rho_ideal!(u, idx_b, rho_cache, mw_avg_cache) 
+    mw_avg!(u, idx_b, phys_b.species_molecular_weights)
+    rho_ideal!(u, idx_b)
 
     #mutating-ish, it mutates du.pressure for a
     face_m_dot = continuity_and_momentum_darcy(
         du, u,
         idx_a, idx_b,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx],
-        #rho_a, rho_b,
-        rho_cache[idx_a], rho_cache[idx_b],
         phys_a, phys_b
     )
 
@@ -446,19 +405,15 @@ function fluid_fluid_flux!(
         du, u,
         idx_a, idx_b,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx],
-        #rho_a, rho_b,
-        rho_cache[idx_a], rho_cache[idx_b],
         phys_a, phys_b
     )
 end
 
 function solid_solid_flux!(
-        du, u, phys_a, phys_b,
-        idx_a, idx_b, face_idx,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    du, u, phys_a, phys_b,
+    idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+)
 
     #hmm, perhaps these physics functions need to be more strictly typed
     #Checking profview, I'm getting some runtime dispatch and GC here, I don't know why 
@@ -471,12 +426,10 @@ function solid_solid_flux!(
 end
 
 function fluid_solid_flux!(
-        du, u, phys_a, phys_b,
-        idx_a, idx_b, face_idx,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    du, u, phys_a, phys_b,
+    idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+)
 
     #mw_avg!(u, idx_a, phys_a.species_molecular_weights, mw_avg_cache)
     #rho_ideal!(u, idx_a, rho_cache, mw_avg_cache)
@@ -491,12 +444,10 @@ function fluid_solid_flux!(
 end
 
 function solid_fluid_flux!(
-        du, u, phys_a, phys_b,
-        idx_a, idx_b, face_idx,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
-    )
+    du, u, phys_a, phys_b,
+    idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+)
 
     #rho_a = phys_a.rho
     #mw_avg!(u, idx_b, phys_b.species_molecular_weights, mw_avg_cache)
@@ -524,23 +475,38 @@ du0, u0, geo, system = finish_fvm_config(config, flux_functions, conneciton_map_
 
 N::Int = ForwardDiff.pickchunksize(length(u0))
 
-rho_cache = DiffCache(zeros(length(grid.cells)), N)
-mw_avg_cache = DiffCache(zeros(length(grid.cells)), N)
+rho_cache = zeros(length(grid.cells))
+mw_avg_cache = zeros(length(grid.cells))
 
-change_in_molar_concentrations_cache = DiffCache(zeros(length(u_proto.mass_fractions[:, 1])), N)
-molar_concentrations_cache = DiffCache(zeros(length(u_proto.mass_fractions[:, 1])), N) #just using mass fractions for cell 1, this may cause some issues later!
-net_rates_cache = DiffCache(zeros(length(reforming_area_physics.chemical_reactions)), N)
+n_species = length(u_proto.mass_fractions[:, 1])
+change_in_molar_concentrations_cache = zeros(n_species)
+molar_concentrations_cache = zeros(n_species) #just using mass fractions for cell 1, this may cause some issues later!
+
+n_reactions = length(reforming_area_physics.chemical_reactions)
+net_rates_cache = zeros(n_reactions)
+
+caches = DiffCache(
+    ComponentVector(
+        rho_cache=rho_cache,
+        mw_avg_cache=mw_avg_cache,
+        change_in_molar_concentrations_cache=change_in_molar_concentrations_cache,
+        molar_concentrations_cache=molar_concentrations_cache,
+        net_rates_cache=net_rates_cache
+    ), N
+)
+
+du_caches = copy(caches)
+
+#I was suprised that this works, if it doesn't in the future, we can still use caches_axes = getaxes(caches_proto)[1]; caches = ComponentVector(caches, cache_axes)
 
 f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     du, u, p, t,
     geo.cell_volumes, geo.cell_centroids,
     geo.cell_neighbor_areas, geo.cell_neighbor_normals, geo.cell_neighbor_distances,
     geo.unconnected_cell_face_map, geo.cell_face_areas, geo.cell_face_normals,
-    system.connection_groups, system.phys, system.cell_phys_id_map,
-    system.regions_phys_func_cells,
-    system.u_merged_axes,
-    rho_cache, mw_avg_cache,
-    change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+    system.connection_groups, system.controller_groups, system.region_groups,
+    du_caches, caches,
+    system.u_merged_axes
 )
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
@@ -573,7 +539,6 @@ save_interval = (tspan[end] / desired_steps)
 #@time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
 VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
 #algebraicmultigrid is only better for more than 1e6 cells
-#11721 (10%)
 
 record_sol = true
 

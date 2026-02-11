@@ -17,9 +17,7 @@ end
 
 function solve_connection_group!(
         du, u, phys_a::TA, phys_b::TB, flux!, neighbors,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
     ) where {TA, TB}
     #look into storing this data into a CSR in the future
     @batch for (idx_a, neighbor_list) in neighbors
@@ -27,9 +25,7 @@ function solve_connection_group!(
             flux!(
                 du, u, phys_a, phys_b,
                 idx_a, idx_b, face_idx,
-                cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-                rho_cache, mw_avg_cache,
-                change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+                cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
             )
         end
     end
@@ -47,20 +43,15 @@ function solve_controller_group!(
 end
 
 function solve_region_group!(
-        du, u, phys::T, internal_physics!, region_cells,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+        du, u, phys::T, internal_physics!, region_cells
     ) where T
     @batch for cell_id in region_cells
         internal_physics!(
             du, u, phys, cell_id,
-            cell_volumes[cell_id],
-            rho_cache, mw_avg_cache,
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+            cell_volumes[cell_id]
         )
     end
 end
-
 
 function methanol_reformer_f_test!(
         du, u, p, t,
@@ -69,38 +60,35 @@ function methanol_reformer_f_test!(
         unconnected_cell_face_map, cell_face_areas, cell_face_normals,
         connection_groups, controller_groups, region_groups,
         #phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int}, #we probably won't use these again, but they might be useful in the future
-        u_merged_axes,
-        rho_cache, mw_avg_cache,
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+        du_caches, caches,
+        u_merged_axes
     )
 
     u = ComponentVector(u, u_merged_axes)
     du = ComponentVector(du, u_merged_axes)
+
+    caches = get_tmp(caches, u)
+    du_caches = get_tmp(du_caches, u)
+
+    #I JUST HAD A GREAT IDEA!!!
+    #we can merge u and caches and then only pass u to each physics function and then I'll always be able to 
+    #call u.rho even if rho is a state variable (inputted u value) or a cached variable
+    #the only issue with this approach is that it's a little less clear which parameters are state variables (u_true) and caches
+
+    u = [u; caches]
+    du = [u; caches]
     du .= 0.0
 
-    rho_cache = get_tmp(rho_cache, u)
-    rho_cache .= 0.0
+    #ComponentVector(u; NamedTuple(caches)...) this is another option, but I've found that it's slower ()
 
-    mw_avg_cache = get_tmp(mw_avg_cache, u)
-    mw_avg_cache .= 0.0
-
-    change_in_molar_concentrations_cache = get_tmp(change_in_molar_concentrations_cache, u)
-    change_in_molar_concentrations_cache .= 0.0
-
-    molar_concentrations_cache = get_tmp(molar_concentrations_cache, u) #just using mass fractions for cell 1, this may cause some issues later!
-    molar_concentrations_cache .= 0.0
-
-    net_rates_cache = get_tmp(net_rates_cache, u)
-    net_rates_cache .= 0.0
-    #even though react_cell!() already sets change_in_molar_concentrations_cache to .= 0.0, we're just doing .*= 0.0 to all to make sure
+    #even though react_cell!() already sets change_in_molar_concentrations_cache to .= 0.0, we're just doing .= 0.0 to all to make sure
+    #NOTE: I'm pretty sure that .*= 0.0 is ever so slightly less performant than .= 0.0
 
     #Connection Loops
     for conn in connection_groups
         solve_connection_group!(
             du, u, conn.phys_a, conn.phys_b, conn.flux_function!, conn.cell_neighbors,
             cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-            rho_cache, mw_avg_cache,
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
         )
     end
     
@@ -115,9 +103,7 @@ function methanol_reformer_f_test!(
     #Internal Physics, Sources, Boundary Conditions, and Capacities Loops 
     for reg in region_groups
         solve_region_group!(
-            du, u, reg.phys, reg.region_function!, reg.region_cells,
-            rho_cache, mw_avg_cache,
-            change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache
+            du, u, reg.phys, reg.region_function!, reg.region_cells
         )
     end
 end

@@ -12,32 +12,30 @@ function harmonic_mean(val_a, val_b)
     2 * val_a * val_b / (val_a + val_b)
 end
 
-function mw_avg!(u, cell_id, molecular_weights, mw_avg_cache)
+function mw_avg!(u, cell_id, molecular_weights)
     for i in eachindex(molecular_weights)
-        mw_avg_cache[cell_id] += u.mass_fractions[i, cell_id] / molecular_weights[i]
+        u.mw_avg[cell_id] += u.mass_fractions[i, cell_id] / molecular_weights[i]
     end
 
-    mw_avg_cache[cell_id] = mw_avg_cache[cell_id]^-1.0
+    u.mw_avg[cell_id] = u.mw_avg[cell_id]^-1.0
 end
 
 function rho_ideal!(
         u, #u values
-        cell_id,
-        rho_cache,
-        mw_avg_cache
+        cell_id
     )
-    rho_cache[cell_id] = (u.pressure[cell_id] * mw_avg_cache[cell_id]) / (R_gas * u.temp[cell_id])
+    u.rho[cell_id] = (u.pressure[cell_id] * u.mw_avg[cell_id]) / (R_gas * u.temp[cell_id])
 end
 
 #this is the thing I was talking about to avoid dynamic dispatch
 #do not use these
-function cell_rho!(u, phys::AbstractSolidPhysics, cell_id, rho_cache, mw_avg_cache)
-    return rho_cache[cell_id] = phys.rho
+function cell_rho!(u, phys::AbstractSolidPhysics, cell_id)
+    return u.rho[cell_id] = phys.rho
 end
 
-function cell_rho!(u, phys::AbstractFluidPhysics, cell_id, rho_cache, mw_avg_cache)
-    mw_avg!(u, cell_id, phys.species_molecular_weights, mw_avg_cache)
-    rho_ideal!(u, cell_id, rho_cache, mw_avg_cache)
+function cell_rho!(u, phys::AbstractFluidPhysics, cell_id)
+    mw_avg!(u, cell_id, phys.species_molecular_weights)
+    rho_ideal!(u, cell_id)
 end
 
 function get_cell_cp(

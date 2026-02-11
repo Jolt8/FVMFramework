@@ -40,16 +40,13 @@ end
 
 function react_cell!(
         du, u, cell_id,
-        rho,
-        #caches (also mutated)
-        change_in_molar_concentrations_cache, molar_concentrations_cache, net_rates_cache,
         vol, 
         phys
     )
-    change_in_molar_concentrations_cache .= 0.0
+    du.molar_concentrations .= 0.0
 
-    for species_id in eachindex(molar_concentrations_cache)
-        molar_concentrations_cache[species_id] = (rho * u.mass_fractions[species_id, cell_id]) / phys.species_molecular_weights[species_id]
+    for species_id in eachindex(u.molar_concentrations)
+        u.molar_concentrations[species_id] = (u.rho[cell_id] * u.mass_fractions[species_id, cell_id]) / u.species_molecular_weights[species_id]
     end
 
     for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
@@ -64,21 +61,21 @@ function react_cell!(
         #find reverse Ea
         kr_Ea = kf_Ea - reaction.heat_of_reaction #this causes GC
 
-        net_rates_cache[reaction_id] = net_reaction_rate(reaction, molar_concentrations_cache, u.temp[cell_id], kf_A, kf_Ea, kr_A, kr_Ea) * phys.cell_kg_cat_per_m3_for_each_reaction[reaction_id] #this causes GC
+        u.net_rates[reaction_id] = net_reaction_rate(reaction, u.molar_concentrations, u.temp[cell_id], kf_A, kf_Ea, kr_A, kr_Ea) * phys.cell_kg_cat_per_m3_for_each_reaction[reaction_id] #this causes GC
         #rate returned by net_reactions_rate is in mol / (kg_cat * s), so we times by the cell's kg_cat / m3
         #rate is now in mol / (m3 * s)
     end
 
-    for species_id in eachindex(molar_concentrations_cache)
+    for species_id in eachindex(u.molar_concentrations)
         for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
-            change_in_molar_concentrations_cache[species_id] += net_rates_cache[reaction_id] * reaction.all_stoich_coeffs[species_id] #this causes GC
+            du.molar_concentrations[species_id] += u.net_rates[reaction_id] * reaction.all_stoich_coeffs[species_id] #this causes GC
         end
-        du.mass_fractions[species_id, cell_id] += (change_in_molar_concentrations_cache[species_id] * phys.species_molecular_weights[species_id]) / rho
+        du.mass_fractions[species_id, cell_id] += (du.molar_concentrations[species_id] * phys.species_molecular_weights[species_id]) / u.rho[cell_id]
         # rate (mol/(m3*s)) * MW (g/mol) / rho (g/m3) = unitless/s
     end
 
     for (reaction_id, reaction) in enumerate(phys.chemical_reactions)
-        du.temp[cell_id] += net_rates_cache[reaction_id] * (-reaction.heat_of_reaction) * vol #this causes GC
+        du.temp[cell_id] += u.net_rates[reaction_id] * (-reaction.heat_of_reaction) * vol #this causes GC
         # rate (mol/(m3*s)) * H (J/mol) * vol (m3) = J/s = Watts
     end
 end

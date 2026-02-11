@@ -7,11 +7,10 @@ end
 function diffusion_mass_fraction_exchange!(
         du, u, idx_a, idx_b,
         area, norm, dist,
-        rho_a, rho_b,
         phys_a, phys_b
     )
 
-    rho_avg = 0.5 * (rho_a + rho_b)
+    rho_avg = 0.5 * (u.rho[idx_a] + u.rho[idx_b])
 
     for i in eachindex(u.mass_fractions[:, idx_a])
         diffusion_coeff_effective = harmonic_mean(phys_a.species_diffusion_coeffs[i], phys_b.species_diffusion_coeffs[i])
