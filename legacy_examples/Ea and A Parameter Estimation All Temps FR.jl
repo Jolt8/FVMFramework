@@ -17,7 +17,7 @@ import Logging
 using ComponentArrays
 using StaticArrays
 using ProfileView
-
+#=
 abstract type AbstractPhysics end
 
 struct ChemicalReaction
@@ -66,7 +66,8 @@ struct BoundarySystem
     free_idxs::Vector{Int}
     dirichlet_idxs::Vector{Int}
 end
-
+=#
+#=
 function numerical_flux(k_avg, T_L, T_R, area, dist)
     grad_T = (T_R - T_L) / dist
     q = -k_avg * grad_T
@@ -845,5 +846,7 @@ What I have learned after a lot of debugging
     - We should probably just give up on fixing zygote and ReverseDiff
     - Instead, we should focus on getting Enzyme to work by preventing any dynamic dispatch because it supports array mutation
     - While we try to get that to work, we should just use AutoForwardDiff as the deform box 
+
+=#
 
 =#

@@ -487,7 +487,7 @@ struct BoundarySystem
     free_idxs::Vector{Int}
     dirichlet_idxs::Vector{Int}
 end
-
+#=
 function numerical_flux(k_avg, T_L, T_R, area, dist)
     grad_T = (T_R - T_L) / dist
     q = -k_avg * grad_T
@@ -498,8 +498,8 @@ function prop_harmonic_mean(prop_a, prop_b)
     return 2 * prop_a * prop_b / (prop_a + prop_b)
 end
 
-function upwind(u_left, u_right, mass_flow_rate)
-    if mass_flow_rate > 0.0
+function upwind(du, u, idx_a, idx_b, face_idx, u_left, u_right)
+    if du.mass[idx_a][face_idx] > 0.0
         return u_left
     else 
         return u_right
@@ -1104,3 +1104,4 @@ end
 =#
 #Tried doing this with an explicitly solved problem and I got the same error message, code_typed doesn't even do anything 
 
+=#
