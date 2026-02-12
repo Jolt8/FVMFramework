@@ -5,26 +5,19 @@ function get_darcy_mass_flux(rho_avg, permeability, viscosity, pressure_a, press
     return m_dot
 end
 
-function continuity_and_momentum_darcy(
-    #NOTE!!: this also returns face_m_dot even though it's a f!() function
-    du, u,
-    idx_a, idx_b,
+function continuity_and_momentum_darcy!(
+    du, u, idx_a, idx_b, face_idx,
     area, norm, dist,
-    rho_a, rho_b, #kinda a u value because it changes with time but not explicitly tracked through u values
-    phys_a, phys_b
     )
 
-    pressure_a = u.pressure[idx_a]
-    pressure_b = u.pressure[idx_b]
+    rho_avg = 0.5 * (u.rho[idx_a] + u.rho[idx_b])
+    mu_avg = 0.5 * (u.mu[idx_a] + u.mu[idx_b])
+    permeability_avg = 0.5 * (u.permeability[idx_a] + u.permeability[idx_b])
 
-    rho_avg = 0.5 * (rho_a + rho_b)
-    mu_avg = 0.5 * (phys_a.mu + phys_b.mu)
-    permeability_avg = 0.5 * (phys_a.permeability + phys_b.permeability)
-
-    face_m_dot = get_darcy_mass_flux(rho_avg, permeability_avg, mu_avg, pressure_a, pressure_b, area, dist)
+    p_grad = (u.pressure[idx_b] - u.pressure[idx_a]) / dist
+    face_m_dot = -rho_avg * (permeability_avg / mu_avg) * p_grad * area
 
     du.pressure[idx_a] -= face_m_dot
-
-    return face_m_dot
+    du.mass[idx_a] -= face_m_dot
 end
 

@@ -1,7 +1,7 @@
 const R_gas = 8.314
 
-function upwind(var_a, var_b, mass_flow_rate)
-    if mass_flow_rate > 0.0
+function upwind(du, u, idx_a, idx_b, face_idx, var_a, var_b)
+    if du.mass[idx_a][face_idx] < 0.0
         return var_a
     else
         return var_b
@@ -12,52 +12,41 @@ function harmonic_mean(val_a, val_b)
     2 * val_a * val_b / (val_a + val_b)
 end
 
-function mw_avg!(u, cell_id, molecular_weights)
-    for i in eachindex(molecular_weights)
-        u.mw_avg[cell_id] += u.mass_fractions[i, cell_id] / molecular_weights[i]
+#we should probably decide whether or not to pass du into every function just for consistency
+#function mw_avg!(du, u, cell)
+function mw_avg!(u, cell)
+    for species_name in propertynames(u.mass_fractions)
+        u.mw_avg[cell] += u.mass_fractions[species_name][cell] / u.molecular_weights[species_name]
     end
 
-    u.mw_avg[cell_id] = u.mw_avg[cell_id]^-1.0
+    u.mw_avg[cell] = u.mw_avg[cell]^-1.0
 end
 
-function rho_ideal!(
-        u, #u values
-        cell_id
-    )
-    u.rho[cell_id] = (u.pressure[cell_id] * u.mw_avg[cell_id]) / (R_gas * u.temp[cell_id])
+function rho_ideal!(u, cell)
+    u.rho[cell] = (u.pressure[cell] * u.mw_avg[cell]) / (R_gas * u.temp[cell])
 end
 
-#this is the thing I was talking about to avoid dynamic dispatch
-#do not use these
-function cell_rho!(u, phys::AbstractSolidPhysics, cell_id)
-    return u.rho[cell_id] = phys.rho
+function molar_concentrations!(u, cell)
+    for species_name in propertynames(u.molar_concentrations)
+        u.molar_concentrations[species_name][cell] = (u.rho[cell] * u.mass_fractions[species_name][cell]) / u.species_molecular_weights[species_name]
+    end
 end
 
-function cell_rho!(u, phys::AbstractFluidPhysics, cell_id)
-    mw_avg!(u, cell_id, phys.species_molecular_weights)
-    rho_ideal!(u, cell_id)
-end
-
-function get_cell_cp(
-    mass_fractions, #u values
-    species_cps #other props
-)
+#honestly, this could probably be removed and derrived only in functions that actually need it
+function cp_avg!(u, cell)
     cp_avg_cache_for_cell = 0.0
 
-    for i in eachindex(mass_fractions)
-        cp_avg_cache_for_cell += mass_fractions[i] * species_cps[i]
+    for species_name in propertynames(u.mass_fractions)
+        u.cp_avg[cell] += u.mass_fractions[species_name][cell] * u.species_cps[species]
     end
 
     return cp_avg_cache_for_cell
 end
 
-function get_partial_pressures(
-    mass_fractions, P_total_bar, #u values
-    molecular_weights #other props
-)
-    moles = mass_fractions ./ molecular_weights
-    total_moles = sum(moles)
-    mole_fractions = moles ./ total_moles
+function partial_pressure(u, cell)
+    total_moles = 0.0
+
+
 
     return mole_fractions .* P_total_bar
 end
@@ -67,10 +56,10 @@ function van_t_hoff(A, dH, T)
     return A * exp(-dH / (R_gas * T))
 end
 
-function K_gibbs_free(T_ref, T_actual, ΔG_rxn_ref, ΔH_rxn_ref)
-    K_ref = exp(-ΔG_rxn_ref / (R_gas * T_ref))
-
-    ln_K_ratio = (-ΔH_rxn_ref / R_gas) * (1 / T_actual - 1 / T_ref)
+function K_gibbs_free(u, cell, reaction)
+    K_ref = exp(-reaction.ΔG_rxn_ref / (8.314e-3 * reaction.T_ref)) #R is in kJ
+    
+    ln_K_ratio = (-reaction.ΔH_rxn_ref / 8.314e-3) * (1 / u.temp[cell] - 1 / reaction.T_ref)
 
     K_T = K_ref * exp(ln_K_ratio)
 

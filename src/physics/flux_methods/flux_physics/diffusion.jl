@@ -5,16 +5,17 @@ function species_numerical_flux(rho_avg, diffusion_coeff, mass_fraction_a, mass_
 end
 
 function diffusion_mass_fraction_exchange!(
-        du, u, idx_a, idx_b,
+        du, u, idx_a, idx_b, face_idx,
         area, norm, dist,
-        phys_a, phys_b
     )
 
     rho_avg = 0.5 * (u.rho[idx_a] + u.rho[idx_b])
 
-    for i in eachindex(u.mass_fractions[:, idx_a])
+    for species_name in propertynames(u.mass_fractions)
         diffusion_coeff_effective = harmonic_mean(phys_a.species_diffusion_coeffs[i], phys_b.species_diffusion_coeffs[i])
-        numerical_flux = species_numerical_flux(rho_avg, diffusion_coeff_effective, u.mass_fractions[i, idx_a], u.mass_fractions[i, idx_b], area, dist)
-        du.mass_fractions[i, idx_a] -= numerical_flux
+
+        concentration_gradient = (u.mass_fractions[species_name][idx_b] - u.mass_fractions[species_name][idx_a]) / dist
+        diffusion = -rho_avg * diffusion_coeff_effective * concentration_gradient
+        du.mass_fractions[species_name][idx_a] -= diffusion * area
     end
 end

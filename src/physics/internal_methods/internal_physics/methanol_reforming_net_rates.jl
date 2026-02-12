@@ -1,64 +1,16 @@
-struct MSRReaction <: AbstractReaction
-    heat_of_reaction::Float64
-    delta_gibbs_free_energy::Float64
-    K_gibbs_free_ref_temp::Float64
-    kf_A::Float64 # Pre-exponential factor for forward reaction
-    kf_Ea::Float64 # Activation energy for forward reaction
-    reactants::Vector{Int} #(chemical_id_1, chemical_id_2, etc...)
-    reactant_stoich_coeffs::Vector{Int} #(stoich_coeff_for_reactant_1, stoich_coeff_for_reactant_2, etc...)
-    products::Vector{Int} #(chemical_id_1, chemical_id_2, etc...)
-    product_stoich_coeffs::Vector{Int} #[stoich_coeff_for_product_1, stoich_coeff_for_product_2, etc...]
-    all_stoich_coeffs::Vector{Int} #(stoich_for_chemical_id_1, stoich_for_chemical_id_2, etc...) #-1 = reactant, 1 = product
-
-    adsorption_A_vec::Vector{Float64}
-    adsorption_dH_vec::Vector{Float64}
-end
-
-struct MDReaction <: AbstractReaction
-    heat_of_reaction::Float64
-    delta_gibbs_free_energy::Float64
-    K_gibbs_free_ref_temp::Float64
-    kf_A::Float64 # Pre-exponential factor for forward reaction
-    kf_Ea::Float64 # Activation energy for forward reaction
-    reactants::Vector{Int} #(chemical_id_1, chemical_id_2, etc...)
-    reactant_stoich_coeffs::Vector{Int} #(stoich_coeff_for_reactant_1, stoich_coeff_for_reactant_2, etc...)
-    products::Vector{Int} #(chemical_id_1, chemical_id_2, etc...)
-    product_stoich_coeffs::Vector{Int} #[stoich_coeff_for_product_1, stoich_coeff_for_product_2, etc...]
-    all_stoich_coeffs::Vector{Int} #(stoich_for_chemical_id_1, stoiach_for_chemical_id_2, etc...) #-1 = reactant, 1 = product
-
-    adsorption_A_vec::Vector{Float64}
-    adsorption_dH_vec::Vector{Float64}
-end
-
-struct WGSReaction <: AbstractReaction
-    heat_of_reaction::Float64
-    delta_gibbs_free_energy::Float64
-    K_gibbs_free_ref_temp::Float64
-    kf_A::Float64 # Pre-exponential factor for forward reaction
-    kf_Ea::Float64 # Activation energy for forward reaction
-    reactants::Vector{Int} #(chemical_id_1, chemical_id_2, etc...)
-    reactant_stoich_coeffs::Vector{Int} #(stoich_coeff_for_reactant_1, stoich_coeff_for_reactant_2, etc...)
-    products::Vector{Int} #(chemical_id_1, chemical_id_2, etc...)
-    product_stoich_coeffs::Vector{Int} #[stoich_coeff_for_product_1, stoich_coeff_for_product_2, etc...]
-    all_stoich_coeffs::Vector{Int} #(stoich_for_chemical_id_1, stoich_for_chemical_id_2, etc...) #-1 = reactant, 1 = product
-
-    adsorption_A_vec::Vector{Float64}
-    adsorption_dH_vec::Vector{Float64}
-end
-
-function PAM_reaction(rxn, molar_concentrations, T)
+function PAM_reforming_react_cell!(du, u, cell_id, vol)
     #we divide by 1e-5 because PAM parameters are typically in bar
     # methanol, water, carbon_monoxide, hydrogen, carbon_dioxide
-    conversion_factor = ((R_gas * T) * 1e-5)
-    P_CH3OH = molar_concentrations[1] * conversion_factor
-    P_H2O = molar_concentrations[2] * conversion_factor
-    P_CO = molar_concentrations[3] * conversion_factor
-    P_H2 = max((molar_concentrations[4] * conversion_factor), 1e-9)
-    P_CO2 = molar_concentrations[5] * conversion_factor
+    conversion_factor = ((R_gas * u.temp[cell_id]) * 1e-5)
+    P_CH3OH = u.molar_concentrations.methanol[cell_id] * conversion_factor
+    P_H2O = u.molar_concentrations.water[cell_id] * conversion_factor
+    P_CO = u.molar_concentrations.carbon_monoxide[cell_id] * conversion_factor
+    P_H2 = max((u.molar_concentrations.hydrogen[cell_id] * conversion_factor), 1e-9)
+    P_CO2 = u.molar_concentrations.carbon_dioxide[cell_id] * conversion_factor
 
-    K_CH3O = van_t_hoff(rxn.adsorption_A_vec[1], rxn.adsorption_dH_vec[1], T)
-    K_HCOO = van_t_hoff(rxn.adsorption_A_vec[2], rxn.adsorption_dH_vec[2], T)
-    K_OH = van_t_hoff(rxn.adsorption_A_vec[3], rxn.adsorption_dH_vec[3], T)
+    K_CH3O = van_t_hoff(u.adsorption_A_vec[1], u.adsorption_dH_vec[1], u.temp[cell_id])
+    K_HCOO = van_t_hoff(u.adsorption_A_vec[2], u.adsorption_dH_vec[2], u.temp[cell_id])
+    K_OH = van_t_hoff(u.adsorption_A_vec[3], u.adsorption_dH_vec[3], u.temp[cell_id])
 
     term_CH3O = K_CH3O * (P_CH3OH / sqrt(P_H2))
     term_HCOO = K_HCOO * (P_CO2 * sqrt(P_H2))
@@ -66,63 +18,40 @@ function PAM_reaction(rxn, molar_concentrations, T)
 
     DEN = 1.0 + term_CH3O + term_HCOO + term_OH
 
-    return P_CH3OH, P_H2O, P_CO, P_H2, P_CO2,   K_CH3O, K_HCOO, K_OH,   DEN
-end
-
-
-function net_reaction_rate(rxn::MSRReaction, molar_concentrations, T, kf_A, kf_Ea, kr_A, kr_Ea)
-    P_CH3OH, P_H2O, P_CO, P_H2, P_CO2, 
-    K_CH3O, K_HCOO, K_OH, 
-    DEN = PAM_reaction(rxn, molar_concentrations, T)
-
-    #=
-    println("P_CH3OH, ", P_CH3OH)
-    println("P_H2O, ", P_H2O)
-    println("P_CO, ", P_CO)
-    println("P_H2, ", P_H2)
-    println("P_CO2, ", P_CO2)
-    println("K_CH3O, ", K_CH3O)
-    println("K_HCOO, ", K_HCOO)
-    println("K_OH, ", K_OH)
-    println("DEN, ", DEN)
-    println("")
-    =#
-
-    k_MSR = rxn.kf_A * exp(-rxn.kf_Ea / (R_gas * T))
-    K_eq_MSR = K_gibbs_free(rxn.K_gibbs_free_ref_temp, T, rxn.delta_gibbs_free_energy, rxn.heat_of_reaction)
+    #MSR
+    k_MSR = u.reactions.MSR_rxn.kf_A * exp(-u.reactions.MSR_rxn.kf_Ea / (R_gas * u.temp[cell_id]))
+    K_eq_MSR = K_gibbs_free(u.reactions.MSR_rxn.K_gibbs_free_ref_temp, u.temp[cell_id], u.reactions.MSR_rxn.delta_gibbs_free_energy, u.reactions.MSR_rxn.heat_of_reaction)
     
     driving_force = 1.0 - ( (P_CO2 * P_H2^3) / (K_eq_MSR * P_CH3OH * P_H2O) )
     
-    rate = (k_MSR * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2) #max just to ensure we don't divide by zero
+    u.net_rates.MSR_rxn = (k_MSR * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2) #max just to ensure we don't divide by zero
 
-    return rate
-end
-
-function net_reaction_rate(rxn::MDReaction, molar_concentrations, T, kf_A, kf_Ea, kr_A, kr_Ea)
-    P_CH3OH, P_H2O, P_CO, P_H2, P_CO2, 
-    K_CH3O, K_HCOO, K_OH, 
-    DEN = PAM_reaction(rxn, molar_concentrations, T)
-
-    k_MD = rxn.kf_A * exp(-rxn.kf_Ea / (R_gas * T))
-    K_eq_MD = K_gibbs_free(rxn.K_gibbs_free_ref_temp, T, rxn.delta_gibbs_free_energy, rxn.heat_of_reaction)
+    #MD
+    k_MD = u.reactions.MD_rxn.kf_A * exp(-u.reactions.MD_rxn.kf_Ea / (R_gas * u.temp[cell_id]))
+    K_eq_MD = K_gibbs_free(u.reactions.MD_rxn.K_gibbs_free_ref_temp, u.temp[cell_id], u.reactions.MD_rxn.delta_gibbs_free_energy, u.reactions.MD_rxn.heat_of_reaction)
     driving_force = 1.0 - ( (P_CO * P_H2^2) / (K_eq_MD * P_CH3OH) )
     
-    rate = (k_MD * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2)
+    u.net_rates.MD_rxn = (k_MD * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2)
 
-    return rate
-end
-
-function net_reaction_rate(rxn::WGSReaction, molar_concentrations, T, kf_A, kf_Ea, kr_A, kr_Ea)
-    
-    P_CH3OH, P_H2O, P_CO, P_H2, P_CO2, 
-    K_CH3O, K_HCOO, K_OH, 
-    DEN = PAM_reaction(rxn, molar_concentrations, T)
-
-    k_WGS = rxn.kf_A * exp(-rxn.kf_Ea / (R_gas * T))
-    K_eq_WGS = K_gibbs_free(rxn.K_gibbs_free_ref_temp, T, rxn.delta_gibbs_free_energy, rxn.heat_of_reaction)
+    #WGS
+    k_WGS = u.reactions.WGS_rxn.kf_A * exp(-u.reactions.WGS_rxn.kf_Ea / (R_gas * u.temp[cell_id]))
+    K_eq_WGS = K_gibbs_free(u.reactions.WGS_rxn.K_gibbs_free_ref_temp, u.temp[cell_id], u.reactions.WGS_rxn.delta_gibbs_free_energy, u.reactions.WGS_rxn.heat_of_reaction)
     driving_force = 1.0 - ( (P_CO2 * P_H2) / (K_eq_WGS * P_CO * P_H2O) )
     
-    rate = (k_WGS * K_OH * ( (P_CO * P_H2O) / sqrt(P_H2) ) * driving_force) / (DEN^2)
+    u.net_rates.WGS_rxn = (k_WGS * K_OH * ( (P_CO * P_H2O) / sqrt(P_H2) ) * driving_force) / (DEN^2)
+    
+    for species_name in propertynames(u.molar_concentrations[:])
+        for reforming_reaction in u.reaction.reforming_reactions
+            du.molar_concentrations[species_name][cell_id] += reforming_reaction.net_rates * reforming_reaction.all_stoich_coeffs[species_name] #this causes GC
+            #hold up, we need to decide if we should do u.net_rates.reactions.reforming_reactions[reaction_name] OR reforming_reaction.net_rate OR u.reactions.net_rates.reforming_reaction
+            #the disadvantage of the second one is that we start mixing up cached values (net_rates) and fixed property values (u.reforming_reactions)
+        end
+        du.mass_fractions[species_name][cell_id] += (du.molar_concentrations[species_name][cell_id] * u.species_molecular_weights[species_name]) / u.rho[cell_id]
+        # rate (mol/(m3*s)) * MW (g/mol) / rho (g/m3) = unitless/s
+    end
 
-    return rate
+    for reforming_reaction in u.reaction.reforming_reactions
+        du.temp[cell_id] += reforming_reaction.net_rate * (-reforming_reaction.heat_of_reaction) * vol #this causes GC
+        # rate (mol/(m3*s)) * H (J/mol) * vol (m3) = J/s = Watts
+    end
 end

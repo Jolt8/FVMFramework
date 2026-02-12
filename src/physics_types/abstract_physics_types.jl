@@ -1,7 +1,5 @@
 abstract type AbstractPhysics end
 
-abstract type AbstractFluidPhysics <: AbstractPhysics end
+struct Fluid <: AbstractPhysics end 
 
-abstract type AbstractSolidPhysics <: AbstractPhysics end
-
-abstract type AbstractReaction end
+struct Solid <: AbstractPhysics end
