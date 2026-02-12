@@ -1,15 +1,14 @@
-mutable struct RegionSetupInfo #this must be defined before SimulationConfigInfo
+mutable struct RegionSetupInfo#{T<:Type{AbstractPhysics}} #how the heck can we accept any type that's a subset of AbstractPhysics
     name::String
+    type::AbstractPhysics #this is used to define connections
     initial_conditions::ComponentArray
-    region_physics::AbstractPhysics
+    properties::ComponentArray
     region_function::Function
     region_cells::Vector{Int}
 end
 
-abstract type AbstractController end
-
 mutable struct ControllerSetupInfo #this must be defined before SimulationConfigInfo
-    controller::AbstractController
+    controller::ComponentArray
     monitored_cellset::String
     affected_cellset::String
     controller_function::Function
@@ -55,24 +54,33 @@ end
 
 function add_region!(
     config, name;
+    type,
     initial_conditions,
-    region_physics,
-    region_function,
+    properties,
+    region_function
 )
-
     region_cells = collect(getcellset(config.grid, name))
 
     for cell_id in region_cells
         for field in propertynames(initial_conditions)
-            if ndims(getproperty(config.u_proto, field)) > 1 #for mass fractions
-                getproperty(config.u_proto, field)[:, cell_id] = initial_conditions[field]
+            if length(propertynames(initial_conditions[field])) > 1
+                #FIXME: we need to overload this so u.u_proto[field] = something actually works 
+                for field_2 in propertynames(initial_conditions[field])
+                    store = config.u_proto[field][field_2][cell_id]
+                    #println(config.u_proto[field][field_2][cell_id])
+                    #we should probably overload the basic getproperty / getindex with something that actually returns a value that mutates the original
+                    #config.u_proto[field][field_2][cell_id] = initial_conditions[field][field_2] 
+                    getproperty(getproperty(config.u_proto, field), field_2)[cell_id] = initial_conditions[field][field_2]
+                    #println(config.u_proto[field][field_2][cell_id])
+                    #println(store == config.u_proto[field][field_2][cell_id])
+                end
             else
                 getproperty(config.u_proto, field)[cell_id] = initial_conditions[field]
             end
         end
     end
 
-    push!(config.regions, RegionSetupInfo(name, initial_conditions, region_physics, region_function, region_cells))
+    push!(config.regions, RegionSetupInfo(name, type, initial_conditions, properties, region_function, region_cells))
 end
 
 #this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
@@ -96,37 +104,25 @@ function add_facet_region!(
         end
     end
 
-    push!(config.regions, RegionSetupInfo(name, initial_conditions, region_physics, region_function, region_cells))
+    push!(config.regions, RegionSetupInfo(name, type, initial_conditions, region_physics, region_function, region_cells))
 end
 
 function add_controller!(
-    config,
-    controller,
+    config;
+    controller_properties,
+    controller_function,
     monitored_cellset,
-    affected_cellset,
-    controller_function
+    affected_cellset
 )
     monitored_cells = collect(getcellset(config.grid, monitored_cellset))
     affected_cells = collect(getcellset(config.grid, affected_cellset))
 
-    push!(config.controllers, ControllerSetupInfo(controller, monitored_cellset, affected_cellset, controller_function, monitored_cells, affected_cells))
+    push!(config.controllers, ControllerSetupInfo(controller_properties, monitored_cellset, affected_cellset, controller_function, monitored_cells, affected_cells))
 end
 
-#TODO: allow for face boundary conditions, boundary conditions applied on faces only apply to the faces right now
-
-#we should probably find a way to make the creation of these structs automatic 
-struct RegionGroup{T <: AbstractPhysics, F <: Function}
-    phys::T
-    region_function!::F
-    region_cells::Vector{Int}
-end
-
-struct ControllerGroup{T <: AbstractController, F <: Function}
-    id::Int
-    controller::T
-    controller_function!::F
-    monitored_cells::Vector{Int}
-    affected_cells::Vector{Int}
+struct ConnectionGroup{F<:Function}
+    flux_function!::F
+    cell_neighbors::Vector{Tuple{Int, Vector{Tuple{Int, Int}}}} #we could probably use ::Vector{Connection} here
 end
 
 #=
@@ -136,17 +132,20 @@ struct Connection
 end
 =#
 
-struct ConnectionGroup{TA <: AbstractPhysics, TB <: AbstractPhysics, F <: Function}
-    phys_a::TA
-    phys_b::TB
-    flux_function!::F
-    connections::Vector{Tuple{Int, Tuple{Int, Int}}} #we could probably use ::Vector{Connection} here
+struct ControllerGroup{F <:Function}
+    id::Int
+    controller_function!::F
+    monitored_cells::Vector{Int}
+    affected_cells::Vector{Int}
+end
+
+struct RegionGroup{F<:Function}
+    region_function!::F
+    region_cells::Vector{Int}
 end
 
 
 struct FVMSystem
-    phys::Vector{AbstractPhysics}
-    cell_phys_id_map::Vector{Int}
     connection_groups::Vector{ConnectionGroup}
     controller_groups::Vector{ControllerGroup}
     region_groups::Vector{RegionGroup}
@@ -155,33 +154,13 @@ end
 
 function finish_fvm_config(config, conneciton_map_function)
     n_cells = length(config.geo.cell_volumes)
-
-    phys = AbstractPhysics[]
-    cell_phys_id_map = zeros(Int, n_cells)
-    #the only reason this exists is because we still need to access the physics of the cell in the connections loop
-    #we're doubling up on physics, but it makes everything cleaner later
-
-    region_groups = RegionGroup[]
+    
+    cell_phys_map = Vector{AbstractPhysics}(undef, n_cells)
 
     for (i, region) in enumerate(config.regions)
-        push!(region_structs, RegionGroup(region.region_physics, region.region_function, region.region_cells))
-        push!(phys, region.region_physics)
-
         @batch for cell_id in region.region_cells
-            cell_phys_id_map[cell_id] = i
+            cell_phys_map[cell_id] = region.type
         end
-    end
-
-    controller_groups = ControllerGroup[]
-
-    for (controller_id, controller) in enumerate(config.controllers)
-        push!(controller_groups, ControllerGroup(
-                controller_id,
-                controller.controller,
-                controller.controller_function,
-                controller.monitored_cells, controller.affected_cells
-            )
-        )
     end
 
     connection_groups = ConnectionGroup[]
@@ -193,38 +172,37 @@ function finish_fvm_config(config, conneciton_map_function)
             if idx_b <= 0
                 continue
             end
-            phys_a = phys[cell_phys_id_map[idx_a]]
-            phys_b = phys[cell_phys_id_map[idx_b]]
+            phys_a = cell_phys_map[idx_a]
+            phys_b = cell_phys_map[idx_b]
 
-            flux_function! = conneciton_map_function(phys_a, phys_b)
-            
-            if !((phys_a, phys_b) in unique_celltype_pairs)
-                push!(unique_celltype_pairs, (phys_a, phys_b))
-            end
+            flux_function! = conneciton_map_function(typeof(phys_a), typeof(phys_b))
 
             connection_group_id = findfirst(item -> item == (phys_a, phys_b), unique_celltype_pairs)
 
             if !((phys_a, phys_b) in unique_celltype_pairs)
+                push!(unique_celltype_pairs, (phys_a, phys_b))
+                connection_group_id = findfirst(item -> item == (phys_a, phys_b), unique_celltype_pairs)
                 push!(connection_groups, ConnectionGroup(
-                        phys_a, phys_b, 
-                        flux_function!, 
-                        [(idx_a, Tuple{Int, Int}[]) for idx_a in 1:n_cells]
-                    )
+                    flux_function!,
+                    [(idx_a, Tuple{Int,Int}[]) for idx_a in 1:n_cells]
+                )
                 )
                 push!(connection_groups[connection_group_id].connections[idx_a][2], (
-                        (idx_b, facet_idx)
-                    )
+                    (idx_b, face_idx)
                 )
-            elseif (phys_a, phys_b) in unique_celltype_pairs && isempty([connection_group_id].connections[idx_a])
+                )
+            elseif (phys_a, phys_b) in unique_celltype_pairs && isempty(connection_groups[connection_group_id].connections[idx_a])
                 println("I'm unsure if this actually ever happens, check to line 221 in sim config if it does")
+                connection_group_id = findfirst(item -> item == (phys_a, phys_b), unique_celltype_pairs)
                 push!(connection_groups[connection_group_id].connections[idx_a], (
-                        (idx_a, Vector{Tuple{Int, Int}}((idx_b, facet_idx)))
-                    )
+                    (idx_a, Vector{Tuple{Int,Int}}((idx_b, face_idx)))
                 )
-            elseif !isempty([connection_group_id].connections[idx_a])
+                )
+            elseif !isempty(connection_groups[connection_group_id].connections[idx_a])
+                connection_group_id = findfirst(item -> item == (phys_a, phys_b), unique_celltype_pairs)
                 push!(connection_groups[connection_group_id].connections[idx_a][2], (
-                        (idx_b, facet_idx)
-                    )
+                    (idx_b, face_idx)
+                )
                 )
             end
         end
@@ -235,6 +213,23 @@ function finish_fvm_config(config, conneciton_map_function)
         for (idx_a, idx_a_neighbors) in CG.cell_neighbors
             cell_neighbors[idx_a] = filter(!isempty, cell_neighbors[idx_a])
         end
+    end
+
+    region_groups = RegionGroup[]
+
+    for region in config.regions
+        push!(region_groups, RegionGroup(region.region_function, region.region_cells))
+    end
+
+    controller_groups = ControllerGroup[]
+
+    for (controller_id, controller) in enumerate(config.controllers)
+        push!(controller_groups, ControllerGroup(
+                controller_id,
+                controller.controller_function,
+                controller.monitored_cells, controller.affected_cells
+            )
+        )
     end
 
     #this code is to merge the state variables such as velocity, temperature or pressure with non-state variables such as integral_error
@@ -252,9 +247,7 @@ function finish_fvm_config(config, conneciton_map_function)
     du0 = u0 .* 0.0
 
     return du0, u0, config.geo, FVMSystem(
-        connection_groups, phys, cell_phys_id_map,
-        regions_phys_func_cells,
-        controllers_controller_id_controller_func_monitored_affected,
+        connection_groups, controller_groups, region_groups,
         u_merged_axes,
     )
 end
