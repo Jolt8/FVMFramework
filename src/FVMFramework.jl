@@ -57,7 +57,7 @@ export check_cellset_connectivity, check_grid_connectivity
 # ----- Physics ----
 #   ---- Physics Types ----
 include("physics_types/abstract_physics_types.jl")
-export AbstractPhysics, AbstractFluidPhysics, AbstractSolidPhysics, AbstractReaction
+export AbstractPhysics, Fluid, Solid
 
 #   ---- Flux Methods ----
 #       --- Flux Physics ---
@@ -100,7 +100,7 @@ include("setup_and_recording/sim_config_helper_functions.jl")
 export get_cell_set_total_volume, get_facet_set_total_area, get_facet_set_cells_respective_areas, get_cell_ids_in_facet_set
 
 include("setup_and_recording/sim_config.jl")
-export create_fvm_config, add_region!, add_facet_region!, finish_fvm_config
+export create_fvm_config, add_region!, add_controller!, add_facet_region!, finish_fvm_config
 export SimulationConfigInfo, RegionSetupInfo, BoundarySetupInfo, FVMSystem, AbstractConnectionGroup
 
 #   ---- Sim Recording ----

@@ -14,12 +14,16 @@ caches = DiffCache(
     ), 15
 )
 
+mass_fractions = ComponentVector(water = zeros(N))
+
 u_proto = ComponentArray(
     vel_x=zeros(N), vel_y=zeros(N), vel_z=zeros(N),
     pressure=zeros(N),
-    mass_fractions=zeros(5, N),
+    mass_fractions=mass_fractions,
     temp=zeros(N)
 )
+
+u_proto.mass_fractions.water
 
 u_test = ForwardDiff.Dual(1)
 
@@ -29,9 +33,19 @@ test.rho_cache
 
 @time u = ComponentVector(u_proto; NamedTuple(test)...)
 
-for i in eachindex(u.mass_fractions)
-    println("hi")
+n_procs = 0
+
+for field in propertynames(u.mass_fractions)
+    n_procs += 1
+    u.mass_fractions[field][1] = 1.0
+    println(u.mass_fractions[field])
 end
+#what, I thought this didn't work
+
+test.rho_cache
+
+n_procs
+
 
 @time u = [u_proto; test]
 
