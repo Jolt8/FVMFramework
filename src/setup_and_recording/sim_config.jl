@@ -187,20 +187,20 @@ function finish_fvm_config(config, conneciton_map_function)
                     [(idx_a, Tuple{Int,Int}[]) for idx_a in 1:n_cells]
                 )
                 )
-                push!(connection_groups[connection_group_id].connections[idx_a][2], (
+                push!(connection_groups[connection_group_id].cell_neighbors[idx_a][2], (
                     (idx_b, face_idx)
                 )
                 )
-            elseif (phys_a, phys_b) in unique_celltype_pairs && isempty(connection_groups[connection_group_id].connections[idx_a])
+            elseif (phys_a, phys_b) in unique_celltype_pairs && isempty(connection_groups[connection_group_id].cell_neighbors[idx_a])
                 println("I'm unsure if this actually ever happens, check to line 221 in sim config if it does")
                 connection_group_id = findfirst(item -> item == (phys_a, phys_b), unique_celltype_pairs)
-                push!(connection_groups[connection_group_id].connections[idx_a], (
+                push!(connection_groups[connection_group_id].cell_neighbors[idx_a], (
                     (idx_a, Vector{Tuple{Int,Int}}((idx_b, face_idx)))
                 )
                 )
-            elseif !isempty(connection_groups[connection_group_id].connections[idx_a])
+            elseif !isempty(connection_groups[connection_group_id].cell_neighbors[idx_a])
                 connection_group_id = findfirst(item -> item == (phys_a, phys_b), unique_celltype_pairs)
-                push!(connection_groups[connection_group_id].connections[idx_a][2], (
+                push!(connection_groups[connection_group_id].cell_neighbors[idx_a][2], (
                     (idx_b, face_idx)
                 )
                 )
@@ -209,11 +209,13 @@ function finish_fvm_config(config, conneciton_map_function)
     end
 
     #remove empty tuples from cell_neighbors
+    
     for CG in connection_groups
         for (idx_a, idx_a_neighbors) in CG.cell_neighbors
-            cell_neighbors[idx_a] = filter(!isempty, cell_neighbors[idx_a])
+            filter!(conn -> !(isempty(conn)), CG.cell_neighbors)
         end
     end
+    
 
     region_groups = RegionGroup[]
 
