@@ -2,12 +2,14 @@
 
 function species_advection!(
         du, u, idx_a, idx_b, face_idx, species_name,
-        face_m_dot,
-        area, norm, dist,
+        area, norm, dist
     )
     upwinded_mass_fractions = upwind(du, u, idx_a, idx_b, face_idx, u.mass_fractions[species_name][idx_a], u.mass_fractions[species_name][idx_b])
 
-    du.mass_fractions[species_idx, idx_a] -= face_m_dot * upwinded_mass_fractions
+    du.mass_fractions[species_name][idx_a] -= -du.mass[idx_a][face_idx] * upwinded_mass_fractions
+    #-du.mass[idx_a] because species are being taken out of [idx_a] 
+    #I'm still keeping it as -= even though both negative signs could be taken out, but I think always thinking that 
+    #stuff is being taken out of [idx_a] is more intuitive 
 end
 
 function all_species_advection!(
@@ -15,7 +17,7 @@ function all_species_advection!(
         area, norm, dist
     )
     for species_name in propertynames(u.mass_fractions)
-        species_advection!(du, u, idx_a, idx_b, face_idx, species_name, face_m_dot, area, norm, dist)
+        species_advection!(du, u, idx_a, idx_b, face_idx, species_name, area, norm, dist)
     end
 end
 
@@ -32,7 +34,7 @@ function enthalpy_advection!(
     energy_flux = -du.mass[idx_a] * cp_upwinded * temp_upwinded
     #-du.mass[idx_a] because mass is being taken out of [idx_a] 
 
-    du.temp[idx_a] -= energy_flux
+    du.heat[idx_a] -= energy_flux
 end
 
 

@@ -45,7 +45,7 @@ function power_law_react_cell!(du, u, cell, reaction, vol)
     molar_concentrations!(u, cell)
 
     #find reverse pre exponential_factor
-    K_ref = K_gibbs_free(reaction.K_gibbs_free_ref_temp, u.temp[cell], reaction.delta_gibbs_free_energy, reaction.heat_of_reaction) 
+    K_ref = K_gibbs_free(u, cell, reaction) 
 
     kr_A = (reaction.kf_A / K_ref) * exp(-reaction.heat_of_reaction / (R_gas * u.temp[cell])) 
 

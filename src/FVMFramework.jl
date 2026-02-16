@@ -65,7 +65,7 @@ include("physics/flux_methods/flux_physics/advection.jl")
 export species_advection!, all_species_advection!, enthalpy_advection!
 
 include("physics/flux_methods/flux_physics/darcy_flow.jl")
-export get_darcy_mass_flux, continuity_and_momentum_darcy
+export get_darcy_mass_flux, continuity_and_momentum_darcy!
 
 include("physics/flux_methods/flux_physics/diffusion.jl")
 export species_numerical_flux, diffusion_mass_fraction_exchange!
@@ -80,12 +80,10 @@ export cap_heat_flux_to_temp_change!, cap_mass_flux_to_pressure_change!
 
 #       --- Internal Physics ---
 include("physics/internal_methods/internal_physics/chemistry.jl")
-export PowerLawReaction
-export net_reaction_rate, react_cell!
+export net_reaction_rate, power_law_react_cell!
 
 include("physics/internal_methods/internal_physics/methanol_reforming_net_rates.jl")
-export MSRReaction, MDReaction, WGSReaction #new reaction types
-export net_reaction_rate
+export PAM_reforming_react_cell!
 
 #   ---- Helper Functions ----
 include("physics/physics_helper_functions.jl")
@@ -123,6 +121,5 @@ export show_t_progress, approximate_time_to_finish_cb
 
 #   ---- FVM Operators ----
 include("solvers/fvm_operators/methanol_reformer_op_different_connections.jl")
-export methanol_reformer_f_test!, MethanolReformerPhysics, WallPhysics, MethanolReformerConnectionGroups
-export methanol_reformer_init_conn_groups, connection_catagorizer!
+export methanol_reformer_f_test!, FVM_Tracer_Operator!
 end

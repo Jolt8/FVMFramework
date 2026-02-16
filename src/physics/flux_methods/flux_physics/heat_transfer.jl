@@ -11,7 +11,7 @@ end
 
 function diffusion_temp_exchange!(
         du, u, idx_a, idx_b, face_idx,
-        area, norm, dist,
+        area, norm, dist
     )
     k_effective = get_k_effective(u.k[idx_a], u.k[idx_b])
 
@@ -19,5 +19,5 @@ function diffusion_temp_exchange!(
     q = -k_effective * grad_T
     F = q * area
     
-    du.temp[idx_a] -= F
+    du.heat[idx_a] -= F
 end

@@ -42,14 +42,11 @@ function cp_avg!(u, cell)
 
     return cp_avg_cache_for_cell
 end
-
+#=
 function partial_pressure(u, cell)
-    total_moles = 0.0
-
-
-
     return mole_fractions .* P_total_bar
 end
+=#
 
 function van_t_hoff(A, dH, T)
     #K = A * exp(dH/RT)
