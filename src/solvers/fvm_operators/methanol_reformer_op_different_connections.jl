@@ -61,7 +61,7 @@ function FVM_Tracer_Operator!(
     #only controller_funciton, monitored_cells, and affected_cells are needed now
     for cont in controller_groups
         cont.controller_function!(
-            du_trace, u_trace, cont.controller, cont.controller_id, cont.monitored_cells, cont.affected_cells,
+            du_trace, u_trace, cont.id, cont.monitored_cells, cont.affected_cells,
             cell_volumes
         )
     end
@@ -70,7 +70,7 @@ function FVM_Tracer_Operator!(
     #oh wait, now we don't even need the other fields for the different regions, we only need the region function
     for reg in region_groups
         @batch for cell_id in reg.region_cells
-            reg.internal_physics!(
+            reg.region_function!(
                 du_trace, u_trace, cell_id,
                 cell_volumes[cell_id]
             )
