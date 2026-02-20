@@ -2,7 +2,7 @@
 
 julia_version = "1.12.0"
 manifest_format = "2.0"
-project_hash = "9c8b53534a3f891b138e79cc2d2492038786a02d"
+project_hash = "e980d558647c56212e795d5a567725b72d637d0a"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -603,7 +603,7 @@ uuid = "55351af7-c7e9-48d6-89ff-24e801d99491"
 version = "0.10.14"
 
 [[deps.FVMFramework]]
-deps = ["ADTypes", "AlgebraicMultigrid", "ComponentArrays", "Dates", "Enzyme", "Ferrite", "ILUZero", "LinearAlgebra", "Logging", "NonlinearSolve", "Optimization", "OptimizationOptimJL", "OptimizationPolyalgorithms", "OrdinaryDiffEq", "PreallocationTools", "ProfileView", "RecursiveArrayTools", "SciMLSensitivity", "SparseArrays", "SparseConnectivityTracer", "StaticArrays", "WriteVTK", "Zygote"]
+deps = ["ADTypes", "AlgebraicMultigrid", "ComponentArrays", "Dates", "Enzyme", "Ferrite", "ILUZero", "LinearAlgebra", "Logging", "NonlinearSolve", "Optimization", "OptimizationOptimJL", "OptimizationPolyalgorithms", "OrdinaryDiffEq", "Polyester", "PreallocationTools", "ProfileView", "RecursiveArrayTools", "SciMLSensitivity", "SparseArrays", "SparseConnectivityTracer", "StaticArrays", "WriteVTK", "Zygote"]
 path = "."
 uuid = "3bea8ca0-a952-4872-be97-bc38a725671f"
 version = "0.1.0"
