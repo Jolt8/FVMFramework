@@ -1,3 +1,17 @@
+function write_to_vtk_helper!(vtk, u_named_step)
+    for field in propertynames(u_named_step)
+        data = u_named_step[field]
+
+        if data isa ComponentVector
+            write_to_vtk_helper!(vtk, data)
+        elseif data isa Vector || data isa SubArray
+            write_cell_data(vtk, data, String(field))
+        else
+            println("not_processed: ", field)
+        end
+    end
+end
+
 function sol_to_vtk(sol, u_named, grid, sim_file)
     date_and_time = Dates.format(now(), "I.MM.SS p yyyy-mm-dd")
     #date_and_time = Dates.format(now(), "I.MM.SS p")
@@ -24,25 +38,7 @@ function sol_to_vtk(sol, u_named, grid, sim_file)
 
     for (step, t) in enumerate(sol.t)
         VTKGridFile(step_filename * " $step" * " at $t.vtu", grid) do vtk
-            for field in propertynames(u_named[step])
-                data = u_named[step][field]
-                if field != :mass_fractions
-                    write_cell_data(vtk, data, String(field))
-                else
-                    if data isa ComponentVector
-                        for species in propertynames(data)
-                            write_cell_data(vtk, data[species], String(species))
-                        end
-                    elseif ndims(data) == 2 # Matrix of (species, cells) 
-                        for i in eachindex(data[:, 1])
-                            write_cell_data(vtk, data[i, :], "mass_fraction_$i")
-                        end
-                    else
-                        # Fallback for other structures
-                        write_cell_data(vtk, data, String(field))
-                    end
-                end
-            end
+            write_to_vtk_helper!(vtk, u_named[step])
             pvd[t] = vtk
         end
     end
