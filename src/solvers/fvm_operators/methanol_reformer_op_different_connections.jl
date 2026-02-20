@@ -1,7 +1,7 @@
 function solve_connection_group!(
-        du, u, phys_a::TA, phys_b::TB, flux!, neighbors,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
-    ) where {TA, TB}
+    du, u, phys_a::TA, phys_b::TB, flux!, neighbors,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+) where {TA,TB}
     #look into storing this data into a CSR in the future
     @batch for (idx_a, neighbor_list) in neighbors
         for (idx_b, face_idx) in neighbor_list
@@ -15,19 +15,19 @@ function solve_connection_group!(
 end
 
 function solve_controller_group!(
-        du, u, controller::T, controller_id, control!, monitored_cells, affected_cells, 
-        cell_volumes
-    ) where T
+    du, u, controller::T, id, control!, monitored_cells, affected_cells,
+    cell_volumes
+) where T
     #no loop here because control! already loops over monitored_cells and affected_cells
     control!(
-        du, u, controller, controller_id, monitored_cells, affected_cells,
+        du, u, controller, id, monitored_cells, affected_cells,
         cell_volumes
     )
 end
 
 function solve_region_group!(
-        du, u, phys::T, internal_physics!, region_cells
-    ) where T
+    du, u, phys::T, internal_physics!, region_cells
+) where T
     @batch for cell_id in region_cells
         internal_physics!(
             du, u, phys, cell_id,
@@ -56,7 +56,7 @@ function FVM_Tracer_Operator!(
             end
         end
     end
-    
+
     #Controller Loops
     #only controller_funciton, monitored_cells, and affected_cells are needed now
     for cont in controller_groups
@@ -81,65 +81,62 @@ end
 #oh, since there's no more physics types, the methods above with where T are no longer needed, nice!
 
 function methanol_reformer_f_test!(
-    du, u, p, t,
+    du_flat, u_flat, p, t,
     cell_volumes, cell_centroids,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     unconnected_cell_face_map, cell_face_areas, cell_face_normals,
     connection_groups, controller_groups, region_groups,
-    #phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int}, #we probably won't use these again, but they might be useful in the future
-    du_caches, caches,
-    u_merged_axes
+    du_fixed, u_fixed,
+    state_axes
 )
+    # Wrap incoming flat vectors in ComponentVectors (these are views of the solver arrays)
+    du_cv = ComponentVector(du_flat, state_axes)
+    u_cv = ComponentVector(u_flat, state_axes)
 
-    u = ComponentVector(u, u_merged_axes)
-    du = ComponentVector(du, u_merged_axes)
+    # Get the caches (which are usually stored in DiffCaches)
+    if eltype(u) == Float64
+        du_fixed_cv = get_tmp(du_fixed, Float64)
+        u_fixed_cv = get_tmp(u_fixed, Float64)
+    else
+        du_fixed_cv = get_tmp(du_fixed, ForwardDiff.Dual(1.0))
+        u_fixed_cv = get_tmp(u_fixed, ForwardDiff.Dual(1.0))
+    end
 
-    caches = get_tmp(caches, u)
-    du_caches = get_tmp(du_caches, u)
+    # Create merged ComponentVectors for the physics functions to use.
+    # Note: ComponentVector(cv; NamedTuple(cv_fixed)...) creates a NEW array.
+    du_merged = ComponentVector(du_cv; NamedTuple(du_fixed_cv)...)
+    u_merged = ComponentVector(u_cv; NamedTuple(u_fixed_cv)...)
 
-    u = ComponentVector(u; NamedTuple(caches)...)
-    du = ComponentVector(du; NamedTuple(du_caches)...)
-    du .= 0.0
-
-    #u = [u; caches] this is another option, but it might allocate
-
-    #even though react_cell!() already sets change_in_molar_concentrations_cache to .= 0.0, we're just doing .= 0.0 to all to make sure
-    #NOTE: I'm pretty sure that .*= 0.0 is ever so slightly less performant than .= 0.0
-
-    #I think one of the hardest things we're going to have to do is to create methods to construct the merged u and merged du from input data
-
-    #Connection Loops
-    #only neighbors and flux_function! is needed now
+    # Connection Loops
     for conn in connection_groups
         @batch for (idx_a, neighbor_list) in conn.cell_neighbors
             for (idx_b, face_idx) in neighbor_list
                 conn.flux_function!(
-                    du, u, idx_a, idx_b, face_idx,
+                    du_merged, u_merged, idx_a, idx_b, face_idx,
                     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
                 )
             end
         end
     end
-    
-    #Controller Loops
-    #only controller_funciton, monitored_cells, and affected_cells are needed now
+
+    # Controller Loops
     for cont in controller_groups
         cont.controller_function!(
-            du, u, cont.controller_id, cont.monitored_cells, cont.affected_cells,
+            du_merged, u_merged, cont.id, cont.monitored_cells, cont.affected_cells,
             cell_volumes
         )
     end
 
-    #Internal Physics, Sources, Boundary Conditions, and Capacities Loops 
-    #oh wait, now we don't even need the other fields for the different regions, we only need the region function
+    # Internal Physics, Sources, Boundary Conditions, and Capacities Loops 
     for reg in region_groups
-        @batch for cell_id in region_cells
-            reg.internal_physics!(
-                du, u, cell_id,
-                cell_volumes[cell_id]
+        @batch for cell_id in reg.region_cells
+            reg.region_function!(
+                du_merged, u_merged, cell_id,
+                cell_volumes
             )
         end
     end
+    @views du_flat .= du_merged[1:length(du_flat)]
 end
 
 #VERY IMPORTANT!!!!

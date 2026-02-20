@@ -189,9 +189,9 @@ initial_mass_fractions = initial_mass_fractions ./ sum(initial_mass_fractions)
 
 reforming_area_properties = ComponentVector(
     k=237.0, # k (W/(m*K))
-    cp=4.184, # cp (J/(kg*K))
+    cp=3000.0, # cp (J/(kg*K))
     mu=1e-5, # mu (Pa*s)
-    permeability=0.6e-11, # permeability (m^2)
+    permeability=6.0e-12, # permeability (m^2)
     diffusion_coefficients=ComponentVector(methanol=1e-5, water=1e-5, carbon_monoxide=1e-5, hydrogen=1e-5, carbon_dioxide=1e-5), #diffusion coefficients (m^2/s) 
     #FIXME: this is going to be tricky, diffusion coefficients should use the same [:, cell_id] that mass fractions use
     species_molecular_weights=species_molecular_weights,
@@ -331,7 +331,7 @@ add_region!(
         temp=ustrip(270.0u"°C" |> u"K")
     ),
     properties=ComponentVector(
-        k=237.0, # k (W/(m*K))
+        k = 237.0, # k (W/(m*K))
         rho=2700.0, # rho (kg/m^3)
         cp=921.0, # cp (J/(kg*K))
     ),

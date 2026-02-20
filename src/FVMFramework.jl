@@ -4,22 +4,23 @@ using Ferrite
 using OrdinaryDiffEq
 using LinearAlgebra
 using SparseArrays
-using SciMLSensitivity
-using Optimization
-using OptimizationPolyalgorithms
-using Zygote
+#using SciMLSensitivity
+#using Optimization
+#using OptimizationPolyalgorithms
+#using Zygote
 #using Enzyme
 using RecursiveArrayTools
-using OptimizationOptimJL
+#using OptimizationOptimJL
 using ILUZero
 using NonlinearSolve
 using ComponentArrays
 using StaticArrays
-using ProfileView
+#using ProfileView
 using Dates
 using WriteVTK
 using PreallocationTools
 using Polyester
+using ForwardDiff
 
 import AlgebraicMultigrid
 import SparseConnectivityTracer
@@ -91,6 +92,10 @@ export upwind, harmonic_mean #for fluxes
 export R_gas #constant referenced almost everywhere
 export van_t_hoft, arrenhius_k, K_gibbs_free #for chemical reactions
 export mw_avg!, rho_ideal!, get_cell_cp #other misc props
+export molar_fractions!, molar_concentrations!
+
+include("physics/physics_variable_summation_functions.jl")
+export sum_mass_flux_face_to_cell!
 
 # ----- Setup and Recording Methods -----
 #   ---- Sim Config ----
@@ -109,6 +114,22 @@ export sol_to_vtk
 include("setup_and_recording/workflow_helper_functions.jl")
 export rebuild_u_named, rebuild_u_named_vel
 
+#   ---- Tracer Methods ----
+include("setup_and_recording/tracing/tracer.jl")
+export create_tracer_context, TracerContext, TracerVariable
+
+include("setup_and_recording/tracing/tracer_merging.jl")
+export merge_trace_results
+
+include("setup_and_recording/tracing/tracer_classifying.jl")
+export classify_variables
+
+include("setup_and_recording/tracing/tracer_to_CompArray.jl")
+export region_setup, build_component_array, build_component_array_merge_regions
+
+include("setup_and_recording/tracing/tracer_setup.jl")
+export generate_setup_script, populate_merged_vector!
+
 # ----- Solvers -----
 #   ---- Preconditioners ----
 include("solvers/preconditioners.jl")
@@ -121,5 +142,8 @@ export show_t_progress, approximate_time_to_finish_cb
 
 #   ---- FVM Operators ----
 include("solvers/fvm_operators/methanol_reformer_op_different_connections.jl")
-export methanol_reformer_f_test!, FVM_Tracer_Operator!
+export methanol_reformer_f_test!
+
+include("solvers/fvm_operators/heat_transfer_op.jl")
+export heat_transfer_f!
 end
