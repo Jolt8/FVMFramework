@@ -107,8 +107,14 @@ add_controller!(config;
 
 
 #for CH3OH, HCOO, OH
-van_t_hoff_A_vec = NamedTuple(CH3O=1.7e-6, HCOO=4.74e-13, OH=3.32e-14)
-van_t_hoff_dH_vec = NamedTuple(CH3O=-46800.0, HCOO=-115000.0, OH=-110000.0)
+van_t_hoff_A_vec = (CH3O = 1.7e-6, HCOO = 4.74e-13, OH = 3.32e-14)
+van_t_hoff_dH_vec = (CH3O = -46800.0, HCOO = -115000.0, OH = -110000.0)
+#=
+Species = (CH3OH=1, H2O=2, H2=3, CO=4, CO2=5)
+for id in values(Species)
+   du.mass_fractions[id, cell_id] = something
+end
+=#
 
 MSR_rxn =(
     delta_H = 49500.0, # [J/mol]
