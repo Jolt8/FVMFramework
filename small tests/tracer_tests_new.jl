@@ -1,4 +1,5 @@
 #Structs
+#=
 struct VarPath
     root::Symbol #:du or :u
     path::Vector{Symbol} #[:reactions, :MSR_rxn, :kf_A]
@@ -324,6 +325,7 @@ end
 
 function reforming_area!(du, u, cell_id, vol)
     #property updating/retrieval
+    #I wonder if we could make these automatic by inferring which variables are caches that need to be updated, but this is fine for now
     molar_concentrations!(u, cell_id)
     mw_avg!(u, cell_id)
     rho_ideal!(u, cell_id)
@@ -426,7 +428,7 @@ var_access_logs, encountered_paths = merge_trace_results(ctx_du.access_logs)
 
 var_access_logs
 
-var_access_logs[[:heat, :_idx]]
+
 
 collect(values(var_access_logs))
 
@@ -450,7 +452,8 @@ function classify_variables(var_access_logs)
         if last_du_access == :du_write
             # State variable: the last thing we did to du was write to it
             state_vars[path] = log
-        elseif log.n_u_writes > 0
+        elseif log.n_u_writes > 0 || log.n_du_writes > 0 || log.n_du_reads > 0
+            #TODO: this is a little risky because we might have a state variable that is stored in du, but it's unlikely
             # Cache: we wrote to u, then read it later
             cache_vars[path] = log
         else
@@ -511,6 +514,12 @@ function dict_to_component_vector(d::Dict{Symbol,Any}, n_cells::Int)
     return ComponentVector(; pairs...)
 end
 
+var_access_logs[[:temp, :_idx]]
+var_access_logs[[:heat, :_idx]]
+var_access_logs[[:rho, :_idx]]
+var_access_logs[[:cp, :_idx]]
+var_access_logs[[:mass, :_idx]]
+
 function build_component_array(classified_vars::Dict{Vector{Symbol},VarAccessLog}, n_cells::Int)
     tree = Dict{Symbol,Any}()
 
@@ -545,5 +554,5 @@ println(Base.propertynames(cache_cv))
 
 println("\n=== Fixed ComponentVector ===")
 println(Base.propertynames(fixed_cv))
-
+=#
 

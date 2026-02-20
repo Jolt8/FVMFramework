@@ -25,11 +25,25 @@ u_proto = ComponentArray(
 
 u_proto.mass_fractions.water
 
-u_test = ForwardDiff.Dual(1)
+testing = ComponentVector(
+    rho_cache = zeros(N),
+    mw_avg_cache = zeros(N),
+    change_in_molar_concentrations_cache = zeros(N),
+    molar_concentrations_cache = zeros(N, 5),
+    net_rates_cache = zeros(N, 3)
+)
 
-test = get_tmp(caches, u_proto)
+test_axes = getaxes(testing)[1]
 
-test.rho_cache
+caches = DiffCache(Vector(testing), 15)
+
+u_test = ForwardDiff.Dual(1.0, 1.0)
+
+test = get_tmp(caches, u_test)
+
+new_caches = ComponentVector(test, test_axes)
+
+new_caches.rho_cache[2]
 
 @time u = ComponentVector(u_proto; NamedTuple(test)...)
 
