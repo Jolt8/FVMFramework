@@ -1,7 +1,7 @@
 const R_gas = 8.314
 
 function upwind(du, u, idx_a, idx_b, face_idx, var_a, var_b)
-    if du.mass[idx_a][face_idx] < 0.0
+    if du.mass[idx_a] < 0.0
         return var_a
     else
         return var_b
@@ -28,19 +28,21 @@ end
 
 function molar_concentrations!(u, cell)
     for species_name in propertynames(u.molar_concentrations)
-        u.molar_concentrations[species_name][cell] = (u.rho[cell] * u.mass_fractions[species_name][cell]) / u.species_molecular_weights[species_name]
+        u.molar_concentrations[species_name][cell] = (u.rho[cell] * u.mass_fractions[species_name][cell]) / u.molecular_weights[species_name]
+    end
+end
+
+function molar_fractions!(u, cell_id)
+    for species_name in propertynames(u.molar_concentrations)
+        u.molar_concentrations[species_name][cell_id] = u.mass_fractions[species_name][cell_id] / u.molecular_weights[species_name]
     end
 end
 
 #honestly, this could probably be removed and derrived only in functions that actually need it
 function cp_avg!(u, cell)
-    cp_avg_cache_for_cell = 0.0
-
     for species_name in propertynames(u.mass_fractions)
-        u.cp_avg[cell] += u.mass_fractions[species_name][cell] * u.species_cps[species]
+        u.cp_avg[cell] += u.mass_fractions[species_name][cell] * u.species_cps[species_name]
     end
-
-    return cp_avg_cache_for_cell
 end
 #=
 function partial_pressure(u, cell)
@@ -55,7 +57,7 @@ end
 
 function K_gibbs_free(u, cell, reaction)
     K_ref = exp(-reaction.ΔG_rxn_ref / (8.314e-3 * reaction.T_ref)) #R is in kJ
-    
+
     ln_K_ratio = (-reaction.ΔH_rxn_ref / 8.314e-3) * (1 / u.temp[cell] - 1 / reaction.T_ref)
 
     K_T = K_ref * exp(ln_K_ratio)

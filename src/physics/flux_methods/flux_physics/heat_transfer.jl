@@ -17,6 +17,7 @@ function diffusion_temp_exchange!(
 
     grad_T = (u.temp[idx_b] - u.temp[idx_a]) / dist
     q = -k_effective * grad_T
+
     F = q * area
     
     du.heat[idx_a] -= F

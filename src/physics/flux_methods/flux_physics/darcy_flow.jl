@@ -18,6 +18,6 @@ function continuity_and_momentum_darcy!(
     face_m_dot = -rho_avg * (permeability_avg / mu_avg) * p_grad * area
 
     #du.pressure[idx_a] -= face_m_dot
-    du.mass[idx_a] -= face_m_dot
+    du.mass_face[idx_a][face_idx] -= face_m_dot
 end
 
