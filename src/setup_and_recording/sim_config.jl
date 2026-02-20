@@ -1,7 +1,7 @@
 mutable struct RegionSetupInfo #this must be defined before SimulationConfigInfo
     name::String
     initial_conditions::ComponentArray
-    region_physics::AbstractPhysics
+    region_properties::ComponentArray
     region_function::Function
     region_cells::Vector{Int}
 end
@@ -56,7 +56,7 @@ end
 function add_region!(
     config, name;
     initial_conditions,
-    region_physics,
+    region_properties,
     region_function,
 )
 
@@ -72,7 +72,7 @@ function add_region!(
         end
     end
 
-    push!(config.regions, RegionSetupInfo(name, initial_conditions, region_physics, region_function, region_cells))
+    push!(config.regions, RegionSetupInfo(name, initial_conditions, region_properties, region_function, region_cells))
 end
 
 #this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
@@ -100,7 +100,7 @@ function add_facet_region!(
 end
 
 function add_controller!(
-    config,
+    config;
     controller,
     monitored_cellset,
     affected_cellset,
@@ -111,6 +111,7 @@ function add_controller!(
 
     push!(config.controllers, ControllerSetupInfo(controller, monitored_cellset, affected_cellset, controller_function, monitored_cells, affected_cells))
 end
+
 
 #TODO: allow for face boundary conditions, boundary conditions applied on faces only apply to the faces right now
 
@@ -176,11 +177,11 @@ function finish_fvm_config(config, conneciton_map_function)
 
     for (controller_id, controller) in enumerate(config.controllers)
         push!(controller_groups, ControllerGroup(
-                controller_id,
-                controller.controller,
-                controller.controller_function,
-                controller.monitored_cells, controller.affected_cells
-            )
+            controller_id,
+            controller.controller,
+            controller.controller_function,
+            controller.monitored_cells, controller.affected_cells
+        )
         )
     end
 
@@ -197,7 +198,7 @@ function finish_fvm_config(config, conneciton_map_function)
             phys_b = phys[cell_phys_id_map[idx_b]]
 
             flux_function! = conneciton_map_function(phys_a, phys_b)
-            
+
             if !((phys_a, phys_b) in unique_celltype_pairs)
                 push!(unique_celltype_pairs, (phys_a, phys_b))
             end
@@ -206,25 +207,25 @@ function finish_fvm_config(config, conneciton_map_function)
 
             if !((phys_a, phys_b) in unique_celltype_pairs)
                 push!(connection_groups, ConnectionGroup(
-                        phys_a, phys_b, 
-                        flux_function!, 
-                        [(idx_a, Tuple{Int, Int}[]) for idx_a in 1:n_cells]
-                    )
+                    phys_a, phys_b,
+                    flux_function!,
+                    [(idx_a, Tuple{Int,Int}[]) for idx_a in 1:n_cells]
+                )
                 )
                 push!(connection_groups[connection_group_id].connections[idx_a][2], (
-                        (idx_b, facet_idx)
-                    )
+                    (idx_b, facet_idx)
+                )
                 )
             elseif (phys_a, phys_b) in unique_celltype_pairs && isempty([connection_group_id].connections[idx_a])
                 println("I'm unsure if this actually ever happens, check to line 221 in sim config if it does")
                 push!(connection_groups[connection_group_id].connections[idx_a], (
-                        (idx_a, Vector{Tuple{Int, Int}}((idx_b, facet_idx)))
-                    )
+                    (idx_a, Vector{Tuple{Int,Int}}((idx_b, facet_idx)))
+                )
                 )
             elseif !isempty([connection_group_id].connections[idx_a])
                 push!(connection_groups[connection_group_id].connections[idx_a][2], (
-                        (idx_b, facet_idx)
-                    )
+                    (idx_b, facet_idx)
+                )
                 )
             end
         end

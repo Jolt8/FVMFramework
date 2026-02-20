@@ -1,8 +1,4 @@
 using Revise
-using Logging
-
-ENV["JULIA_PKG_PRESERVE_TIERED_INSTALLED"] == true
-ENV["JULIA_PKG_PRESERVE_TIERED_INSTALLED"] = true
 
 using FVMFramework
 
@@ -19,10 +15,13 @@ using ILUZero
 using StaticArrays
 using PreallocationTools
 using ForwardDiff
+using Polyester
 
 using Unitful
 
-grid = togrid("C://Users//wille//Desktop//FreeCad Projects//Methanol Reformer//output.msh")
+mesh_path = joinpath(@__DIR__, "output.msh")
+
+grid = togrid(mesh_path)
 
 grid.cellsets
 
@@ -30,7 +29,7 @@ n_cells = length(grid.cells)
 u_proto = ComponentArray(
     vel_x=zeros(n_cells), vel_y=zeros(n_cells), vel_z=zeros(n_cells),
     pressure=zeros(n_cells),
-    mass_fractions=ComponentVector(methanol = zeros(n_cells), water = zeros(n_cells), carbon_monoxide = zeros(n_cells), hydrogen = zeros(n_cells), carbon_dioxide = zeros(n_cells)),
+    mass_fractions=ComponentVector(methanol=zeros(n_cells), water=zeros(n_cells), carbon_monoxide=zeros(n_cells), hydrogen=zeros(n_cells), carbon_dioxide=zeros(n_cells)),
     temp=zeros(n_cells)
 )
 
@@ -63,10 +62,10 @@ temp_controller = PIDController(
 #TODO: Another thing I'd like to implement in my eventual optimizaiton pipeline is a method to extract a very basic
 #correlation between the average_temperature measured in the reforming_area cellset to another temp_sensor cellset 
 #that could be fed into an arduino to extrapolate sensor data to the reactor's actual internal reforming temp
-add_controller!(config,
+add_controller!(config;
     controller=temp_controller,
-    monitored_cellset="reforming_area",
-    affected_cellset="heating_area",
+    monitored_cellset = "reforming_area",
+    affected_cellset = "heating_areas",
     controller_function=
     function pid_temp_controller(du, u, monitored_cells, affected_cells, controller_id, controller, cell_volumes)
         field = propertynames(controller.desired_value_comp_vector)[1]
@@ -108,58 +107,58 @@ add_controller!(config,
 
 
 #for CH3OH, HCOO, OH
-van_t_hoff_A_vec = ComponentVector(CH3O = 1.7e-6, HCOO = 4.74e-13, OH = 3.32e-14)
-van_t_hoff_dH_vec = ComponentVector(CH3O = -46800.0, HCOO = -115000.0, OH = -110000.0)
+van_t_hoff_A_vec = ComponentVector(CH3O=1.7e-6, HCOO=4.74e-13, OH=3.32e-14)
+van_t_hoff_dH_vec = ComponentVector(CH3O=-46800.0, HCOO=-115000.0, OH=-110000.0)
 
 MSR_rxn = ComponentVector(
-    delta_H = 49500.0, # [J/mol]
-    delta_G_ref = -3800.0, # [J/mol]
-    ref_temp = 298.15, # [K]
-    kf_A = 1.25e7, # [s^-1]
-    kf_Ea = 103000.0, # [J/mol]
-    reactant_ids = ComponentVector(methanol = 1, water = 2), # reactant_ids: Methanol, Water
-    reactant_stoich_coeffs = ComponentVector(methanol = 1, water = 1), # reactant_stoich_coeffs
-    product_ids = ComponentVector(carbon_dioxide = 5, hydrogen = 4),     # product_ids: CO2, Hydrogen
-    product_stoich_coeffs = ComponentVector(carbon_dioxide = 1, hydrogen = 3),     # product_stoich_coeffs: 1 CO2 + 3 H2
-    stoich_coeffs = ComponentVector(methanol = -1, water = -1, carbon_monoxide = 0, hydrogen = 3, carbon_dioxide = 1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec = van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+    delta_H=49500.0, # [J/mol]
+    delta_G_ref=-3800.0, # [J/mol]
+    ref_temp=298.15, # [K]
+    kf_A=1.25e7, # [s^-1]
+    kf_Ea=103000.0, # [J/mol]
+    reactant_ids=ComponentVector(methanol=1, water=2), # reactant_ids: Methanol, Water
+    reactant_stoich_coeffs=ComponentVector(methanol=1, water=1), # reactant_stoich_coeffs
+    product_ids=ComponentVector(carbon_dioxide=5, hydrogen=4),     # product_ids: CO2, Hydrogen
+    product_stoich_coeffs=ComponentVector(carbon_dioxide=1, hydrogen=3),     # product_stoich_coeffs: 1 CO2 + 3 H2
+    stoich_coeffs=ComponentVector(methanol=-1, water=-1, carbon_monoxide=0, hydrogen=3, carbon_dioxide=1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec=van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec=van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
 )
 
 MD_rxn = ComponentVector(
-    delta_H = 90200.0, # [J/mol]
-    delta_G_ref = 24800.0, # [J/mol]
-    ref_temp = 298.15, # [K]
-    kf_A = 1.15e11, # [s^-1]
-    kf_Ea = 170000.0, # [J/mol]
-    reactant_ids = ComponentVector(methanol = 1), # reactant_ids: Methanol
-    reactant_stoich_coeffs = ComponentVector(methanol = 1), # reactant_stoich_coeffs
-    product_ids = ComponentVector(carbon_monoxide = 3, hydrogen = 4), # product_ids: CO, Hydrogen
-    product_stoich_coeffs = ComponentVector(carbon_monoxide = 1, hydrogen = 2), # product_stoich_coeffs: 1 CO + 2 H2
-    stoich_coeffs = ComponentVector(methanol = -1, water = 0, carbon_monoxide = 1, hydrogen = 2, carbon_dioxide = 0), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+    delta_H=90200.0, # [J/mol]
+    delta_G_ref=24800.0, # [J/mol]
+    ref_temp=298.15, # [K]
+    kf_A=1.15e11, # [s^-1]
+    kf_Ea=170000.0, # [J/mol]
+    reactant_ids=ComponentVector(methanol=1), # reactant_ids: Methanol
+    reactant_stoich_coeffs=ComponentVector(methanol=1), # reactant_stoich_coeffs
+    product_ids=ComponentVector(carbon_monoxide=3, hydrogen=4), # product_ids: CO, Hydrogen
+    product_stoich_coeffs=ComponentVector(carbon_monoxide=1, hydrogen=2), # product_stoich_coeffs: 1 CO + 2 H2
+    stoich_coeffs=ComponentVector(methanol=-1, water=0, carbon_monoxide=1, hydrogen=2, carbon_dioxide=0), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec=van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec=van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
 )
 
 WGS_rxn = ComponentVector(
-    delta_H = -41100.0, # [J/mol]
-    delta_G_ref = -28600.0, # [J/mol]
-    ref_temp = 298.15, # [K]
-    kf_A = 3.65e7, # [s^-1]
-    kf_Ea = 87500.0, # [J/mol]
-    reactant_ids = ComponentVector(carbon_monoxide = 3, water = 2), # reactant_ids: CO, Water
-    reactant_stoich_coeffs = ComponentVector(carbon_monoxide = 1, water = 1), # reactant_stoich_coeffs
-    product_ids = ComponentVector(carbon_dioxide = 5, hydrogen = 4), # product_ids: CO2, Hydrogen
-    product_stoich_coeffs = ComponentVector(carbon_dioxide = 1, hydrogen = 1), # product_stoich_coeffs: 1 CO2 + 1 H2
-    stoich_coeffs = ComponentVector(methanol = 0, water = -1, carbon_monoxide = -1, hydrogen = 1, carbon_dioxide = 1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+    delta_H=-41100.0, # [J/mol]
+    delta_G_ref=-28600.0, # [J/mol]
+    ref_temp=298.15, # [K]
+    kf_A=3.65e7, # [s^-1]
+    kf_Ea=87500.0, # [J/mol]
+    reactant_ids=ComponentVector(carbon_monoxide=3, water=2), # reactant_ids: CO, Water
+    reactant_stoich_coeffs=ComponentVector(carbon_monoxide=1, water=1), # reactant_stoich_coeffs
+    product_ids=ComponentVector(carbon_dioxide=5, hydrogen=4), # product_ids: CO2, Hydrogen
+    product_stoich_coeffs=ComponentVector(carbon_dioxide=1, hydrogen=1), # product_stoich_coeffs: 1 CO2 + 1 H2
+    stoich_coeffs=ComponentVector(methanol=0, water=-1, carbon_monoxide=-1, hydrogen=1, carbon_dioxide=1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec=van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec=van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
 )
 
-species_molecular_weights = ComponentVector(methanol = 0.03204, water = 0.01802, carbon_monoxide = 0.02801, hydrogen = 0.00202, carbon_dioxide = 0.04401)
+species_molecular_weights = ComponentVector(methanol=0.03204, water=0.01802, carbon_monoxide=0.02801, hydrogen=0.00202, carbon_dioxide=0.04401)
 
 # methanol, water, carbon_monoxide, hydrogen, carbon_dioxide
-initial_mass_fractions = ComponentVector(methanol = 1.0, water = 1.3, carbon_monoxide = 0.0001, hydrogen = 0.02, carbon_dioxide = 0.0001)
+initial_mass_fractions = ComponentVector(methanol=1.0, water=1.3, carbon_monoxide=0.0001, hydrogen=0.02, carbon_dioxide=0.0001)
 
 initial_mass_fractions = initial_mass_fractions ./ sum(initial_mass_fractions)
 
@@ -168,15 +167,14 @@ reforming_area_properties = ComponentVector(
     cp=4.184, # cp (J/(kg*K))
     mu=1e-5, # mu (Pa*s)
     permeability=0.6e-11, # permeability (m^2)
-    diffusion_coefficients=ComponentVector(methanol = 1e-5, water = 1e-5, carbon_monoxide = 1e-5, hydrogen = 1e-5, carbon_dioxide = 1e-5), #diffusion coefficients (m^2/s) 
-    #FIXME: this is going to be tricky, diffusion coefficients should use the same [:, cell_id] that mass fractions use
+    diffusion_coefficients=ComponentVector(methanol=1e-5, water=1e-5, carbon_monoxide=1e-5, hydrogen=1e-5, carbon_dioxide=1e-5), #diffusion coefficients (m^2/s)
     species_molecular_weights=species_molecular_weights,
-    reactions = ComponentVector(
-        MSR_rxn = MSR_rxn,
-        MD_rxn = MD_rxn,
-        WGS_rxn = WGS_rxn
+    reactions=ComponentVector(
+        MSR_rxn=MSR_rxn,
+        MD_rxn=MD_rxn,
+        WGS_rxn=WGS_rxn
     ),
-    reactions_kg_cat=ComponentVector(MSR_rxn = 1250.0, MD_rxn = 1250.0, WGS_rxn = 1250.0), # cell_kg_cat_per_m3_for_each_reaction
+    reactions_kg_cat=ComponentVector(MSR_rxn=1250.0, MD_rxn=1250.0, WGS_rxn=1250.0), # cell_kg_cat_per_m3_for_each_reaction
 )
 
 #this is another special case, I don't think it would be wise to store the chemical reaction struct within the u_vec
@@ -192,7 +190,6 @@ add_region!(
         temp=ustrip(270.0u"°C" |> u"K")
     ),
     properties=reforming_area_properties,
-    region_physics=reforming_area_physics,
     region_function=
     function reforming_area!(du, u, phys, cell_id, vol)
         #property updating/retrieval
@@ -325,7 +322,7 @@ add_region!(
 )
 
 #we might want to add something akin to distribute_over_set_volume!(du += input_wattage)
-total_heating_volume = get_cell_set_total_volume(grid, "heating_areas", geo)
+total_heating_volume = get_cell_set_total_volume(grid, "heating_areas", config.geo)
 
 input_wattage = 100.0 # W
 corrected_volumetric_heating = input_wattage / total_heating_volume
@@ -471,7 +468,7 @@ function conneciton_map_function(phys_a, phys_b)
     typeof(phys_a) <: AbstractSolidPhysics && typeof(phys_b) <: AbstractFluidPhysics && return solid_fluid_flux!
 end
 
-du0, u0, geo, system = finish_fvm_config(config, flux_functions, conneciton_map_function)
+du0, u0, geo, system = finish_fvm_config(config, conneciton_map_function)
 
 N::Int = ForwardDiff.pickchunksize(length(u0))
 

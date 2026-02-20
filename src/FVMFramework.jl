@@ -4,13 +4,13 @@ using Ferrite
 using OrdinaryDiffEq
 using LinearAlgebra
 using SparseArrays
-using SciMLSensitivity
-using Optimization
-using OptimizationPolyalgorithms
-using Zygote
+#using SciMLSensitivity
+#using Optimization
+#using OptimizationPolyalgorithms
+#using Zygote
 #using Enzyme
 using RecursiveArrayTools
-using OptimizationOptimJL
+#using OptimizationOptimJL
 using ILUZero
 using NonlinearSolve
 using ComponentArrays
@@ -100,8 +100,9 @@ include("setup_and_recording/sim_config_helper_functions.jl")
 export get_cell_set_total_volume, get_facet_set_total_area, get_facet_set_cells_respective_areas, get_cell_ids_in_facet_set
 
 include("setup_and_recording/sim_config.jl")
-export create_fvm_config, add_region!, add_facet_region!, finish_fvm_config
-export SimulationConfigInfo, RegionSetupInfo, BoundarySetupInfo, FVMSystem, AbstractConnectionGroup
+export create_fvm_config, add_region!, add_facet_region!, add_controller!, finish_fvm_config
+export SimulationConfigInfo, RegionSetupInfo, FVMSystem, AbstractController, ControllerSetupInfo
+
 
 #   ---- Sim Recording ----
 include("setup_and_recording/sim_recording.jl")
@@ -123,6 +124,5 @@ export show_t_progress, approximate_time_to_finish_cb
 
 #   ---- FVM Operators ----
 include("solvers/fvm_operators/methanol_reformer_op_different_connections.jl")
-export methanol_reformer_f_test!, MethanolReformerPhysics, WallPhysics, MethanolReformerConnectionGroups
-export methanol_reformer_init_conn_groups, connection_catagorizer!
+export methanol_reformer_f_test!, MethanolReformerPhysics, WallPhysics
 end
