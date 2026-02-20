@@ -107,74 +107,72 @@ add_controller!(config;
 
 
 #for CH3OH, HCOO, OH
-van_t_hoff_A_vec = ComponentVector(CH3O=1.7e-6, HCOO=4.74e-13, OH=3.32e-14)
-van_t_hoff_dH_vec = ComponentVector(CH3O=-46800.0, HCOO=-115000.0, OH=-110000.0)
+van_t_hoff_A_vec = NamedTuple(CH3O=1.7e-6, HCOO=4.74e-13, OH=3.32e-14)
+van_t_hoff_dH_vec = NamedTuple(CH3O=-46800.0, HCOO=-115000.0, OH=-110000.0)
 
-MSR_rxn = ComponentVector(
-    delta_H=49500.0, # [J/mol]
-    delta_G_ref=-3800.0, # [J/mol]
-    ref_temp=298.15, # [K]
-    kf_A=1.25e7, # [s^-1]
-    kf_Ea=103000.0, # [J/mol]
-    reactant_ids=ComponentVector(methanol=1, water=2), # reactant_ids: Methanol, Water
-    reactant_stoich_coeffs=ComponentVector(methanol=1, water=1), # reactant_stoich_coeffs
-    product_ids=ComponentVector(carbon_dioxide=5, hydrogen=4),     # product_ids: CO2, Hydrogen
-    product_stoich_coeffs=ComponentVector(carbon_dioxide=1, hydrogen=3),     # product_stoich_coeffs: 1 CO2 + 3 H2
-    stoich_coeffs=ComponentVector(methanol=-1, water=-1, carbon_monoxide=0, hydrogen=3, carbon_dioxide=1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec=van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec=van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+MSR_rxn =(
+    delta_H = 49500.0, # [J/mol]
+    delta_G_ref = -3800.0, # [J/mol]
+    ref_temp = 298.15, # [K]
+    kf_A = 1.25e7, # [s^-1]
+    kf_Ea = 103000.0, # [J/mol]
+    reactant_stoich_coeffs = (methanol=1, water=1), # reactant_stoich_coeffs
+    product_stoich_coeffs = (carbon_dioxide=1, hydrogen=3),     # product_stoich_coeffs: 1 CO2 + 3 H2
+    stoich_coeffs = (methanol = -1, water = -1, carbon_monoxide = 0, hydrogen = 3, carbon_dioxide = 1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
 )
 
 MD_rxn = ComponentVector(
-    delta_H=90200.0, # [J/mol]
-    delta_G_ref=24800.0, # [J/mol]
-    ref_temp=298.15, # [K]
-    kf_A=1.15e11, # [s^-1]
-    kf_Ea=170000.0, # [J/mol]
-    reactant_ids=ComponentVector(methanol=1), # reactant_ids: Methanol
-    reactant_stoich_coeffs=ComponentVector(methanol=1), # reactant_stoich_coeffs
-    product_ids=ComponentVector(carbon_monoxide=3, hydrogen=4), # product_ids: CO, Hydrogen
-    product_stoich_coeffs=ComponentVector(carbon_monoxide=1, hydrogen=2), # product_stoich_coeffs: 1 CO + 2 H2
-    stoich_coeffs=ComponentVector(methanol=-1, water=0, carbon_monoxide=1, hydrogen=2, carbon_dioxide=0), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec=van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec=van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+    delta_H = 90200.0, # [J/mol]
+    delta_G_ref = 24800.0, # [J/mol]
+    ref_temp = 298.15, # [K]
+    kf_A = 1.15e11, # [s^-1]
+    kf_Ea = 170000.0, # [J/mol]
+    reactant_ids = ComponentVector(methanol = 1), # reactant_ids: Methanol
+    reactant_stoich_coeffs = ComponentVector(methanol = 1), # reactant_stoich_coeffs
+    product_ids = ComponentVector(carbon_monoxide = 3, hydrogen = 4), # product_ids: CO, Hydrogen
+    product_stoich_coeffs = ComponentVector(carbon_monoxide = 1, hydrogen = 2), # product_stoich_coeffs: 1 CO + 2 H2
+    stoich_coeffs = ComponentVector(methanol = -1, water = 0, carbon_monoxide = 1, hydrogen = 2, carbon_dioxide = 0), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
 )
 
 WGS_rxn = ComponentVector(
-    delta_H=-41100.0, # [J/mol]
-    delta_G_ref=-28600.0, # [J/mol]
-    ref_temp=298.15, # [K]
-    kf_A=3.65e7, # [s^-1]
-    kf_Ea=87500.0, # [J/mol]
-    reactant_ids=ComponentVector(carbon_monoxide=3, water=2), # reactant_ids: CO, Water
-    reactant_stoich_coeffs=ComponentVector(carbon_monoxide=1, water=1), # reactant_stoich_coeffs
-    product_ids=ComponentVector(carbon_dioxide=5, hydrogen=4), # product_ids: CO2, Hydrogen
-    product_stoich_coeffs=ComponentVector(carbon_dioxide=1, hydrogen=1), # product_stoich_coeffs: 1 CO2 + 1 H2
-    stoich_coeffs=ComponentVector(methanol=0, water=-1, carbon_monoxide=-1, hydrogen=1, carbon_dioxide=1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
-    van_t_hoff_A_vec=van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
-    van_t_hoff_dH_vec=van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
+    delta_H = -41100.0, # [J/mol]
+    delta_G_ref = -28600.0, # [J/mol]
+    ref_temp = 298.15, # [K]
+    kf_A = 3.65e7, # [s^-1]
+    kf_Ea = 87500.0, # [J/mol]
+    reactant_ids = ComponentVector(carbon_monoxide = 3, water = 2), # reactant_ids: CO, Water
+    reactant_stoich_coeffs = ComponentVector(carbon_monoxide = 1, water = 1), # reactant_stoich_coeffs
+    product_ids = ComponentVector(carbon_dioxide = 5, hydrogen = 4), # product_ids: CO2, Hydrogen
+    product_stoich_coeffs = ComponentVector(carbon_dioxide = 1, hydrogen = 1), # product_stoich_coeffs: 1 CO2 + 1 H2
+    stoich_coeffs = ComponentVector(methanol = 0, water = -1, carbon_monoxide = -1, hydrogen = 1, carbon_dioxide = 1), # stoich coefficients: [MeOH, H2O, CO, H2, CO2]
+    van_t_hoff_A_vec = van_t_hoff_A_vec,  # A vector (CH3O, HCOO, OH)
+    van_t_hoff_dH_vec = van_t_hoff_dH_vec # dH vector (CH3O, HCOO, OH) [J/mol]
 )
 
-species_molecular_weights = ComponentVector(methanol=0.03204, water=0.01802, carbon_monoxide=0.02801, hydrogen=0.00202, carbon_dioxide=0.04401)
+species_molecular_weights = ComponentVector(methanol = 0.03204, water = 0.01802, carbon_monoxide = 0.02801, hydrogen = 0.00202, carbon_dioxide = 0.04401)
 
 # methanol, water, carbon_monoxide, hydrogen, carbon_dioxide
-initial_mass_fractions = ComponentVector(methanol=1.0, water=1.3, carbon_monoxide=0.0001, hydrogen=0.02, carbon_dioxide=0.0001)
+initial_mass_fractions = ComponentVector(methanol = 1.0, water = 1.3, carbon_monoxide = 0.0001, hydrogen = 0.02, carbon_dioxide = 0.0001)
 
 initial_mass_fractions = initial_mass_fractions ./ sum(initial_mass_fractions)
 
 reforming_area_properties = ComponentVector(
-    k=237.0, # k (W/(m*K))
-    cp=4.184, # cp (J/(kg*K))
-    mu=1e-5, # mu (Pa*s)
-    permeability=0.6e-11, # permeability (m^2)
-    diffusion_coefficients=ComponentVector(methanol=1e-5, water=1e-5, carbon_monoxide=1e-5, hydrogen=1e-5, carbon_dioxide=1e-5), #diffusion coefficients (m^2/s)
-    species_molecular_weights=species_molecular_weights,
-    reactions=ComponentVector(
-        MSR_rxn=MSR_rxn,
-        MD_rxn=MD_rxn,
-        WGS_rxn=WGS_rxn
+    k = 237.0, # k (W/(m*K))
+    cp = 4.184, # cp (J/(kg*K))
+    mu = 1e-5, # mu (Pa*s)
+    permeability = 0.6e-11, # permeability (m^2)
+    diffusion_coefficients = ComponentVector(methanol = 1e-5, water = 1e-5, carbon_monoxide = 1e-5, hydrogen = 1e-5, carbon_dioxide = 1e-5), #diffusion coefficients (m^2/s)
+    species_molecular_weights = species_molecular_weights,
+    reactions = ComponentVector(
+        MSR_rxn = MSR_rxn,
+        MD_rxn = MD_rxn,
+        WGS_rxn = WGS_rxn
     ),
-    reactions_kg_cat=ComponentVector(MSR_rxn=1250.0, MD_rxn=1250.0, WGS_rxn=1250.0), # cell_kg_cat_per_m3_for_each_reaction
+    reactions_kg_cat = ComponentVector(MSR_rxn = 1250.0, MD_rxn = 1250.0, WGS_rxn = 1250.0), # cell_kg_cat_per_m3_for_each_reaction
 )
 
 #this is another special case, I don't think it would be wise to store the chemical reaction struct within the u_vec
@@ -183,13 +181,13 @@ reforming_area_properties = ComponentVector(
 
 add_region!(
     config, "reforming_area";
-    initial_conditions=ComponentVector(
-        vel_x=0.0, vel_y=0.0, vel_z=0.0,
-        pressure=100000.0,
-        mass_fractions=initial_mass_fractions,
-        temp=ustrip(270.0u"°C" |> u"K")
+    initial_conditions = ComponentVector(
+        vel_x = 0.0, vel_y = 0.0, vel_z = 0.0,
+        pressure = 100000.0,
+        mass_fractions = initial_mass_fractions,
+        temp = ustrip(270.0u"°C" |> u"K")
     ),
-    properties=reforming_area_properties,
+    properties = reforming_area_properties,
     region_function=
     function reforming_area!(du, u, phys, cell_id, vol)
         #property updating/retrieval
@@ -224,13 +222,13 @@ corrected_m_dot_per_volume = desired_m_dot / inlet_total_volume
 
 add_region!(
     config, "inlet",
-    initial_conditions=ComponentVector(
-        vel_x=0.0, vel_y=-1.0, vel_z=0.0,
-        pressure=110000.0,
-        mass_fractions=initial_mass_fractions,
-        temp=ustrip(270.0u"°C" |> u"K")
+    initial_conditions = ComponentVector(
+        vel_x = 0.0, vel_y = -1.0, vel_z = 0.0,
+        pressure = 110000.0,
+        mass_fractions = initial_mass_fractions,
+        temp = ustrip(270.0u"°C" |> u"K")
     ),
-    region_physics=reforming_area_physics,
+    region_physics = reforming_area_physics,
     region_function=
     function inlet_area!(du, u, phys, cell_id, vol)
         #property retrieval
@@ -261,14 +259,14 @@ add_region!(
 
 add_region!(
     config, "outlet",
-    initial_conditions=ComponentVector(
-        vel_x=0.0, vel_y=1.0, vel_z=0.0,
-        pressure=90000.0,
-        mass_fractions=[0.0, 0.0, 0.0, 0.0, 0.0],
-        temp=ustrip(270.0u"°C" |> u"K")
+    initial_conditions = ComponentVector(
+        vel_x = 0.0, vel_y = 1.0, vel_z = 0.0,
+        pressure = 90000.0,
+        mass_fractions = [0.0, 0.0, 0.0, 0.0, 0.0],
+        temp = ustrip(270.0u"°C" |> u"K")
     ),
-    region_physics=reforming_area_physics,
-    region_function=
+    region_physics = reforming_area_physics,
+    region_function =
     function outlet_area!(du, u, phys, cell_id, vol)
         #property retrieval
         mw_avg!(u, cell_id, phys.species_molecular_weights)
@@ -296,15 +294,15 @@ add_region!(
 
 add_region!(
     config, "wall";
-    initial_conditions=ComponentVector(
-        temp=ustrip(270.0u"°C" |> u"K")
+    initial_conditions = ComponentVector(
+        temp = ustrip(270.0u"°C" |> u"K")
     ),
-    region_physics=ComponentVector(
-        k=237.0, # k (W/(m*K))
-        rho=2700.0, # rho (kg/m^3)
-        cp=921.0, # cp (J/(kg*K))
+    region_physics = ComponentVector(
+        k = 237.0, # k (W/(m*K))
+        rho = 2700.0, # rho (kg/m^3)
+        cp = 921.0, # cp (J/(kg*K))
     ),
-    region_function=
+    region_function =
     function wall_area!(du, u, phys, cell_id, vol)
         #property retrieval
         #oh, this is an issue, how do we pass in rho for solids?
@@ -329,15 +327,15 @@ corrected_volumetric_heating = input_wattage / total_heating_volume
 
 add_region!(
     config, "heating_areas";
-    initial_conditions=ComponentVector(
-        temp=ustrip(270.0u"°C" |> u"K")
+    initial_conditions = ComponentVector(
+        temp = ustrip(270.0u"°C" |> u"K")
     ),
-    region_physics=ComponentVector(
-        k=237.0, # k (W/(m*K))
-        rho=2700.0, # rho (kg/m^3)
+    region_physics = ComponentVector(
+        k = 237.0, # k (W/(m*K))
+        rho = 2700.0, # rho (kg/m^3)
         921.0, # cp (J/(kg*K))
     ),
-    region_function=
+    region_function =
     function heating_area!(du, u, phys, cell_id, vol)
         #property retrieval
         rho = phys.rho
@@ -484,11 +482,11 @@ net_rates_cache = zeros(n_reactions)
 
 caches = DiffCache(
     ComponentVector(
-        rho_cache=rho_cache,
-        mw_avg_cache=mw_avg_cache,
-        change_in_molar_concentrations_cache=change_in_molar_concentrations_cache,
-        molar_concentrations_cache=molar_concentrations_cache,
-        net_rates_cache=net_rates_cache
+        rho_cache = rho_cache,
+        mw_avg_cache = mw_avg_cache,
+        change_in_molar_concentrations_cache = change_in_molar_concentrations_cache,
+        molar_concentrations_cache = molar_concentrations_cache,
+        net_rates_cache = net_rates_cache
     ), N
 )
 
@@ -534,7 +532,7 @@ desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
-VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
+VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback = approximate_time_to_finish_cb)
 #algebraicmultigrid is only better for more than 1e6 cells
 
 record_sol = true
