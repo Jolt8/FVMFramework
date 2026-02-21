@@ -1,8 +1,8 @@
 
 function classify_variables(var_access_logs)
-    state_vars = Dict{Vector{Symbol},VarAccessLog}()
-    cache_vars = Dict{Vector{Symbol},VarAccessLog}()
-    fixed_vars = Dict{Vector{Symbol},VarAccessLog}()
+    state_vars = Dict{Vector{Symbol}, VarAccessLog}()
+    cache_vars = Dict{Vector{Symbol}, VarAccessLog}()
+    fixed_vars = Dict{Vector{Symbol}, VarAccessLog}()
 
     for (path, log) in var_access_logs
         accesses = log.accesses

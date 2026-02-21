@@ -228,7 +228,7 @@ f_closure = (du, u, p, t) -> heat_transfer_f!(
     geo.unconnected_cell_face_map, geo.cell_face_areas, geo.cell_face_normals,
     system.connection_groups, system.controller_groups, system.region_groups,
     du_fixed_cache, u_fixed_cache,
-    state_axes, fixed_axes
+    state_axes, fixed_axes  
 )
 
 p_guess = 0.0
