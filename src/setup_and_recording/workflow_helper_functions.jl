@@ -41,3 +41,30 @@ function rebuild_u_named_vel(u_flat, u_proto)
 
     return u_named
 end
+
+function rebuild_u_named_mass_fractions(u_flat, u_proto)
+    u_axes = getaxes(u_proto)[1]
+
+    pre_u_named = []
+
+    for step in eachindex(u_flat)
+        push!(pre_u_named, ComponentVector(u_flat[step], u_axes))
+    end
+
+    println(typeof(pre_u_named))
+    println(pre_u_named)
+
+    u_named = ComponentVector[]
+
+    for step in eachindex(pre_u_named)
+        curr_u_named = ComponentVector(
+            pressure = pre_u_named[step].pressure, 
+            temp = pre_u_named[step].temp,
+            mass_fractions = pre_u_named[step].mass_fractions
+        )
+
+        push!(u_named, curr_u_named)
+    end
+
+    return u_named
+end
