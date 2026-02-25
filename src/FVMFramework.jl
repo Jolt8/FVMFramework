@@ -9,6 +9,7 @@ using SparseArrays
 #using OptimizationPolyalgorithms
 #using Zygote
 #using Enzyme
+using ForwardDiff
 using RecursiveArrayTools
 #using OptimizationOptimJL
 using ILUZero
@@ -25,17 +26,6 @@ import AlgebraicMultigrid
 import SparseConnectivityTracer
 import ADTypes
 import Logging
-
-#this is here just in case we have to do this again
-#add Ferrite DifferentialEquations LinearAlgebra SparseArrays SciMLSensitivity Optimization OptimizationPolyalgorithms Zygote RecursiveArrayTools OptimizationOptimJL ILUZero NonlinearSolve ComponentArrays StaticArrays ProfileView
-#add AlgebraicMultigrid SparseConnectivityTracer ADTypes Logging
-
-#to add new files:
-#create a terminal on this file
-#type julia
-#using Pkg
-#Pkg.activate(".")
-#then ] and add whatever package you'd like
 
 # ----- Geometry -----
 include("geometry/geometry_helper_functions.jl")
@@ -83,16 +73,19 @@ include("physics/internal_methods/internal_physics/chemistry.jl")
 export PowerLawReaction
 export net_reaction_rate, react_cell!
 
-include("physics/internal_methods/internal_physics/methanol_reforming_net_rates.jl")
-export MSRReaction, MDReaction, WGSReaction #new reaction types
-export net_reaction_rate
+include("physics/internal_methods/internal_physics/PAM_reforming.jl")
+export PAM_reforming_react_cell!
 
 #   ---- Helper Functions ----
 include("physics/physics_helper_functions.jl")
 export upwind, harmonic_mean #for fluxes
 export R_gas #constant referenced almost everywhere
-export van_t_hoft, arrenhius_k, K_gibbs_free #for chemical reactions
-export mw_avg!, rho_ideal!, get_cell_cp #other misc props
+export van_t_hoff, arrenhius_k, K_gibbs_free #for chemical reactions
+export mw_avg!, rho_ideal!, molar_concentrations!, get_cell_cp #other misc props
+
+#   ---- Summation Functions ----
+include("physics/physics_face_summation_functions.jl")
+export sum_mass_flux_face_to_cell!
 
 # ----- Setup and Recording Methods -----
 #   ---- Sim Config ----
@@ -110,7 +103,7 @@ export sol_to_vtk
 
 #   ---- Workflow Helper Functions ----
 include("setup_and_recording/workflow_helper_functions.jl")
-export rebuild_u_named, rebuild_u_named_vel
+export rebuild_u_named, rebuild_u_named_vel, rebuild_u_named_mass_fractions
 
 # ----- Solvers -----
 #   ---- Preconditioners ----
@@ -124,5 +117,12 @@ export show_t_progress, approximate_time_to_finish_cb
 
 #   ---- FVM Operators ----
 include("solvers/fvm_operators/methanol_reformer_op_different_connections.jl")
-export methanol_reformer_f_test!, MethanolReformerPhysics, WallPhysics
+export methanol_reformer_f_test!
+
+include("solvers/fvm_operators/heat_transfer_minimal_allocs.jl")
+export heat_transfer_f_test!
+
+#   ---- Solver Debugging ----
+include("solvers/solver_debugging.jl")
+export debug_region!
 end
