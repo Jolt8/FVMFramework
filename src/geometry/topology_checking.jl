@@ -25,6 +25,8 @@ function check_cellset_connectivity(grid, set_name)
     return matched_cell_set_times
 end
 
+#THIS IS BROKEN AND DOES NOT WORK! DO NOT USE!
+#check_cellset_connectivity works
 function check_grid_connectivity(grid)
     cellset_names = collect(keys(grid.cellsets))
 
