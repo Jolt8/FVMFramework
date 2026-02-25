@@ -1,3 +1,4 @@
+#=
 using Ferrite
 using DifferentialEquations
 using LinearAlgebra
@@ -1021,3 +1022,4 @@ end
 =#
 #Tried doing this with an explicitly solved problem and I got the same error message, code_typed doesn't even do anything 
 
+=#

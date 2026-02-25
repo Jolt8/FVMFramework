@@ -1,3 +1,4 @@
+#=
 function methanol_reformer_f!(
     du, u, p, t,
     cell_neighbor_map,
@@ -8,12 +9,8 @@ function methanol_reformer_f!(
     #list which corresponds to the respective connection in cell_neighbor_map
     unconnected_areas,
     phys::Vector{AbstractPhysics}, cell_phys_id_map, fixed_idxs_and_vals_map::ComponentArray,
-    ax,
+    ax
 )
-
-    #A_Ea_pairs = eachcol(reshape(p, :, n_reactions))
-    #unflattened_p would be [[reaction_1_kf_A, reaction_1_kf_Ea], [reaction_2_kf_A, reaction_2_kf_Ea], etc..] 
-
     u = ComponentVector(u, ax)
     du = ComponentVector(du, ax)
 
@@ -165,4 +162,5 @@ end
 
     getproperty(u_cv, field)[cell_id] = val
         works!
+=#
 =#

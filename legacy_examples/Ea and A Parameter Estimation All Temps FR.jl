@@ -1,5 +1,5 @@
 
-
+#=
 using Ferrite
 using DifferentialEquations
 using LinearAlgebra
@@ -97,7 +97,7 @@ function net_reaction_rate(chemical_reaction, molar_concentrations, T, kf_A, kf_
     return net_reaction_rate
 end
 
-function K_gibbs_free(T_ref, T_actual, ΔG_rxn_ref, ΔH_rxn_ref)
+function K_gibbs_free(z)
     K_ref = exp(-ΔG_rxn_ref / (8.314e-3 * T_ref)) #R is in kJ
 
     ln_K_ratio = (-ΔH_rxn_ref / 8.314e-3) * (1 / T_actual - 1 / T_ref)
@@ -846,4 +846,5 @@ What I have learned after a lot of debugging
     - Instead, we should focus on getting Enzyme to work by preventing any dynamic dispatch because it supports array mutation
     - While we try to get that to work, we should just use AutoForwardDiff as the deform box 
 
+=#
 =#

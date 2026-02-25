@@ -1,3 +1,4 @@
+#=
 struct SimpleReactionBoundarySystem <: AbstractBoundarySystem
     boundary_map::MultiPhysicsBCs
     free_idxs::Vector{Int}
@@ -75,3 +76,4 @@ function simple_reaction_0D_f!(
         du.temp[cell_id] = 0.0
     end
 end
+=#

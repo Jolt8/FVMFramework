@@ -1,3 +1,4 @@
+#=
 using Ferrite
 using DifferentialEquations
 using LinearAlgebra
@@ -511,3 +512,4 @@ end
 test(p_guess)
 
 Zygote.gradient(p -> sum(test(p)), p_guess)
+=#
