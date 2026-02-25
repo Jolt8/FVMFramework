@@ -1,29 +1,13 @@
-struct MethanolReformerPhysics <: AbstractFluidPhysics
-    k::Float64
-    cp::Float64
-    mu::Float64
-    permeability::Float64
-    species_diffusion_coeffs::Vector{Float64}
-    species_molecular_weights::Vector{Float64}
-    chemical_reactions::Vector{AbstractReaction}
-    cell_kg_cat_per_m3_for_each_reaction::Vector{Float64}
-end
-
-struct WallPhysics <: AbstractSolidPhysics
-    k::Float64
-    rho::Float64
-    cp::Float64
-end
-
 function solve_connection_group!(
-        du, u, phys_a::TA, phys_b::TB, flux!, neighbors,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
-    ) where {TA, TB}
-    #look into storing this data into a CSR in the future
+    du, u,
+    flux!::F, neighbors,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+) where {F}
+
     @batch for (idx_a, neighbor_list) in neighbors
         for (idx_b, face_idx) in neighbor_list
             flux!(
-                du, u, phys_a, phys_b,
+                du, u,
                 idx_a, idx_b, face_idx,
                 cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
             )
@@ -32,66 +16,95 @@ function solve_connection_group!(
 end
 
 function solve_controller_group!(
-        du, u, controller::T, controller_id, control!, monitored_cells, affected_cells, 
-        cell_volumes
-    ) where T
-    #no loop here because control! already loops over monitored_cells and affected_cells
+    du, u,
+    controller::C, controller_id,
+    control!::F, monitored_cells, affected_cells,
+    cell_volumes
+) where {C,F}
     control!(
-        du, u, controller, controller_id, monitored_cells, affected_cells,
+        du, u, controller, controller_id,
+        monitored_cells, affected_cells,
         cell_volumes
     )
 end
 
 function solve_region_group!(
-        du, u, phys::T, internal_physics!, region_cells
-    ) where T
+    du, u,
+    internal_physics!::F, region_cells,
+    cell_volumes
+) where {F}
     @batch for cell_id in region_cells
         internal_physics!(
-            du, u, phys, cell_id,
+            du, u, cell_id,
             cell_volumes[cell_id]
         )
     end
 end
 
 function methanol_reformer_f_test!(
-        du, u, p, t,
-        cell_volumes, cell_centroids,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        unconnected_cell_face_map, cell_face_areas, cell_face_normals,
-        connection_groups, controller_groups, region_groups,
-        #phys::Vector{AbstractPhysics}, cell_phys_id_map::Vector{Int}, #we probably won't use these again, but they might be useful in the future
-        du_caches, caches,
-        u_merged_axes
-    )
+    du_vec, u_vec, p, t, cell_volumes, cell_centroids,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+    unconnected_cell_face_map, cell_face_areas, cell_face_normals,
+    connection_groups, controller_groups, region_groups, properties,
+    du_diff_cache_vec, u_diff_cache_vec,
+    du_proto_axes, u_proto_axes,
+    du_cache_axes, u_cache_axes
+)
+    du_cache_vec = get_tmp(du_diff_cache_vec, u_vec)
+    u_cache_vec = get_tmp(u_diff_cache_vec, u_vec)
 
-    u = ComponentVector(u, u_merged_axes)
-    du = ComponentVector(du, u_merged_axes)
+    #println(typeof(du_cache_vec))
 
-    caches = get_tmp(caches, u)
-    du_caches = get_tmp(du_caches, u)
+    #do you know what is fucking crazy?
+    #the only reason this worked in the past was because I zeroed out the caches
+    #otherwise, it just returns #undef for everything
+    du_cache_vec .= 0.0
+    u_cache_vec .= 0.0
+    
+    du_cache_nt = (; NamedTuple(ComponentArray(du_cache_vec, du_cache_axes))...)
+    u_cache_nt = (; NamedTuple(ComponentArray(u_cache_vec, u_cache_axes))...)
+    
+    du_vec .= 0.0
+    du_nt = (; NamedTuple(ComponentArray(du_vec, du_proto_axes))...)
+    u_nt = (; NamedTuple(ComponentArray(u_vec, u_proto_axes))...)
 
-    #I JUST HAD A GREAT IDEA!!!
-    #we can merge u and caches and then only pass u to each physics function and then I'll always be able to 
-    #call u.rho even if rho is a state variable (inputted u value) or a cached variable
-    #the only issue with this approach is that it's a little less clear which parameters are state variables (u_true) and caches
+    du = (; du_nt..., du_cache_nt...)
+    u = (; u_nt..., u_cache_nt..., properties...)
 
-    u = [u; caches]
-    du = [u; caches]
-    du .= 0.0
+    #Check heat_transfer_minimal_allocs for more info on comparing fetching NamedTuples
+    #I FOUND THE PROBLEM!
+    #This pattern doesn't work for mass fractions or other variables that have nested structures such as mass fractions
+    #that's also where the SubArrays were coming from
+    #thank fucking god!
 
-    #ComponentVector(u; NamedTuple(caches)...) this is another option, but I've found that it's slower ()
+    #=
+    du_cache_ca = ComponentArray(du_cache_vec, du_cache_axes)
+    du_cache_nt = NamedTuple{propertynames(du_cache_ca)}(Tuple(getproperty(du_cache_ca, p) for p in propertynames(du_cache_ca)))
 
-    #even though react_cell!() already sets change_in_molar_concentrations_cache to .= 0.0, we're just doing .= 0.0 to all to make sure
-    #NOTE: I'm pretty sure that .*= 0.0 is ever so slightly less performant than .= 0.0
+    u_cache_ca = ComponentArray(u_cache_vec, u_cache_axes)
+    u_cache_nt = NamedTuple{propertynames(u_cache_ca)}(Tuple(getproperty(u_cache_ca, p) for p in propertynames(u_cache_ca)))
+
+    du_vec .= 0.0
+    du_ca = ComponentArray(du_vec, du_proto_axes)
+    du_nt = NamedTuple{propertynames(du_ca)}(Tuple(getproperty(du_ca, p) for p in propertynames(du_ca)))
+
+    u_ca = ComponentArray(u_vec, u_proto_axes)
+    u_nt = NamedTuple{propertynames(u_ca)}(Tuple(getproperty(u_ca, p) for p in propertynames(u_ca)))
+
+    du = (; du_nt..., du_cache_nt...)
+    u = (; u_nt..., u_cache_nt..., properties...)
+    =#
 
     #Connection Loops
     for conn in connection_groups
         solve_connection_group!(
-            du, u, conn.phys_a, conn.phys_b, conn.flux_function!, conn.cell_neighbors,
+            du, u,
+            conn.flux_function!, conn.cell_neighbors,
             cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
         )
     end
-    
+
+    #=
     #Controller Loops
     for cont in controller_groups
         solve_controller_group!(
@@ -99,17 +112,116 @@ function methanol_reformer_f_test!(
             cell_volumes
         )
     end
+    =#
 
-    #Internal Physics, Sources, Boundary Conditions, and Capacities Loops 
+    #Internal Physics, Sources, Boundary Conditions, and Capacities Loops
     for reg in region_groups
         solve_region_group!(
-            du, u, reg.phys, reg.region_function!, reg.region_cells
+            du, u,
+            reg.region_function!, reg.region_cells,
+            cell_volumes
         )
     end
+
+
+    du_vec[1:length(du.mass_fractions.methylene_blue)] = Vector(du.mass_fractions.methylene_blue)
+    du_vec[length(du.mass_fractions.methylene_blue)+1:length(du.mass_fractions.methylene_blue)+length(du.mass_fractions.water)] = Vector(du.mass_fractions.water)
+
+    #=
+    pressure = []
+    mass_fractions = []
+    temp = []
+    heat = []
+    rho = []
+    mw_avg = []
+
+    region_of_interest = region_groups[3]
+
+    for cell_id in region_of_interest.region_cells
+        if isnan(du.pressure[cell_id])
+            push!(pressure, du.pressure[cell_id])
+        end
+        if isnan(du.mass_fractions.methanol[cell_id])
+            push!(mass_fractions, du.mass_fractions.methanol[cell_id])
+        end
+        if isnan(du.temp[cell_id])
+            push!(temp, du.temp[cell_id])
+            push!(heat, du.heat[cell_id])
+        end
+        if isnan(du.rho[cell_id]) || u.rho[cell_id] == 0.0
+            push!(rho, du.rho[cell_id])
+        end
+        if u.mw_avg[cell_id] == 0.0
+            push!(mw_avg, du.mw_avg[cell_id])
+        end
+    end
+
+    println(region_of_interest.name)
+    println("pressure: ", pressure)
+    println("mass_fractions: ", mass_fractions)
+    println("temp: ", temp)
+    println("heat: ", heat)
+    println("rho: ", rho)
+    println("mw_avg: ", mw_avg)
+
+
+
+    #=
+    for region in region_groups
+        region_encountered_nan_symbols = Symbol[]
+        for key in keys(u)
+            println(length(u[key]))
+            if !(key in region_encountered_nan_symbols)
+                for cell_id in region.region_cells
+                    if u[key] isa SubArray
+                        if isnan(u[key][1])
+                            push!(region_encountered_nan_symbols, key)
+                            break
+                        end
+                    elseif length(u[key]) >= length(region.region_cells)
+                        if length(u[key]) == length(region.region_cells)
+                            if isnan(u[key][cell_id])
+                                push!(region_encountered_nan_symbols, key)
+                                break
+                            end
+                        else
+                            if isnan(u[key][1][1])
+                                push!(region_encountered_nan_symbols, key)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        println("encountered NaN in: $(region.name) : $(region_encountered_nan_symbols)")
+    end
+
+    =#
+    
+
+    for region in region_groups
+        for cell_id in region.region_cells
+            #println(u.mw_avg[cell_id])
+            if isnan(u.rho[cell_id])
+                println(region.name)
+                println("mw_avg: ", u.mw_avg[cell_id])
+                println("rho: ", u.rho[cell_id])
+                println("pressure: ", u.pressure[cell_id])
+                println("temp: ", u.temp[cell_id])
+            end
+        end
+    end
+
+    for reg in region_groups
+        debug_region!(du_nt, u_nt, reg)
+    end
+    =#
 end
 
 #VERY IMPORTANT!!!!
-#= For future reference when getting properties using u[field]:
+#= For future reference when writing to properties using u[field]:
     u_cv.temp[cell_id] = val
         works!
     u_cv[field][cell_id] = val
@@ -120,8 +232,10 @@ end
         works!
 =#
 
+#OH SHIT!, mass_fractions[species_name] only works for ComponentVectors it's a scalar, not a vector
+#so when mass_fractions[species_name] is a vector of n_cells we have to use view(mass_fractions, species_name)[cell_id]
+
 #instead of updating rho in each flux and internal physics, we could do an initial property retrieval loop
-#the only disadvantage is that once again, solids can't do rho_ideal!() and just have phys.rho
 #=
 @batch for cell_id in eachindex(cell_volumes)
     mw_avg!(u, cell_id, molecular_weights, mw_avg_cache)
