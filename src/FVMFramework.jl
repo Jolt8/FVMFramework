@@ -44,6 +44,10 @@ export build_fvm_geo_into_struct, FVMGeometry, FVMGeometryTetra, FVMGeometryHexa
 include("geometry/topology_checking.jl")
 export check_cellset_connectivity, check_grid_connectivity
 
+# ----- Misc. Tools
+include("named_tuple_interface/axes_generator.jl")
+export create_axes
+
 # ----- Physics ----
 #   ---- Physics Types ----
 include("physics_types/abstract_physics_types.jl")

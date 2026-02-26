@@ -80,7 +80,7 @@ function heat_transfer_f_test!(
 
     # V2 
         # 103.895 ms, 1278 allocations, 15.62 MiB (10000 cells)
-        # 11.616 ms, 1278 allocations, 1.61 MiB
+        # 11.616 ms, 1278 allocations, 1.61 MiB (1000 cells)
     # does not require: du_vec .= Vector(du.temp)
     #=
     du_cache_ca = ComponentArray(du_cache_vec, du_cache_axes)
@@ -99,7 +99,7 @@ function heat_transfer_f_test!(
 
     #V3 (Raw) 
         # 84.729 ms, 348 allocations, 15.58 MiB (10000 cells)
-        # 7.330 ms, 348 allocations, 1.57 MiB
+        # 7.330 ms, 348 allocations, 1.57 MiB (1000 cells)
     # does not require: du_vec .= Vector(du.temp)
     #
     du_cache_nt = (heat = du_cache_vec,)

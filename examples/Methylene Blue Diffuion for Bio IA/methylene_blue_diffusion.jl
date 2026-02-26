@@ -209,6 +209,12 @@ du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function
 
 u_test = ComponentVector(u0_vec, system.u_proto_axes)
 
+u_nt = NamedTuple(u_test)
+
+create_axes(u_nt, n_cells)
+
+#=
+
 f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     du, u, p, t, geo.cell_volumes, geo.cell_centroids,
     geo.cell_neighbor_areas, geo.cell_neighbor_normals, geo.cell_neighbor_distances,
