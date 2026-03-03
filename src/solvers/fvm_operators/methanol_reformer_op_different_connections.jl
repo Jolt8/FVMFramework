@@ -1,51 +1,14 @@
-function solve_connection_group!(
-    du, u,
-    flux!::F, neighbors,
-    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
-) where {F}
-
-    @batch for (idx_a, neighbor_list) in neighbors
-        for (idx_b, face_idx) in neighbor_list
-            flux!(
-                du, u,
-                idx_a, idx_b, face_idx,
-                cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
-            )
-        end
-    end
-end
-
-function solve_controller_group!(
-    du, u,
-    controller::C, controller_id,
-    control!::F, monitored_cells, affected_cells,
-    cell_volumes
-) where {C,F}
-    control!(
-        du, u, controller, controller_id,
-        monitored_cells, affected_cells,
-        cell_volumes
-    )
-end
-
-function solve_region_group!(
-    du, u,
-    internal_physics!::F, region_cells,
-    cell_volumes
-) where {F}
-    @batch for cell_id in region_cells
-        internal_physics!(
-            du, u, cell_id,
-            cell_volumes[cell_id]
-        )
-    end
-end
-
 function methanol_reformer_f_test!(
-    du_vec, u_vec, p, t, cell_volumes, cell_centroids,
+    du_vec, u_vec, p, t, 
+
+    cell_volumes, cell_centroids,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     unconnected_cell_face_map, cell_face_areas, cell_face_normals,
-    connection_groups, controller_groups, region_groups, properties,
+
+    connection_groups, controller_groups, region_groups, patch_groups,
+    
+    properties,
+
     du_diff_cache_vec, u_diff_cache_vec,
     du_proto_axes, u_proto_axes,
     du_cache_axes, u_cache_axes
@@ -60,16 +23,23 @@ function methanol_reformer_f_test!(
     #otherwise, it just returns #undef for everything
     du_cache_vec .= 0.0
     u_cache_vec .= 0.0
-    
-    du_cache_nt = (; NamedTuple(ComponentArray(du_cache_vec, du_cache_axes))...)
-    u_cache_nt = (; NamedTuple(ComponentArray(u_cache_vec, u_cache_axes))...)
-    
+
+    du_cache_nt = create_views_inline(du_cache_vec, du_cache_axes)
+    u_cache_nt = create_views_inline(u_cache_vec, u_cache_axes)
+
     du_vec .= 0.0
-    du_nt = (; NamedTuple(ComponentArray(du_vec, du_proto_axes))...)
-    u_nt = (; NamedTuple(ComponentArray(u_vec, u_proto_axes))...)
+    du_nt = create_views_inline(du_vec, du_proto_axes)
+    u_nt = create_views_inline(u_vec, u_proto_axes)
 
     du = (; du_nt..., du_cache_nt...)
-    u = (; u_nt..., u_cache_nt..., properties...)
+    #u = (; u_nt..., u_cache_nt..., properties...)
+    u = (; properties..., u_nt..., u_cache_nt...)
+    #remember, the right-most fields overwrite other fields with the same name
+
+    u.rho .= (u_cache_nt.rho .+ properties.rho)
+    #u = (; properties..., u_nt..., u_cache_nt...)
+    #while the above would seem to be better, for some reason it doesn't work
+    #the issue is that because we have to set caches to .= 0.0 to prevent them from being undefined, the properties inside the cache vec are overwritten
 
     #Check heat_transfer_minimal_allocs for more info on comparing fetching NamedTuples
     #I FOUND THE PROBLEM!
@@ -124,8 +94,8 @@ function methanol_reformer_f_test!(
     end
 
 
-    du_vec[1:length(du.mass_fractions.methylene_blue)] = Vector(du.mass_fractions.methylene_blue)
-    du_vec[length(du.mass_fractions.methylene_blue)+1:length(du.mass_fractions.methylene_blue)+length(du.mass_fractions.water)] = Vector(du.mass_fractions.water)
+    #du_vec[1:length(du.mass_fractions.methylene_blue)] = Vector(du.mass_fractions.methylene_blue)
+    #du_vec[length(du.mass_fractions.methylene_blue)+1:length(du.mass_fractions.methylene_blue)+length(du.mass_fractions.water)] = Vector(du.mass_fractions.water)
 
     #=
     pressure = []
@@ -199,7 +169,7 @@ function methanol_reformer_f_test!(
     end
 
     =#
-    
+
 
     for region in region_groups
         for cell_id in region.region_cells
