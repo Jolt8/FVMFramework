@@ -1,5 +1,5 @@
 
-#=
+
 using Ferrite
 using DifferentialEquations
 using LinearAlgebra
@@ -97,10 +97,10 @@ function net_reaction_rate(chemical_reaction, molar_concentrations, T, kf_A, kf_
     return net_reaction_rate
 end
 
-function K_gibbs_free(z)
-    K_ref = exp(-ΔG_rxn_ref / (8.314e-3 * T_ref)) #R is in kJ
+function K_gibbs_free(u, cell_id, reaction)
+    K_ref = exp(-reaction.delta_gibbs_free_energy / (8.314e-3 * reaction.K_gibbs_free_ref_temp)) #R is in kJ
 
-    ln_K_ratio = (-ΔH_rxn_ref / 8.314e-3) * (1 / T_actual - 1 / T_ref)
+    ln_K_ratio = (-reaction.heat_of_reaction / 8.314e-3) * (1 / u.temp[cell_id] - 1 / reaction.K_gibbs_free_ref_temp)
 
     K_T = K_ref * exp(ln_K_ratio)
 
@@ -162,7 +162,7 @@ function FVM_iter_f!(
             kf_Ea = A_Ea_pairs[reaction_id][2]
 
             #find reverse pre exponential_factor
-            K_ref = K_gibbs_free(reaction.K_gibbs_free_ref_temp, temperatures_vec[time_idx, cell_id], reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
+            K_ref = K_gibbs_free(temperatures_vec[time_idx, cell_id], reaction.K_gibbs_free_ref_temp, reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
 
             kr_A = (kf_A / K_ref) * exp(-reaction.heat_of_reaction / (8.314e-3 * temperatures_vec[time_idx, cell_id]))
 
@@ -307,7 +307,9 @@ du0 = u0 .* 0.0
 using XLSX
 using Unitful
 
-xf = XLSX.readxlsx("C://Users//wille//Desktop//Projects-And-Code-Will-Martin//Excel Projects//esterification_data_processing_for_julia.xlsx")
+experimental_data_path = joinpath(@__DIR__, "esterification_data_processing_for_julia.xlsx")
+
+xf = XLSX.readxlsx(experimental_data_path)
 
 typeof(float.(vec(xf["40C"]["A2:A10"])))
 
@@ -403,7 +405,7 @@ struct Trial
 
     moles_timestamps::Vector{Float64}
     moles_respective_temp_idxs::Vector{Int64}
-    mass_fractions_matrix::Array{Float64,3} #[timestamp, reactant_idx]
+    mass_fractions_matrix::Array{Float64, 3} #[timestamp, reactant_idx]
 end
 
 function get_mass_fraction(species_moles, species_molecular_weight, rho, mixture_volume)
@@ -690,7 +692,7 @@ SciMLSensitivity.STACKTRACE_WITH_VJPWARN[] = true #turn to true to debug EnzymeJ
 Logging.disable_logging(Logging.Warn)  # Disable all warnings
 #Logging.disable_logging(Logging.Warn - 1)  # enable all warnings
 
-adtype = Optimization.AutoForwardDiff() #TODO: Get stuff working with Optimization.AutoZygote()
+adtype = Optimization.AutoForwardDiff()
 optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 #optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype, cons_jac_prototype=jac_sparsity)
 #adding jac_sparsity kills performance
@@ -847,4 +849,4 @@ What I have learned after a lot of debugging
     - While we try to get that to work, we should just use AutoForwardDiff as the deform box 
 
 =#
-=#
+
