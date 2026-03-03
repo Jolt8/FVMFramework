@@ -330,7 +330,7 @@ add_region!(
         #sources
 
         #boundary conditions
-        #du.pressure[cell_id] = 0.0
+        du.mass[cell_id] -= corrected_m_dot_per_volume * vol
 
         #variable summations
         sum_mass_flux_face_to_cell!(du, u, cell_id)
@@ -424,7 +424,7 @@ function fluid_fluid_flux!(
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
     )
 
-    diffusion_temp_exchange!(
+    #=diffusion_temp_exchange!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
@@ -440,9 +440,9 @@ function fluid_fluid_flux!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )
+    )=#
 
-    diffusion_mass_fraction_exchange!(
+    mass_fraction_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
@@ -455,13 +455,11 @@ function solid_solid_flux!(
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
 )
 
-    #hmm, perhaps these physics functions need to be more strictly typed
-    #Checking profview, I'm getting some runtime dispatch and GC here, I don't know why 
-    diffusion_temp_exchange!(
+    #=temp_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]
-    )
+    )=#
 end
 
 function fluid_solid_flux!(
@@ -473,11 +471,11 @@ function fluid_solid_flux!(
     rho_ideal!(u, idx_a)
     molar_concentrations!(u, idx_a)
 
-    diffusion_temp_exchange!(
+    #=temp_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]
-    )
+    )=#
 end
 
 function solid_fluid_flux!(
@@ -489,11 +487,11 @@ function solid_fluid_flux!(
     rho_ideal!(u, idx_b)
     molar_concentrations!(u, idx_b)
 
-    diffusion_temp_exchange!(
+    #=temp_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]
-    )
+    =#
 end
 
 #this is the smallest I could make this function
@@ -520,12 +518,6 @@ special_caches = (
 
 du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches)
 
-u_test = ComponentVector(u0_vec, system.u_proto_axes)
-
-for cell_id in config.regions[4].region_cells
-    println(u_test.pressure[cell_id])
-end
-
 f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     du, u, p, t, 
 
@@ -542,28 +534,27 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
 )
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
+#test = get_tmp(system.u_diff_cache_vec, 1.0)
+
+#named_test = create_views_inline(test, system.u_cache_axes)
+
+#named_test.mass_face[26000]
+
+#named_test.rho
+
+#filter(x -> x == 2700.0, named_test.rho)
+
 p_guess = 0.0
 
-prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 10000.0), p_guess)
-@time sol = solve(prob, Tsit5(), callback=approximate_time_to_finish_cb)
-
-sol_u_named_0 = ComponentVector(sol.u[1], system.u_proto_axes)
-
-sol_u_named_end = ComponentVector(sol.u[end], system.u_proto_axes)
+prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 0.00000001), p_guess)
+@time sol = solve(prob, Tsit5())
 
 t0 = 0.0
-tMax = 10.0
+tMax = 1000.0
 tspan = (t0, tMax)
 
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 #not sure if pure TracerSparsityDetector is faster
-
-diff_cache = get_tmp(system.u_diff_cache_vec, 1.0)
-
-test = ComponentVector(diff_cache, system.u_cache_axes)
-
-test[:molar_concentrations][1] = 1.0
-test[:molar_concentrations][1]
 
 jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0_vec, u0_vec, detector
@@ -576,15 +567,15 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
-#@time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
-VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
+#@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
+VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb, saveat = tMax/100)
 #algebraicmultigrid is only better for more than 1e6 cells
 
 record_sol = true
 
 sim_file = @__FILE__
 
-u_proto_named = [(; ComponentVector(sol.u[i], system.u_proto_axes)...) for i in eachindex(sol.u)]
+u_proto_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
 
 #u_named = rebuild_u_named(sol.u, u_proto_named)
 
@@ -606,6 +597,8 @@ mass_fractions_end = u_proto_named[end].mass_fractions.methanol[6389]
 
 mass_fractions_beginning == mass_fractions_end
 mass_fractions_beginning - mass_fractions_end
+
+length(u_proto_named[1])
 
 if record_sol == true
     sol_to_vtk(sol, u_proto_named, grid, sim_file)
