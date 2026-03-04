@@ -79,8 +79,8 @@ function compress_geo_to_struct(
     unconnected_cell_face_map = get_unconnected_map(grid, top)
 
     return FVMGeometryHexa(
-        cell_neighbors,
         cell_volumes, cell_centroids,
+        cell_neighbors,
         cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
         unconnected_cell_face_map, cell_face_areas, cell_face_normals
     )
@@ -112,6 +112,11 @@ function build_fvm_geo_into_struct(grid)
 
     cell_face_areas = [zero(MVector{n_facets, T}) for _ in 1:n_cells]
     cell_face_normals = [zero(MVector{n_facets, CoordType}) for _ in 1:n_cells]
+
+    println(typeof(cell_face_areas))
+    println(typeof(cell_neighbor_normals))
+    println(T)
+    println(CoordType)
 
     #we use the dynamic dispatch of compress_geo_to_struct to prevent having to check the grid's type with if statements
     #the reason this mutates is that it will be later used for geometry optimization which is one of the biggest applications of this framework
