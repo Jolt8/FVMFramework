@@ -29,6 +29,8 @@ grid.facetsets
 n_cells = length(grid.cells)
 u_proto = (
     mass_fractions = (methylene_blue = zeros(n_cells), water = zeros(n_cells)),
+    pressure = zeros(n_cells),
+    temp = zeros(n_cells)
 )
 
 config = create_fvm_config(grid, u_proto)
@@ -76,9 +78,11 @@ add_region!(
     type = Fluid(),
     initial_conditions = (
         mass_fractions = dialysis_tubing_initial_mass_fractions,
+        pressure = 101325.0,
+        temp = ustrip(21.13u"°C" |> u"K")
     ),
     properties = (
-        temp = ustrip(21u"°C" |> u"K"),
+        temp = ustrip(21.13u"°C" |> u"K"),
         k = 0.6, # k (W/(m*K))
         cp = 4184, # cp (J/(kg*K))
         rho = 1000, # rho (kg/m^3)
@@ -94,11 +98,10 @@ add_region!(
         ), #species_molecular_weights [kg/mol]
     ), 
     state_syms = [:mass_fractions],
-    cache_syms = [:heat, :molar_concentrations], 
+    cache_syms = [:heat, :molar_concentrations, :mw_avg, :rho], 
     region_function =
     function reforming_area!(du, u, cell_id, vol)
         #property updating/retrieval
-        molar_concentrations!(u, cell_id)
 
         #internal physics
 
@@ -127,9 +130,11 @@ add_region!(
     type = Fluid(),
     initial_conditions = (
         mass_fractions = surrounding_fluid_initial_mass_fractions,
+        pressure = 101325.0,
+        temp = ustrip(21.13u"°C" |> u"K")
     ),
     properties = (
-        temp = ustrip(21u"°C" |> u"K"),
+        temp = ustrip(21.13u"°C" |> u"K"),
         k = 0.6, # k (W/(m*K))
         cp = 4184, # cp (J/(kg*K))
         rho = 1000, # rho (kg/m^3)
@@ -145,11 +150,10 @@ add_region!(
         ), #species_molecular_weights [kg/mol]
     ), 
     state_syms = [:mass_fractions],
-    cache_syms = [:heat, :molar_concentrations], 
+    cache_syms = [:heat, :molar_concentrations, :mw_avg, :rho], 
     region_function =
     function surrounding_fluid!(du, u, cell_id, vol)
         #property updating/retrieval
-        molar_concentrations!(u, cell_id)
 
         #internal physics
 
@@ -172,8 +176,12 @@ function fluid_fluid_flux!(
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
 )
+    mw_avg!(u, idx_a)
+    rho_ideal!(u, idx_a)
     molar_concentrations!(u, idx_a)
 
+    mw_avg!(u, idx_b)
+    rho_ideal!(u, idx_b)
     molar_concentrations!(u, idx_b)
 
     #=
@@ -183,7 +191,7 @@ function fluid_fluid_flux!(
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
     )=#
 
-    diffusion_mass_fraction_exchange!(
+    mass_fraction_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
@@ -207,13 +215,8 @@ special_caches = (
 
 du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches)
 
-u_test = ComponentVector(u0_vec, system.u_proto_axes)
-
-u_nt = NamedTuple(u_test)
-
-create_axes(u_nt, n_cells)
-
-#=
+u_test = (; create_views_inline(u0_vec, system.u_proto_axes)..., create_views_inline(get_tmp(system.u_diff_cache_vec, 0.0), system.u_cache_axes)...
+)
 
 f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     du, u, p, t, geo.cell_volumes, geo.cell_centroids,
@@ -225,31 +228,29 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
 )
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
+using BenchmarkTools
+
 p_guess = 0.0
 
-prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 100000.0), p_guess)
-@time sol = solve(prob, Tsit5(), callback = approximate_time_to_finish_cb)
+prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1000.0), p_guess)
+@btime sol = solve(prob, Tsit5())
 
-sol_u_named_0 = ComponentVector(sol.u[1], system.u_proto_axes)
+VSCodeServer.@profview sol = solve(prob, Tsit5())
+# 1.983 s (26348265 allocations: 1.49 GiB)
+# 413.099 ms (1205443 allocations: 60.43 MiB) #HOW THE FUCK DID THE OPTION THAT WAS SUPPOSED TO BE SLOWER END UP BEING FASTER?
+#ARGHHH!!!
+#gawd damn, 86.552 ms (33170 allocations: 20.84 MiB) the map(keys(u.mass_fractions)) do species_name really makes a difference
 
-sol_u_named_end = ComponentVector(sol.u[end], system.u_proto_axes)
+#NEVERMIND, the new version works much better: HAHAHAHA! 60.568 ms (19311 allocations: 7.88 MiB)
+
+sol_u_named_0 = create_views_inline(sol.u[1], system.u_proto_axes)
+
+sol_u_named_end = create_views_inline(sol.u[end], system.u_proto_axes)
 
 sol_u_named_0.mass_fractions.methylene_blue == sol_u_named_end.mass_fractions.methylene_blue
 
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 #not sure if pure TracerSparsityDetector is faster
-
-diff_cache = get_tmp(system.u_diff_cache_vec, 1.0)
-
-test_1 = ComponentVector(diff_cache, system.u_cache_axes)
-
-test_1.molar_concentrations[:methylene_blue][1] = 1.0
-test_1.molar_concentrations[:methylene_blue][1]
-
-test_2 = (; ComponentVector(diff_cache, system.u_cache_axes)...)
-
-test_2.molar_concentrations[:methylene_blue][1] = 1.0
-test_2.molar_concentrations[:methylene_blue][1]
 
 jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0_vec, u0_vec, detector
@@ -258,7 +259,7 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype=float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 1000000.0
+tMax = 100000.0
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
@@ -266,7 +267,15 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
-@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
+@time sol = solve(implicit_prob, FBDF(linsolve = KLUFactorization()))
+
+sol_u_named_0 = create_views_inline(sol.u[1], system.u_proto_axes)
+
+sol_u_named_end = create_views_inline(sol.u[end], system.u_proto_axes)
+
+sol_u_named_0.mass_fractions.methylene_blue == sol_u_named_end.mass_fractions.methylene_blue
+
+VSCodeServer.@profview sol = solve(implicit_prob, FBDF())
 #VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
 #algebraicmultigrid is only better for more than 1e6 cells
 
