@@ -169,7 +169,7 @@ end
 function get_cell_face_map(grid)
     #returns:
     #list of faces for each cell (ex. (1, 5) (cell_1's 5th face_idx))
-    #respective node idxs of cell face (ex. (2, 8, 44, 38))
+    #respective node idxs of the cell's face (ex. (2, 8, 44, 38))
 
     n_cells = length(grid.cells)
     n_nodes_per_face = length(get_face_nodes(grid, 1, 1))
