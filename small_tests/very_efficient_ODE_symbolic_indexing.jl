@@ -75,7 +75,7 @@ function test_ode(du_vec, u_vec, p, t, du_diff_cache_vec, u_diff_cache_vec, prop
         u.temp[cell_id] += 270.0
         u.rho[cell_id] += 1.0
         u.cp[cell_id] += 1.0
-        for (species_name, species_mass_fraction) in pairs(u.mass_fractions)
+        for (species_name, species_mass_fraction) in pairs(u.mass_fractions) #this is bad, do not do this
             du.mass_fractions[species_name][cell_id] += 1.0
         end
     end
