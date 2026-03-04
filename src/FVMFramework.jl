@@ -48,6 +48,9 @@ export check_cellset_connectivity, check_grid_connectivity
 include("named_tuple_interface/axes_generator.jl")
 export create_axes
 
+include("named_tuple_interface/inline_views.jl")
+export create_views_inline
+
 # ----- Physics ----
 #   ---- Physics Types ----
 include("physics_types/abstract_physics_types.jl")
@@ -62,10 +65,10 @@ include("physics/flux_methods/flux_physics/darcy_flow.jl")
 export get_darcy_mass_flux, continuity_and_momentum_darcy
 
 include("physics/flux_methods/flux_physics/diffusion.jl")
-export species_numerical_flux, diffusion_mass_fraction_exchange!
+export species_numerical_flux, mass_fraction_diffusion!
 
 include("physics/flux_methods/flux_physics/heat_transfer.jl")
-export get_k_effective, numerical_flux, diffusion_temp_exchange!
+export get_k_effective, numerical_flux, temp_diffusion!
 
 #   ---- Internal Methods ----
 #       --- Internal Capacities ---
@@ -74,8 +77,7 @@ export cap_heat_flux_to_temp_change!, cap_mass_flux_to_pressure_change!
 
 #       --- Internal Physics ---
 include("physics/internal_methods/internal_physics/chemistry.jl")
-export PowerLawReaction
-export net_reaction_rate, react_cell!
+export power_law_react_cell!
 
 include("physics/internal_methods/internal_physics/PAM_reforming.jl")
 export PAM_reforming_react_cell!
@@ -97,7 +99,7 @@ include("setup_and_recording/sim_config_helper_functions.jl")
 export get_cell_set_total_volume, get_facet_set_total_area, get_facet_set_cells_respective_areas, get_cell_ids_in_facet_set
 
 include("setup_and_recording/sim_config.jl")
-export create_fvm_config, add_region!, add_facet_region!, add_controller!, finish_fvm_config
+export create_fvm_config, add_region!, add_patch!, add_controller!, finish_fvm_config
 export SimulationConfigInfo, RegionSetupInfo, FVMSystem, AbstractController, ControllerSetupInfo
 
 
@@ -123,8 +125,20 @@ export show_t_progress, approximate_time_to_finish_cb
 include("solvers/fvm_operators/methanol_reformer_op_different_connections.jl")
 export methanol_reformer_f_test!
 
+include("solvers/fvm_operators/methanol_reformer_op_steady_state.jl")
+export methanol_reformer_f_steady_state!
+
+include("solvers/fvm_operators/parameter_fitting_operator.jl")
+export methylene_blue_diffuion_parameter_fitting_f!
+
 include("solvers/fvm_operators/heat_transfer_minimal_allocs.jl")
 export heat_transfer_f_test!
+
+include("solvers/fvm_operators/pipe_f!.jl")
+export pipe_f!
+
+include("solvers/shared_group_functions/shared_group_functions.jl")
+export solve_connection_group!, solve_controller_group!, solve_region_group!, solve_patch_group!
 
 #   ---- Solver Debugging ----
 include("solvers/solver_debugging.jl")
