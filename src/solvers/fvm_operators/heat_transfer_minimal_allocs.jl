@@ -1,60 +1,17 @@
-#=
-function solve_connection_group!(
-    du, u,
-    flux!::F, neighbors,
-    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
-) where {F}
-
-    @batch for (idx_a, neighbor_list) in neighbors
-        for (idx_b, face_idx) in neighbor_list
-            flux!(
-                du, u,
-                idx_a, idx_b, face_idx,
-                cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
-            )
-        end
-    end
-end
-
-function solve_controller_group!(
-    du, u,
-    controller::C, controller_id, 
-    control!::F, monitored_cells, affected_cells, 
-    cell_volumes
-) where {C, F}
-    control!(
-        du, u, controller, controller_id, 
-        monitored_cells, affected_cells,
-        cell_volumes
-    )
-end
-
-function solve_region_group!(
-    du, u, 
-    internal_physics!::F, region_cells,
-    cell_volumes
-) where {F}
-    @batch for cell_id in region_cells
-        internal_physics!(
-            du, u, cell_id,
-            cell_volumes[cell_id]
-        )
-    end
-end
-=#
-
 function heat_transfer_f_test!(
-        du_vec, u_vec, p, t,
-        
-        cell_volumes, cell_centroids,
-        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
-        unconnected_cell_face_map, cell_face_areas, cell_face_normals,
-        connection_groups, controller_groups, region_groups,
+    du_vec, u_vec, p, t, 
 
-        properties,
-        du_diff_cache_vec, u_diff_cache_vec,
-        du_proto_axes, u_proto_axes,
-        du_cache_axes, u_cache_axes
+    cell_volumes, cell_centroids,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+    unconnected_cell_face_map, cell_face_areas, cell_face_normals,
+
+    connection_groups, controller_groups, region_groups, patch_groups, 
+    
+    properties,
+
+    du_diff_cache_vec, u_diff_cache_vec,
+    du_proto_axes, u_proto_axes,
+    du_cache_axes, u_cache_axes
     )
     du_cache_vec = get_tmp(du_diff_cache_vec, u_vec)
     u_cache_vec = get_tmp(u_diff_cache_vec, u_vec)
