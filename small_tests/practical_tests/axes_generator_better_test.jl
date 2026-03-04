@@ -2,14 +2,15 @@ using Unitful
 using BenchmarkTools
 using Polyester
 using OrdinaryDiffEq
+using ComponentArrays #this is just used for flatting NamedTuples at this point 
 
 cells = collect(1:1000)
 n_cells = length(cells)
 
-inlet_properties = (temp=ustrip(21u"°C" |> u"K"), mass_fractions=(methanol=0.5, water=0.5), mass_face=[1.0, 1.0, 1.0, 1.0])
-inlet_cellset = collect(300:400)
+inlet_properties = (temp = ustrip(21u"°C" |> u"K") .* ones(n_cells), mass_fractions = (methanol = 0.5 .* ones(n_cells), water = 0.5 .* ones(n_cells)), mass_face = [[1.0, 1.0, 1.0, 1.0] for _ in 1:n_cells])
 
-(length(cells)+1):(length(cells)+n_cells)
+typeof(inlet_properties.mass_face)
+flat_properties = Vector(ComponentVector(inlet_properties))
 
 function append_axes!(temp_axes, axes_length, data, property_name, n_cells)
     if !(property_name in keys(temp_axes))
@@ -28,35 +29,25 @@ function append_axes!(temp_axes, axes_length, data, property_name, n_cells)
                     axes_length += n_cells
                 end
             =#
-        elseif data[property_name] isa Vector #stuff like u.mass_face[cell_id][face_idx] that's tracked per face 
-            n_faces = length(data[property_name])
+        elseif data[property_name] isa Vector 
+            if data[property_name][1] isa Vector #stuff like u.mass_face[cell_id][face_idx] that's tracked per face 
+                temporary_unit_range_vec = []
 
-            #Vector version
-            #=
-            push!(temp_axes, (property_name => UnitRange[]))
+                n_faces = length(data[property_name][1])
 
-            for cell_id in 1:n_cells
-                push!(temp_axes[property_name], (axes_length + 1):(axes_length + n_faces))
-                axes_length += n_faces
+                for cell_id in 1:n_cells
+                    push!(temporary_unit_range_vec, (axes_length+1):(axes_length+n_faces))
+                    axes_length += n_faces
+                end
+
+                push!(temp_axes, (property_name => Tuple(temporary_unit_range_vec)))
+            elseif data[property_name][1] isa Number 
+                push!(temp_axes, property_name => (axes_length+1):(axes_length+n_cells))
+                axes_length += n_cells
             end
-            =#
-
-
-            #Tuple Version
-            #
-            temporary_unit_range_vec = []
-
-            for cell_id in 1:n_cells
-                push!(temporary_unit_range_vec, (axes_length+1):(axes_length+n_faces))
-                axes_length += n_faces
-            end
-
-            push!(temp_axes, (property_name => Tuple(temporary_unit_range_vec)))
-            #
-
-        elseif data[property_name] isa Number
-            push!(temp_axes, property_name => (axes_length+1):(axes_length+n_cells))
-            axes_length += n_cells
+        else data[property_name] isa Number
+            push!(temp_axes, property_name => (axes_length+1):(axes_length+1))
+            axes_length += 1
         end
     end
     return axes_length
@@ -103,15 +94,25 @@ function test!(test_vector, test_axes)
     return nothing
 end
 
-#@benchmark test!(test_vector, test_axes)
+@benchmark test!(test_vector, test_axes)
 
-#@time test_properties = create_views_inline(test_vector, test_axes)
+@time test_properties = create_views_inline(test_vector, test_axes)
 
 function update_mass_face(properties, cell_id, face_idx)
     properties.mass_face[cell_id][face_idx] += 1.0
 end
 
 function update_cells(vector, axes, cell_ids, face_idxs)
+    properties = create_views_inline(vector, axes)
+
+    for cell_id in cell_ids
+        for face_idx in face_idxs[cell_id]
+            update_mass_face(properties, cell_id, face_idx)
+        end
+    end
+end
+
+function update_cells_batch(vector, axes, cell_ids, face_idxs)
     properties = create_views_inline(vector, axes)
 
     @batch for cell_id in cell_ids
@@ -125,6 +126,7 @@ cell_ids = collect(1:1000)
 face_idxs = [[1, 2, 3, 4] for _ in eachindex(cell_ids)]
 
 @benchmark update_cells(test_vector, test_axes, cell_ids, face_idxs) 
+@benchmark update_cells_batch(test_vector, test_axes, cell_ids, face_idxs) 
 #compared to the actual the solver, this one has 0 allocations and 0 bytes of data used
 #ok, I've figured something out, it seems like simply using @batch causes 1 allocation and 39.25 KiB
 
@@ -147,8 +149,6 @@ end
 
 cell_ids = collect(1:100)
 face_idxs = [[1, 2, 3, 4] for _ in eachindex(cell_ids)]
-
-inlet_properties = (temp = ustrip(21.13u"°C" |> u"K"), mass_fractions = (methanol = 0.5, water = 0.5), mass_face = [0.0, 0.0, 0.0, 0.0])
 
 cells = collect(1:100)
 axes, vector_size = create_axes(inlet_properties, length(cells))
@@ -174,5 +174,6 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(test_f_closure!, jac_prototype=float.(jac_sparsity))
 implicit_prob = ODEProblem(ode_func, u0_vec, (0.0, 1000.0), 0.0)
 
-@time sol = solve(implicit_prob, FBDF(), saveat=1000/1000)
-#VSCodeServer.@profview sol = solve(implicit_prob, FBDF())
+@time sol = solve(implicit_prob, FBDF(), save_everystep=false)
+VSCodeServer.@profview sol = solve(implicit_prob, FBDF(), save_everystep=false)
+

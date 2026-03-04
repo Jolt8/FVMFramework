@@ -52,3 +52,44 @@ cell_ids = collect(1:100)
     state_axes, 
     cell_ids
 )
+
+
+function test_f!(du_vec, u_vec, u_diff_cache, state_vec, u_axes, cache_axes, state_axes, cell_ids)
+    du_nt = create_views_inline(du_vec, u_axes)
+    u_nt = create_views_inline(u_vec, u_axes)
+    
+    cache_vec = get_tmp(u_diff_cache, u_vec)
+    cache_nt = create_views_inline(cache_vec, cache_axes)
+
+    state_nt = create_views_inline(state_vec, state_axes)
+    
+    du = (; du_nt..., cache_nt...)
+    u = (; u_nt..., cache_nt..., state_nt...)
+    for cell_id in cell_ids
+        du.temp[cell_id] += 1.0
+        mass_fraction_update!(du, u, cell_id)
+    end
+end
+
+
+function test_f!(du_vec, u_vec, p, t, axes, cell_ids, face_idxs)
+    du = create_views_inline(du_vec, axes)
+    u = create_views_inline(u_vec, axes)
+
+    @batch for cell_id in cell_ids
+        du.temp[cell_id] += 1.0
+        du.temp[cell_id] += 1.0 #oh no, just adding this increases the number of allocations from 3388 to 3548.
+        #du.mass_fractions.methanol[cell_id] += 1.0 #just adding this (not even in addition to the one before) increases allocations from 3388 to 3842
+    end
+
+    @batch for cell_id in cell_ids
+        for face_idx in face_idxs[cell_id]
+            #update_mass_face(du, cell_id, face_idx)
+        end
+    end
+end
+
+test_f_closure! = (du, u, p, t) -> test_f!(du, u, p, t, u_axes, cell_ids, face_idxs)
+
+prob = ODEProblem(test_f_closure!, u_vec, (0.0, 10000.0), [0.0])
+@time sol = solve(prob, Tsit5())
