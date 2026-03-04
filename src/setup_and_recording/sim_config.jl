@@ -3,10 +3,16 @@ mutable struct RegionSetupInfo{P <: AbstractPhysics} #this must be defined befor
     type::P
     initial_conditions::NamedTuple
     properties::NamedTuple
-    state_syms::Vector{Symbol}
     cache_syms::Vector{Symbol}
     region_function::Function
     region_cells::Vector{Int}
+end
+
+mutable struct PatchSetupInfo #this must be defined before SimulationConfigInfo
+    name::String
+    properties::NamedTuple
+    patch_function::Function
+    cell_neighbors::Vector{Tuple{Int, Vector{Tuple{Int, Int}}}}
 end
 
 mutable struct ControllerSetupInfo #this must be defined before SimulationConfigInfo
@@ -23,7 +29,9 @@ struct SimulationConfigInfo
     grid::Ferrite.Grid
     geo::FVMGeometry
     regions::Vector{RegionSetupInfo}
+    patches::Vector{PatchSetupInfo}
     controllers::Vector{ControllerSetupInfo}
+    optimized_parameters::Dict{Symbol, Any}
     u_proto::NamedTuple
 end
 
@@ -34,7 +42,9 @@ function create_fvm_config(grid, u_proto)
         grid,
         geo,
         RegionSetupInfo[],
+        PatchSetupInfo[],
         ControllerSetupInfo[],
+        Dict{Symbol, Any}(), 
         u_proto
     )
 end
@@ -65,13 +75,35 @@ function _drill_down_and_fill_region_properties!(merged_properties, initial_cond
     end
 end
 =#
+#=
+This was a scrapped pattern where you put optimized_ in front of properties that you wanted to optimized
+I decided to go with the explicit list of provided optimized paramters just to prevent typos from messing everything up
+
+
+function check_if_optimized!(properties, field, config)
+    if startswith(String(field), "optimized_") #these will never be named tuples
+        param_name = Symbol(String(field)[(length("optimized_")+1):end])
+        push!(config.optimized_parameters, OptimizedParameterTracker(param_name, properties[field]))
+    end
+end
+
+function scan_properties_for_optimized!(properties, config)
+    for field in propertynames(properties)
+        if properties[field] isa NamedTuple
+            scan_properties_for_optimized!(properties[field], config)
+        else
+            check_if_optimized!(properties, field, config)
+        end
+    end
+end
+=#
 
 function add_region!(
     config, name;
     type,
     initial_conditions,
     properties,
-    state_syms,
+    optimized_syms,
     cache_syms,
     region_function
 )
@@ -82,7 +114,7 @@ function add_region!(
         for field in propertynames(initial_conditions)
             var = config.u_proto[field]
             initial_condition = initial_conditions[field]
-            if var isa NamedTuple 
+            if var isa NamedTuple
                 for sub_name in propertynames(var)
                     var[sub_name][cell_id] = initial_condition[sub_name]
                 end
@@ -92,36 +124,62 @@ function add_region!(
         end
     end
 
-    push!(config.regions, RegionSetupInfo(name, type, initial_conditions, properties, state_syms, cache_syms, region_function, region_cells))
+    for field in optimized_syms
+        config.optimized_parameters[field] = properties[field]
+    end
+
+    append!(cache_syms, optimized_syms) #this is so that the optimized parameters are initialized as a DiffCache
+
+    push!(config.regions, RegionSetupInfo(name, type, initial_conditions, properties, cache_syms, region_function, region_cells))
 end
 
 #this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
 #this needs to be updated, it currently doesn't work
-function add_facet_region!(
+function get_neighboring_cell_from_face_idx(cell_id, face_idx, top)
+    neighbor_info = top.face_face_neighbor[cell_id, face_idx]
+
+    if !isempty(neighbor_info)
+        neighbor_id = collect(neighbor_info[1].idx)[1]
+    else
+        return nothing
+    end
+
+    return neighbor_id
+end
+
+function add_patch!(
     config, name;
-    type,
-    initial_conditions,
-    region_physics,
-    region_function,
+    properties,
+    optimized_syms,
+    patch_function,
 )
+    cell_ids_and_face_idxs = [cell_id_facet_idx.idx for cell_id_facet_idx in keys(config.grid.facetsets[name].dict)]
+    #[(cell_id, face_idx), (cell_id, face_idx), ...]
 
-    region_cells = get_cell_ids_in_facet_set(config.grid, name)
+    n_cells = length(config.grid.cells)
+    
+    cell_neighbors = [(cell_id, Vector{Tuple{Int, Int}}()) for cell_id in 1:n_cells]
 
-    for cell_id in region_cells
-        for field in keys(initial_conditions)
-            var = config.u_proto[field][cell_id]
-            initial_condition = initial_conditions[field]
-            if var isa NamedTuple 
-                for sub_name in keys(var)
-                    var[sub_name][cell_id] = initial_condition[sub_name]
-                end
-            else
-                var[cell_id] = initial_condition
-            end
+    top = ExclusiveTopology(config.grid)
+
+    for (cell_id, face_idx) in cell_ids_and_face_idxs
+        neighbor_id = get_neighboring_cell_from_face_idx(cell_id, face_idx, top)
+        if !isnothing(neighbor_id)
+            push!(cell_neighbors[cell_id][2], (neighbor_id, face_idx))
         end
     end
 
-    push!(config.regions, RegionSetupInfo(name, type, initial_conditions, region_physics, state_syms, cache_syms, region_function, region_cells))
+    
+    filter!(conn -> !(isempty(conn[2])), cell_neighbors)
+    #get rid of empty connections
+
+    for field in optimized_syms
+        config.optimized_parameters[field] = properties[field]
+    end
+
+    append!(config.regions[1].cache_syms, optimized_syms) #this is so that the optimized parameters are initialized as a DiffCache
+
+    push!(config.patches, PatchSetupInfo(name, properties, patch_function, cell_neighbors))
 end
 
 function add_controller!(
@@ -138,26 +196,27 @@ function add_controller!(
 end
 
 #this...
-function _build_blank_dict!(current_dict, region_properties, n_cells)
-    for (property_name, value) in pairs(region_properties)
+function _build_blank_dict!(current_dict, properties, n_cells)
+    for (property_name, value) in pairs(properties)
         if value isa NamedTuple
             if !haskey(current_dict, property_name)
-                current_dict[property_name] = Dict{Symbol, Any}()
+                current_dict[property_name] = Dict{Symbol,Any}()
             end
             _build_blank_dict!(current_dict[property_name], value, n_cells)
         else
             if !haskey(current_dict, property_name)
-                current_dict[property_name] = zeros(typeof(value), n_cells) 
+
+                current_dict[property_name] = zeros(Float64, n_cells)
             end
         end
     end
 end
 
 #... and this were AI generated because dealing with immutable NamedTuples with this level of nesting is fucked
-#I do understand the code, however, so I don't think it that big of a deal
+#I do understand the code, so I don't think it's that big of a deal
 function _dict_to_namedtuple(d::Dict)
     # Recursively convert Dicts to NamedTuples
-    named_tuple_pairs = Pair{Symbol, Any}[]
+    named_tuple_pairs = Pair{Symbol,Any}[]
     for (property_name, value) in pairs(d)
         if value isa Dict
             push!(named_tuple_pairs, property_name => _dict_to_namedtuple(value))
@@ -168,18 +227,28 @@ function _dict_to_namedtuple(d::Dict)
     return (; named_tuple_pairs...)
 end
 
-function _drill_down_and_fill_properties!(merged_properties, region_properties, region_cells)
-    for (property_name, value) in pairs(region_properties)
+function _drill_down_and_fill_properties!(merged_properties, properties, cells)
+    for (property_name, value) in pairs(properties)
         if merged_properties[property_name] isa NamedTuple
-            _drill_down_and_fill_properties!(merged_properties[property_name], region_properties[property_name], region_cells)
+            _drill_down_and_fill_properties!(merged_properties[property_name], properties[property_name], cells)
         else
-            for cell_id in region_cells
+            for cell_id in cells
                 if merged_properties[property_name] isa AbstractArray
-                    merged_properties[property_name][cell_id] = region_properties[property_name]
+                    merged_properties[property_name][cell_id] = properties[property_name]
                 elseif merged_properties[property_name] isa Number
-                    merged_properties[property_name] = region_properties[property_name]
+                    merged_properties[property_name] = properties[property_name]
                 end
             end
+        end
+    end
+end
+
+function _drill_down_and_fill_patch_properties!(merged_properties, properties, cells)
+    for (property_name, value) in pairs(properties)
+        if merged_properties[property_name] isa NamedTuple
+            _drill_down_and_fill_patch_properties!(merged_properties[property_name], properties[property_name], cells)
+        else
+            merged_properties[property_name][1] = properties[property_name]
         end
     end
 end
@@ -187,37 +256,50 @@ end
 function merge_region_properties(config)
     n_cells = length(config.geo.cell_volumes)
 
-    prop_dict = Dict{Symbol, Any}()
+    prop_dict = Dict{Symbol,Any}()
 
     for region in config.regions
         _build_blank_dict!(prop_dict, region.properties, n_cells)
     end
-    
+
+    for patch in config.patches
+        _build_blank_dict!(prop_dict, patch.properties, n_cells)
+    end
+
     merged_properties = _dict_to_namedtuple(prop_dict)
 
     for region in config.regions
         _drill_down_and_fill_properties!(merged_properties, region.properties, region.region_cells)
     end
 
+    for patch in config.patches
+        _drill_down_and_fill_patch_properties!(merged_properties, patch.properties, patch.cell_neighbors)
+    end
+
     return merged_properties
 end
 
 
-function _drill_down_and_fill_caches!(merged_caches, region_cache_syms, special_caches)
+function _drill_down_and_fill_caches!(merged_caches, region_cache_syms, special_caches, merged_properties)
     for property_name in region_cache_syms
         if property_name in keys(special_caches)
-            
+
         elseif merged_caches[property_name] isa NamedTuple
-            _drill_down_and_fill_caches!(merged_caches[property_name], region_cache_syms, (_ = 0.0,)) #we'll never recurse for special caches
+            _drill_down_and_fill_caches!(merged_caches[property_name], region_cache_syms, (_ = 0.0,), merged_properties)
         elseif merged_caches[property_name] isa AbstractArray
-            merged_caches[property_name] .= 0.0
+            #since we use the properties as the initial value for the cache, we might not even need properties and could just preemptively merge them
+            if hasproperty(merged_properties, property_name) && merged_properties[property_name] isa AbstractArray
+                merged_caches[property_name] .= merged_properties[property_name]
+            else
+                merged_caches[property_name] .= 0.0
+            end
         else
             error("The cache $property_name was not handled")
         end
     end
 end
 
-function merge_region_caches(config, special_caches)
+function merge_region_caches(config, special_caches, merged_properties)
     n_cells = length(config.geo.cell_volumes)
 
     cache_dict = Dict{Symbol, Any}()
@@ -233,11 +315,11 @@ function merge_region_caches(config, special_caches)
             end
         end
     end
-    
+
     merged_caches = _dict_to_namedtuple(cache_dict)
 
     for region in config.regions
-        _drill_down_and_fill_caches!(merged_caches, region.cache_syms, special_caches)
+        _drill_down_and_fill_caches!(merged_caches, region.cache_syms, special_caches, merged_properties)
     end
 
     return merged_caches
@@ -250,10 +332,16 @@ end
 struct RegionGroup{P <: NamedTuple, F <: Function}
     name::String
     properties::P
-    state_syms::Vector{Symbol}
     cache_syms::Vector{Symbol}
     region_function!::F
     region_cells::Vector{Int}
+end
+
+struct PatchGroup{P <: NamedTuple, F <: Function}
+    name::String
+    properties::P
+    patch_function!::F
+    cell_neighbors::Vector{Tuple{Int, Vector{Tuple{Int, Int}}}}
 end
 
 struct ControllerGroup{T <: NamedTuple, F <: Function}
@@ -281,27 +369,43 @@ end
 
 struct FVMSystem
     connection_groups::Vector{ConnectionGroup}
-    region_groups::Vector{RegionGroup}
     controller_groups::Vector{ControllerGroup}
+    patch_groups::Vector{PatchGroup}
+    region_groups::Vector{RegionGroup}
+    p_vec::Vector{Float64}
+    p_axes::NamedTuple
     merged_properties::NamedTuple
     du_diff_cache_vec::DiffCache
     u_diff_cache_vec::DiffCache
-    du_proto_axes::Axis
-    u_proto_axes::Axis
-    du_cache_axes::Axis
-    u_cache_axes::Axis
+    du_proto_axes::NamedTuple
+    u_proto_axes::NamedTuple
+    du_cache_axes::NamedTuple
+    u_cache_axes::NamedTuple
 end
 
 function finish_fvm_config(config, connection_map_function, special_caches)
     n_cells = length(config.geo.cell_volumes)
 
+    #in order from when they're executed in the solver 
+    #1. Connections
+    connection_groups = ConnectionGroup[]
+    
+    #2. Controllers
+    controller_groups = ControllerGroup[]
+
+    #3. Patches
+    patch_groups = PatchGroup[]
+
+    #4. Regions
     region_groups = RegionGroup[]
-    cell_region_types_map = Vector{AbstractPhysics}(undef, n_cells) 
+
+    #Regions
+    cell_region_types_map = Vector{AbstractPhysics}(undef, n_cells)
     #although this could be a part of RegionGroup, I'd rather not contaminate it with information not required in the simulation
 
     for region in config.regions
-        push!(region_groups, RegionGroup(region.name, region.properties, region.state_syms, region.cache_syms, region.region_function, region.region_cells))
-        
+        push!(region_groups, RegionGroup(region.name, region.properties, region.cache_syms, region.region_function, region.region_cells))
+
         for cell_id in region.region_cells
             cell_region_types_map[cell_id] = region.type
         end
@@ -317,8 +421,12 @@ function finish_fvm_config(config, connection_map_function, special_caches)
         end
     end
 
-    controller_groups = ControllerGroup[]
+    #Patches
+    for patch in config.patches
+        push!(patch_groups, PatchGroup(patch.name, patch.properties, patch.patch_function, patch.cell_neighbors))
+    end
 
+    #Controllers
     for (controller_id, controller) in enumerate(config.controllers)
         push!(controller_groups, ControllerGroup(
             controller.name,
@@ -330,8 +438,7 @@ function finish_fvm_config(config, connection_map_function, special_caches)
         )
     end
 
-    connection_groups = ConnectionGroup[]
-
+    #Connections
     unique_region_connection_pairs = Vector{Tuple{String, String}}()
     #we specifically use strings here because checking if (region_a, region_b) == (region_b, region_a) was fragile for some reason
 
@@ -418,7 +525,9 @@ function finish_fvm_config(config, connection_map_function, special_caches)
     u_proto_nt = deepcopy(u_merged)
     #u_proto_nt = (; u_proto...)
 
-    merged_caches = merge_region_caches(config, special_caches)
+    merged_properties = merge_region_properties(config)
+
+    merged_caches = merge_region_caches(config, special_caches, merged_properties)
 
     du_cache_nt = deepcopy(merged_caches)
     #du_cache_nt = (; du_cache...)
@@ -433,21 +542,30 @@ function finish_fvm_config(config, connection_map_function, special_caches)
 
     N::Int = ForwardDiff.pickchunksize(length(u0_vec))
 
-    du_proto_axes = getaxes(ComponentArray(; du_proto_nt...))[1]
-    u_proto_axes = getaxes(ComponentArray(; u_proto_nt...))[1]
-    du_cache_axes = getaxes(ComponentArray(; du_cache_nt...))[1]
-    u_cache_axes = getaxes(ComponentArray(; u_cache_nt...))[1]
-
     du_diff_cache_vec = DiffCache(du_cache_vec, N)
     u_diff_cache_vec = DiffCache(u_cache_vec, N)
+    
+    du_proto_axes = create_axes(du_proto_nt, n_cells)
+    u_proto_axes = create_axes(u_proto_nt, n_cells)
+    du_cache_axes = create_axes(du_cache_nt, n_cells)
+    u_cache_axes = create_axes(u_cache_nt, n_cells)
 
-    merged_properties = merge_region_properties(config)
+    optimized_parameters_keys = keys(config.optimized_parameters)
+    optimized_parameters_1_element_vectors = [[config.optimized_parameters[field]] for field in keys(config.optimized_parameters)]
+    #we have to make it into a 1 element vector because create_axes requires a vector for each name
+
+    optimized_parameter_nt = (; zip(optimized_parameters_keys, optimized_parameters_1_element_vectors)...)
+    p_vec = Vector(ComponentVector(; optimized_parameter_nt...))
+
+    p_axes = create_axes(optimized_parameter_nt, n_cells)
 
     return du0_vec, u0_vec, config.geo, FVMSystem(
-        connection_groups, region_groups, controller_groups, 
-        merged_properties, 
+        connection_groups, controller_groups, patch_groups, region_groups,
+        p_vec, p_axes,
+        merged_properties,
         du_diff_cache_vec, u_diff_cache_vec,
         du_proto_axes, u_proto_axes,
         du_cache_axes, u_cache_axes
     )
 end
+
