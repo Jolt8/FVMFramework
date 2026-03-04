@@ -9,7 +9,7 @@ function numerical_flux(k_avg, temp_a, temp_b, area, dist)
 end
 =#
 
-function diffusion_temp_exchange!(
+function temp_diffusion!(
     du, u, 
     idx_a, idx_b, face_idx,
     area, norm, dist
