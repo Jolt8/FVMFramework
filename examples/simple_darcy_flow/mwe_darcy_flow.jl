@@ -249,7 +249,7 @@ function fluid_fluid_flux!(
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
     )
 
-    diffusion_mass_fraction_exchange!(
+    mass_fraction_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],

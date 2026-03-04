@@ -97,6 +97,7 @@ function net_reaction_rate(chemical_reaction, molar_concentrations, T, kf_A, kf_
     return net_reaction_rate
 end
 
+
 function K_gibbs_free(u, cell_id, reaction)
     K_ref = exp(-reaction.delta_gibbs_free_energy / (8.314e-3 * reaction.K_gibbs_free_ref_temp)) #R is in kJ
 
