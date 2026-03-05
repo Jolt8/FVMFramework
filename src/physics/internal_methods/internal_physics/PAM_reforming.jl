@@ -119,9 +119,9 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
     map(keys(u.species_ids)) do species_name
         du.molar_concentrations[species_name][cell_id] = 0.0
         map(keys(u.reactions.reforming_reactions)) do reforming_reaction
-            du.molar_concentrations[species_name][cell_id] += u.net_rates.reforming_reactions[reforming_reaction][1] * u.reactions.reforming_reactions[reforming_reaction].stoich_coeffs[species_name][cell_id]
+            du.molar_concentrations[species_name][cell_id] += u.net_rates.reforming_reactions[reforming_reaction][1] * u.reactions.reforming_reactions[reforming_reaction].stoich_coeffs[species_name][cell_id] * u.reforming_reactions[reforming_reaction].reactions_kg_cat
         end
-        du.mass_fractions[species_name][cell_id] += du.molar_concentrations[species_name][cell_id] * u.molecular_weights[species_name][cell_id] / u.rho[cell_id]
+        du.mass_fractions[species_name][cell_id] += (du.molar_concentrations[species_name][cell_id] * u.molecular_weights[species_name][cell_id] / u.rho[cell_id])
         # rate (mol/(m3*s)) * MW (g/mol) / rho (g/m3) = unitless/s
     end
 
