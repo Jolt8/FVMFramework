@@ -16,9 +16,16 @@ grid = generate_grid(Hexahedron, grid_dimensions, left, right)
 
 total_pipe_segments = 100
 
-addcellset!(grid, "vaporization_area", xyz -> xyz[1] <= (20 * (stripped_pipe_length / total_pipe_segments)))
+addcellset1(grid, "inlet", xyz -> xyz[1] <= (1 * (stripped_pipe_length / total_pipe_segments)))
 getcellset(grid, "vaporization_area")
-addcellset!(grid, "reforming_area", xyz -> xyz[1] >= (20 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (100 * (stripped_pipe_length / total_pipe_segments)))
+
+addcellset!(grid, "vaporization_area", xyz -> xyz[1] >= (1 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (20 * (stripped_pipe_length / total_pipe_segments)))
+getcellset(grid, "vaporization_area")
+
+addcellset!(grid, "reforming_area", xyz -> xyz[1] >= (20 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (99 * (stripped_pipe_length / total_pipe_segments)))
+getcellset(grid, "reforming_area")
+
+addcellset!(grid, "reforming_area", xyz -> xyz[1] >= (100 * (stripped_pipe_length / total_pipe_segments)))
 getcellset(grid, "reforming_area")
 
 n_cells = total_pipe_segments
@@ -31,6 +38,7 @@ u_proto = (
         carbon_dioxide = zeros(n_cells)
     ),
     pressure = zeros(n_cells),
+    temp = zeros(n_cells)
 )
 
 config = create_fvm_config(grid, u_proto)
@@ -52,7 +60,7 @@ MSR_rxn = (
     heat_of_reaction = 49500.0, # [J/mol]
     ref_delta_G = -3800.0, # [J/mol]
     ref_temp = 298.15, # [K]
-    kf_A = 1.25e12,#1.25e7, # [s^-1] #sources online point to values around 1.25e7 mol / (kg * s * bar)
+    kf_A = 1.25e8,#1.25e7, # [s^-1] #sources online point to values around 1.25e7 mol / (kg * s * bar)
     kf_Ea = 103000.0, # [J/mol]
     reactant_stoich_coeffs = (methanol = 1, water = 1), # reactant_stoich_coeffs
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 3),     # product_stoich_coeffs: 1 CO2 + 3 H2
@@ -67,7 +75,7 @@ MD_rxn = (
     heat_of_reaction = 90200.0, # [J/mol]
     ref_delta_G = 24800.0, # [J/mol]
     ref_temp = 298.15, # [K]
-    kf_A = 1.15e16,#1.15e11, # [s^-1] #sources online point to values around 1.15e11 mol / (kg * s * bar)
+    kf_A = 1.15e12,#1.15e11, # [s^-1] #sources online point to values around 1.15e11 mol / (kg * s * bar)
     kf_Ea = 170000.0, # [J/mol]
     reactant_stoich_coeffs = (methanol = 1,), # reactant_stoich_coeffs
     product_stoich_coeffs = (carbon_monoxide = 1, hydrogen = 2), # product_stoich_coeffs: 1 CO + 2 H2
@@ -82,7 +90,7 @@ WGS_rxn = (
     heat_of_reaction = -41100.0, # [J/mol]
     ref_delta_G = -28600.0, # [J/mol]
     ref_temp = 298.15, # [K]
-    kf_A = 3.65e12, #3.65e7, # [s^-1] #sources online point to values around 3.65e7 mol / (kg * s * bar)
+    kf_A = 3.65e8, #3.65e7, # [s^-1] #sources online point to values around 3.65e7 mol / (kg * s * bar)
     kf_Ea = 87500.0, # [J/mol]
     reactant_stoich_coeffs = (carbon_monoxide = 1, water = 1), # reactant_stoich_coeffs
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 1), # product_stoich_coeffs: 1 CO2 + 1 H2
@@ -138,7 +146,6 @@ reforming_area_properties = (
     cp = 4.184, # cp (J/(kg*K))
     mu = 1e-5, # mu (Pa*s)
     rho = 791.0, # rho (kg/m^3)
-    temp = ustrip(270.0u"°C" |> u"K"),
     viscosity = ustrip(1e-5u"Pa*s" |> u"Pa*s"),
     
     pipe_mass_flow = ustrip(pipe_mass_flow |> u"kg/s"),
@@ -160,13 +167,45 @@ reforming_area_properties = (
     reactions_kg_cat = (reforming_reactions = (MSR_rxn = 1250.0, MD_rxn = 1250.0, WGS_rxn = 1250.0),), # cell_kg_cat_per_m3_for_each_reaction
 )
 #remember, for any named tuple with a single field inside it, remember to add a comma to the end 
-#ex. (reforming_reactions = (MSR_rxn = MSR_rxn, ),)
+#ex. (reforming_reactions = (MSR_rxn = MSR_rxn,),)
 #not: (reforming_reaction = (MSR_rxn = MSR_rxn))
 
 #these are just for classifying regions to make sure they do the right connection functions
+struct Inlet <: AbstractPhysics end
 struct Fluid <: AbstractPhysics end
+struct Outlet <: AbstractPhysics end
 
 include(joinpath(@__DIR__, "1D physics", "ergun_pressure_drop.jl"))
+
+add_region!(
+    config, "inlet";
+    type = Inlet(),
+    initial_conditions = (
+        mass_fractions = initial_mass_fractions,
+        pressure = ustrip(1.0u"atm" |> u"Pa"),
+        temp = ustrip(270.0u"°C" |> u"K"),
+    ),
+    properties = reforming_area_properties,
+    optimized_syms = [],
+    cache_syms = [:heat, :mw_avg, :rho, :molar_concentrations, :net_rates, :mass, :mass_face],
+    region_function =
+    function inlet!(du, u, cell_id, vol)
+        #property updating/retrieval
+        mw_avg!(u, cell_id)
+        rho_ideal!(u, cell_id)
+        molar_concentrations!(u, cell_id)
+
+        #internal physics
+        #ergun_pressure_drop!(du, u, cell_id, vol)
+
+        #du.mass_face[cell_id][5] += u.pipe_mass_flow[cell_id]
+        du.mass[cell_id] += u.pipe_mass_flow[cell_id]
+
+        #sum_mass_flux_face_to_cell!(du, u, cell_id)
+
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
+    end
+)
 
 add_region!(
     config, "vaporization_area";
@@ -174,6 +213,7 @@ add_region!(
     initial_conditions = (
         mass_fractions = initial_mass_fractions,
         pressure = ustrip(1.0u"atm" |> u"Pa"),
+        temp = ustrip(270.0u"°C" |> u"K"),
     ),
     properties = reforming_area_properties,
     optimized_syms = [],
@@ -189,6 +229,8 @@ add_region!(
         #ergun_pressure_drop!(du, u, cell_id, vol)
 
         #sum_mass_flux_face_to_cell!(du, u, cell_id)
+
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
     end
 )
 
@@ -198,6 +240,7 @@ add_region!(
     initial_conditions = (
         mass_fractions = initial_mass_fractions,
         pressure = ustrip(1.0u"atm" |> u"Pa"),
+        temp = ustrip(270.0u"°C" |> u"K"),
     ),
     properties = reforming_area_properties,
     optimized_syms = [],
@@ -215,27 +258,57 @@ add_region!(
         #ergun_pressure_drop!(du, u, cell_id, vol)
 
         #sum_mass_flux_face_to_cell!(du, u, cell_id)
+
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
     end
 )
 
+add_region!(
+    config, "outlet";
+    type = Fluid(),
+    initial_conditions = (
+        mass_fractions = initial_mass_fractions,
+        pressure = ustrip(1.0u"atm" |> u"Pa"),
+        temp = ustrip(270.0u"°C" |> u"K"),
+    ),
+    properties = reforming_area_properties,
+    optimized_syms = [],
+    cache_syms = [:heat, :mw_avg, :rho, :molar_concentrations, :net_rates, :mass, :mass_face],
+    region_function =
+    function outlet!(du, u, cell_id, vol)
+        #property updating/retrieval
+        mw_avg!(u, cell_id)
+        rho_ideal!(u, cell_id)
+        molar_concentrations!(u, cell_id)
 
+        #internal physics
+        #du.mass_face[cell_id][5] -= u.pipe_mass_flow[cell_id]
+        du.mass[cell_id] -= u.pipe_mass_flow[cell_id]
+
+        #ergun_pressure_drop!(du, u, cell_id, vol)
+
+        #sum_mass_flux_face_to_cell!(du, u, cell_id)
+
+        cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
+    end
+)
 #Connection functions
 function fluid_fluid_flux!(
     du, u,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
 )
-    #=all_species_advection!(
+    all_species_advection!(
         du, u, 
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )=#
-
-    #=enthalpy_advection!(
+    )
+    
+    enthalpy_advection!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )=#
+    )
 end
 
 function connection_map_function(type_a, type_b)
