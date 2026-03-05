@@ -52,16 +52,30 @@ function pipe_f!(
     #last cell neighbors: 
         #- (20, [(19, 5)])
         #- (cell_id, [(neighbor_cell_id, current_cell's_face_index_pointing_to_neighbor)])
+
+    #du.mass_face[1][3] -= u.pipe_mass_flow[1] #inlet
+    
     for cell_id in 1:length(cell_volumes)-1
         du.mass_face[cell_id][3] -= u.pipe_mass_flow[cell_id]
         du.mass_face[cell_id + 1][5] += u.pipe_mass_flow[cell_id]
     end
+
+    #du.mass_face[end][5] += u.pipe_mass_flow[end] #outlet
 
     for conn in connection_groups
         solve_connection_group!(
             du, u,
             conn.flux_function!, conn.cell_neighbors,
             cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        )
+    end
+
+    for patch in patch_groups
+        solve_patch_group!(
+            du, u,
+            patch.patch_function!, patch.cell_neighbors,
+            cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+            cell_volumes
         )
     end
     
