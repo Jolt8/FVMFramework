@@ -49,6 +49,6 @@ function power_law_react_cell!(du, u, cell_id, reaction, reaction_name, vol)
         du.mass_fractions[species_name][cell_id] += (u.net_rates[reaction_name][1] * reaction.stoich_coeffs[species_name][1] * u.molecular_weights[species_name][1]) / u.rho[cell_id]
     end
 
-    #du.temp[cell_id] += u.net_rates[reaction_name][1] * (-reaction.heat_of_reaction[1]) * vol 
+    du.heat[cell_id] += u.net_rates[reaction_name][1] * (-reaction.heat_of_reaction[1]) * vol 
     # rate (mol/(m3*s)) * H (J/mol) * vol (m3) = J/s = Watts
 end
