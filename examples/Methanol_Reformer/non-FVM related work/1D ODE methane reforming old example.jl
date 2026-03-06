@@ -461,11 +461,11 @@ function get_linear_heat_transfer_coefficient(
 
     #pipe_1_fluid_thermal_cond = PropsSI("conductivity", "T", pipe_1_fluid_temp, "P", pipe_1_fluid_pressure, pipe_1_fluid)
     if Re_1 <= 2200 
-        println("Pipe 2 laminar")
+        println("Pipe 1 laminar")
         #println("Pr_1 ", Pr_1)
         pipe_1_nusselt_number = laminar_entry_Baehr_Stephan(Re_1, Pr_1, z, pipe_1_hydraulic_diameter)
     else
-        println("Pipe 2 turbulent")
+        println("Pipe 1 turbulent")
         pipe_1_nusselt_number = turbulent_Gnielinski(Re_1, Pr_1, fd_1)
     end
 
@@ -622,10 +622,11 @@ function pbr_ode_system!(du, u, p::Vector, z)
 
     #Calculate Heat Transfer due to difference in temperature between top and bottom reaction system
     layers = p[3]
-    UA_prime = calculate_UA_prime_system(layers, 
-                                    smr_model, common_SMR, SMR_T, SMR_P, SMR_molar_flows, 
-                                    comb_model, common_comb, comb_T, comb_P, comb_molar_flows, 
-                                    z
+    UA_prime = calculate_UA_prime_system(
+        layers, 
+        smr_model, common_SMR, SMR_T, SMR_P, SMR_molar_flows, 
+        comb_model, common_comb, comb_T, comb_P, comb_molar_flows, 
+        z
     )
     #UA_prime = 0.01u"W/(m*K)"
     dq_dL = UA_prime * (comb_T - SMR_T)
