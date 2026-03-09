@@ -16,8 +16,8 @@ function methylene_blue_diffuion_parameter_fitting_f!(
     du_proto_axes, u_proto_axes,
     du_cache_axes, u_cache_axes
 )
-    du_cache_vec = get_tmp(du_diff_cache_vec, u_vec)
-    u_cache_vec = get_tmp(u_diff_cache_vec, u_vec)
+    du_cache_vec = get_tmp(du_diff_cache_vec, first(u_vec) + first(p))
+    u_cache_vec = get_tmp(u_diff_cache_vec, first(u_vec) + first(p))
 
     #println(typeof(du_cache_vec))
 
@@ -52,6 +52,8 @@ function methylene_blue_diffuion_parameter_fitting_f!(
     #since single numbers are stored as one element vectors in create_views_inline, we have to get the first 
     u.diffusion_pre_exponential_factor .= p_named.diffusion_pre_exponential_factor[1]
     u.diffusion_activation_energy .= p_named.diffusion_activation_energy[1]
+
+    #println(u.diffusion_pre_exponential_factor[1], ", ", u.diffusion_activation_energy[1])
     
     #Connection Loops
     for conn in connection_groups
@@ -78,6 +80,32 @@ function methylene_blue_diffuion_parameter_fitting_f!(
             reg.region_function!, reg.region_cells,
             cell_volumes
         )
+    end
+
+    #custom method for a well-mixed assumption
+    for reg in region_groups
+        if reg.name == "surrounding_fluid"
+            total_methylene_blue_dm_dt = 0.0
+            total_water_dm_dt = 0.0
+            total_reservoir_mass = 0.0
+            total_reservoir_volume = 0.0
+
+            for cell_id in reg.region_cells
+                total_methylene_blue_dm_dt += du.mass_fractions.methylene_blue[cell_id] * u.rho[cell_id] * cell_volumes[cell_id]
+                total_water_dm_dt += du.mass_fractions.water[cell_id] * u.rho[cell_id] * cell_volumes[cell_id]
+
+                total_reservoir_mass += u.rho[cell_id] * cell_volumes[cell_id]
+                total_reservoir_volume += cell_volumes[cell_id]
+            end
+
+            well_mixed_methylene_blue_dt = total_methylene_blue_dm_dt / total_reservoir_mass
+            well_mixed_water_dt = total_water_dm_dt / total_reservoir_mass
+            
+            for cell_id in reg.region_cells
+                du.mass_fractions.methylene_blue[cell_id] = well_mixed_methylene_blue_dt
+                du.mass_fractions.water[cell_id] = well_mixed_water_dt
+            end
+        end
     end
 end
 

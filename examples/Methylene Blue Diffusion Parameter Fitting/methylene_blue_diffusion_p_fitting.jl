@@ -2,13 +2,11 @@ using Revise
 
 using FVMFramework
 
-#I think this take a long time because Enzyme (despite not being installed) throws a warning from DiffEqBaseEnzyme.jl
-
 using Ferrite
 using FerriteGmsh
 using OrdinaryDiffEq
 using SparseArrays
-using ComponentArrays
+using ComponentArrays   
 using NonlinearSolve
 import SparseConnectivityTracer, ADTypes
 using ILUZero
@@ -17,6 +15,16 @@ using PreallocationTools
 using ForwardDiff
 using Polyester
 using DataInterpolations
+
+using XLSX
+
+using SciMLSensitivity
+using Optimization
+using OptimizationOptimJL
+using ForwardDiff
+
+using BenchmarkTools
+using Plots
 
 using Unitful
 
@@ -63,11 +71,11 @@ end
 
 #these are just for classifying regions to make sure they do the right connection functions
 struct Fluid <: AbstractPhysics end
-struct Solid <: AbstractPhysics end
+struct WellMixed <: AbstractPhysics end
 
 dialysis_tubing_initial_mass_fractions = (
-    methylene_blue = [0.0003846],
-    water = [0.9996154]
+    methylene_blue = [0.0004],
+    water = [0.9996]
 )
 
 dialysis_tubing_initial_mass_fractions = normalize_mass_fractions(dialysis_tubing_initial_mass_fractions)
@@ -86,8 +94,8 @@ add_region!(
         mu = 1e-3, # mu (Pa*s)
         species_ids = (methylene_blue = 1, water = 2), #we could use mass_fractions for species loops, but this is just more consistent
         diffusion_coefficients = (
-            methylene_blue = 1e-5,
-            water = 1e-5
+            methylene_blue = 1e-9,
+            water = 1e-9
         ), #diffusion coefficients (m^2/s)
         molecular_weights = (
             methylene_blue = 0.31985, 
@@ -95,7 +103,6 @@ add_region!(
         ), #species_molecular_weights [kg/mol]
     ), 
     optimized_syms = [],
-    state_syms = [:mass_fractions],
     cache_syms = [:heat, :molar_concentrations, :mw_avg, :rho], 
     region_function =
     function reforming_area!(du, u, cell_id, vol)
@@ -123,30 +130,27 @@ surrounding_fluid_initial_mass_fractions = (
 
 surrounding_fluid_initial_mass_fractions = normalize_mass_fractions(surrounding_fluid_initial_mass_fractions)
 
+surrounding_fluid_properties = (
+    temp = ustrip(21.13u"°C" |> u"K"),
+    k = 0.6, # k (W/(m*K))
+    cp = 4184, # cp (J/(kg*K))
+    rho = 1000, # rho (kg/m^3)
+    mu = 1e-3, # mu (Pa*s)
+    species_ids = (methylene_blue = 1, water = 2), #we could use mass_fractions for species loops, but this is just more consistent
+    molecular_weights = (
+        methylene_blue = 0.31985, 
+        water = 0.01802
+    ), #species_molecular_weights [kg/mol]
+)
+
 add_region!(
     config, "surrounding_fluid";
-    type = Fluid(),
+    type = WellMixed(),
     initial_conditions = (
         mass_fractions = surrounding_fluid_initial_mass_fractions,
     ),
-    properties = (
-        temp = ustrip(21.13u"°C" |> u"K"),
-        k = 0.6, # k (W/(m*K))
-        cp = 4184, # cp (J/(kg*K))
-        rho = 1000, # rho (kg/m^3)
-        mu = 1e-3, # mu (Pa*s)
-        species_ids = (methylene_blue = 1, water = 2), #we could use mass_fractions for species loops, but this is just more consistent
-        diffusion_coefficients = (
-            methylene_blue = 1e-5,
-            water = 1e-5
-        ), #diffusion coefficients (m^2/s)
-        molecular_weights = (
-            methylene_blue = 0.31985, 
-            water = 0.01802
-        ), #species_molecular_weights [kg/mol]
-    ), 
+    properties = surrounding_fluid_properties,
     optimized_syms = [],
-    state_syms = [:mass_fractions],
     cache_syms = [:heat, :molar_concentrations, :mw_avg, :rho], 
     region_function =
     function surrounding_fluid!(du, u, cell_id, vol)
@@ -166,6 +170,36 @@ add_region!(
         #cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
     end
 )
+
+#=
+add_region!(
+    config, "sampled_volume";
+    type = Fluid(),
+    initial_conditions = (
+        mass_fractions = surrounding_fluid_initial_mass_fractions,
+    ),
+    properties = surrounding_fluid_properties,
+    optimized_syms = [],
+    cache_syms = [:heat, :molar_concentrations, :mw_avg, :rho], 
+    region_function =
+    function surrounding_fluid!(du, u, cell_id, vol)
+        #property updating/retrieval
+
+        #internal physics
+
+        #PAM_reforming_react_cell!(du, u, cell_id, vol)
+
+        #sources
+
+        #boundary conditions
+
+        #variable summations
+
+        #capacities
+        #cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
+    end
+)
+    =#
 
 include("specific_physics/arrenhius_mass_fraction_diffusion_meth_blue_and_water.jl") 
 #for arrenhius_mass_fraction_diffusion_meth_blue_and_water!
@@ -205,8 +239,8 @@ properties = (
 add_patch!(
     config, "dialysis_tubing_surface";
     properties = (
-        diffusion_pre_exponential_factor = 1e-5,
-        diffusion_activation_energy = 1000.0
+        diffusion_pre_exponential_factor = 1.4384498882876651e-5,
+        diffusion_activation_energy = 19387.54259111162
     ), 
     optimized_syms = [
         :diffusion_pre_exponential_factor,
@@ -241,13 +275,6 @@ function fluid_fluid_flux!(
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
 )
-    #=
-    temp_diffusion!(
-        du, u,
-        idx_a, idx_b, face_idx,
-        cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )=#
-
     mass_fraction_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
@@ -255,10 +282,30 @@ function fluid_fluid_flux!(
     )
 end
 
+function fluid_well_mixed_flux!(
+    du, u,
+    idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+)
+    #nothing happens because the add_patch! is already taking care of this
+end
+
+function well_mixed_well_mixed_flux!(
+    du, u,
+    idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+)
+    #nothing happens here, but we have a custom method inside parameter_fitting_operator for this
+end
+
+
 #this is the smallest I could make this function
 #I like using <: here because it makes it look nice with syntax highlighting
 function connection_map_function(type_a, type_b)
     typeof(type_a) <: Fluid && typeof(type_b) <: Fluid && return fluid_fluid_flux!
+    typeof(type_a) <: WellMixed && typeof(type_b) <: Fluid && return fluid_well_mixed_flux!
+    typeof(type_a) <: Fluid && typeof(type_b) <: WellMixed && return fluid_well_mixed_flux!
+    typeof(type_a) <: WellMixed && typeof(type_b) <: WellMixed && return well_mixed_well_mixed_flux!
 end
 
 n_faces = length(config.geo.cell_neighbor_areas[1])
@@ -283,7 +330,6 @@ special_caches = (
         - We could also reduce the resolution of the timesteps, but that's not ideal
     - 
 =#
-using XLSX
 
 experimental_data_path = joinpath(@__DIR__, "dialysis_tubing_diffusion_data.xlsx")
 
@@ -310,7 +356,11 @@ function input_experimental_data(trials, xf, name::String;
 end
 
 function dv(data) #column_to_vector/row_to_vector, called it dv because it's data_to_vector
-    return float.(vec(data))
+    data_vec = float.(vec(data))
+
+    filter!(x -> !isempty(x), data_vec)
+
+    return data_vec
 end
 #end of logic that doesn't need to be seen by the user
 
@@ -329,19 +379,26 @@ function process_experimental_data!(trials, data::NamedTuple, name, xf)
         temp = data.temp_data.timestamps, #this is only needed for defining tMax
     )
 
-
-
     #compared data (what the simulated data is compared against to get loss)
     mixture_volume = 500u"ml"
     mixture_rho = 1000.0u"kg/m^3"
 
-    calibration_concentration = 1.6u"g/L"
-    calibration_volume_fractions = dv(xf["calibration"]["A2:A6"]) .* u"ml/ml"
-    stock_solution_density = 1015.0u"kg/m^3"
+    calibration_volume_fractions = 0.0
+    corresonding_absorbances = 0.0
+
+    if name == "T1" || name == "T2"
+        calibration_volume_fractions = dv(xf["calibration"]["A2:A6"]) .* u"ml/ml"
+        corresonding_absorbances = dv(xf["calibration"]["B2:B6"])
+    elseif name == "T3" #For some reason the colorimeter became miscalibrated when I did T3
+        calibration_volume_fractions = dv(xf["calibration"]["A2:A6"]) .* u"ml/ml"
+        corresonding_absorbances = dv(xf["calibration"]["E2:E6"])
+    end
+
+    calibration_concentration = 0.016u"g/L"
+    
+    stock_solution_density = 1000.0u"kg/m^3"
 
     calibration_mass_fractions = (calibration_volume_fractions .* calibration_concentration) / stock_solution_density
-    
-    corresonding_absorbances = dv(xf["calibration"]["B2:B6"])
 
     calibration_absorbances_to_mass_fractions_interp = CubicSpline(ustrip.(calibration_mass_fractions .|> u"kg/kg"), corresonding_absorbances)
 
@@ -374,12 +431,42 @@ trials = initialize_trials()
 input_experimental_data(trials, xf, "T1"; 
     data = (
         temp_data = (
-            timestamps = dv(xf["T1 Temps"]["A2:A805"]),
-            temp = dv(xf["T1 Temps"]["B2:B805"]),
+            timestamps = dv(xf["T1 Temps"]["A2:A2997"]),
+            temp = dv(xf["T1 Temps"]["B2:B2997"]),
         ),
         absorbance_data = ( #I think it would be safe to assume that values that are measured in the same field have the same timestamps
-            timestamps = dv(xf["T1"]["A2:A6"]),
-            methylene_blue_absorbance = dv(xf["T1"]["B2:B6"]),
+            timestamps = dv(xf["T1"]["B2:B10"]),
+            methylene_blue_absorbance = dv(xf["T1"]["C2:C10"]),
+        )
+    ),
+    trial_processor_function = process_experimental_data!
+)
+
+
+input_experimental_data(trials, xf, "T2"; 
+    data = (
+        temp_data = (
+            timestamps = dv(xf["T2 Temps"]["A2:A1693"]),
+            temp = dv(xf["T2 Temps"]["B2:B1693"]),
+        ),
+        absorbance_data = ( #I think it would be safe to assume that values that are measured in the same field have the same timestamps
+            timestamps = dv(xf["T2"]["B2:B11"]),
+            methylene_blue_absorbance = dv(xf["T2"]["C2:C11"]),
+        )
+    ),
+    trial_processor_function = process_experimental_data!
+)
+
+
+input_experimental_data(trials, xf, "T3"; 
+    data = (
+        temp_data = (
+            timestamps = dv(xf["T3 Temps"]["A2:A1727"]),
+            temp = dv(xf["T3 Temps"]["B2:B1727"]),
+        ),
+        absorbance_data = ( #I think it would be safe to assume that values that are measured in the same field have the same timestamps
+            timestamps = dv(xf["T3 Dropped Data"]["B2:B8"]),
+            methylene_blue_absorbance = dv(xf["T3 Dropped Data"]["C2:C8"]),  
         )
     ),
     trial_processor_function = process_experimental_data!
@@ -411,8 +498,6 @@ methylene_blue_diffuion_parameter_fitting_f!(
 )
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 f_closure_implicit = (du, u, p, t) -> f_closure_implicit_pre(du, u, p, t, trials["T1"].state_data, trials["T1"].state_time)
-
-using BenchmarkTools
 
 tMax = trials["T1"].state_time.temp[end]
 
@@ -453,46 +538,90 @@ sol_u_named_end = create_views_inline(sol.u[end], system.u_proto_axes)
 
 sol_u_named_0.mass_fractions.methylene_blue == sol_u_named_end.mass_fractions.methylene_blue
 
-VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KLUFactorization()))
+sim_file = @__FILE__
+
+u_proto_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
+
+sol_to_vtk(sol, u_proto_named, grid, sim_file)
+
+
+#VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KLUFactorization()))
 #VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback=approximate_time_to_finish_cb)
 #algebraicmultigrid is only better for more than 1e6 cells
 
 #observed_cell_id = grid.cellsets["molar_concentrations_observation_point"][1] #this is what we should do
-observed_cell_id = grid.cellsets["surrounding_fluid"][1] #this is just temporary
+#observed_cell_id = grid.cellsets["sampled_volume"][1] #1676
+observed_cell_id = 734
 
-using SciMLSensitivity
-using Optimization
-using OptimizationOptimJL
-using ForwardDiff
+trials["T3"].compared_data.mass_fractions.methylene_blue
+
+observed = Dict(
+    "T1" => zeros(length(trials["T1"].compared_time.mass_fractions)), 
+    "T2" => zeros(length(trials["T2"].compared_time.mass_fractions)), 
+    "T3" => zeros(length(trials["T3"].compared_time.mass_fractions))
+)
+predicted = Dict(
+    "T1" => zeros(length(trials["T1"].compared_time.mass_fractions)), 
+    "T2" => zeros(length(trials["T2"].compared_time.mass_fractions)), 
+    "T3" => zeros(length(trials["T3"].compared_time.mass_fractions))
+)
+
+trial_probs = Dict()
+
+for trial_name in keys(trials)
+    trial = trials[trial_name]
+
+    tspan = (trial.state_time.temp[1], trial.state_time.temp[end])
+
+    p_adjusted = [0.0, 0.0]
+
+    f_closure_implicit = (du, u, p, t) -> f_closure_implicit_pre(du, u, p, t, trial.state_data, trial.state_time)
+
+    ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
+    #since this is just a diffusion problem, I doubt implicit solving is necessary
+
+    trial_probs[trial_name] = ode_func
+end
+
 
 #START OF OPTIMIZATION SOLVING
-function loss(θ)
+function check_predicted_against_observed(θ)
     total_loss = 0.0
     for trial_name in keys(trials)
         trial = trials[trial_name]
 
         tspan = (trial.state_time.temp[1], trial.state_time.temp[end])
-        p_adjusted = [exp(θ[1]), θ[2]]
+        p_adjusted = [exp(θ[1]), θ[2] * 1000]
 
-        f_closure_implicit = (du, u, p, t) -> f_closure_implicit_pre(du, u, p, t, trial.state_data, trial.state_time)
+        #f_closure_implicit = (du, u, p, t) -> f_closure_implicit_pre(du, u, p, t, trial.state_data, trial.state_time)
 
-        ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
+        #ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
         #since this is just a diffusion problem, I doubt implicit solving is necessary
 
-        prob_trial = ODEProblem(ode_func, u0_vec, tspan, system)
+        prob_trial = ODEProblem(trial_probs[trial_name], u0_vec, tspan, p_adjusted)
 
         sol = solve(
-            prob_trial, FBDF(linsolve = KLUFactorization()), p = p_adjusted,
-            sensealg = InterpolatingAdjoint(autodiff = AutoForwardDiff()),
-            saveat = trial.compared_time.mass_fractions
+            prob_trial, Tsit5(), 
+            saveat = trial.compared_time.mass_fractions,
+            #reltol = 1e-10, abstol = 1e-10
         )
 
+        #I FOUND THE PROBLEM: using an implicit solver like FBDF here does not seem to agree well with ForwardDiff, it makes using gradient on this loss function take 10 seconds
+        #instead of 0.6-1 second
+
         u_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
+
+        #println(trial_name)
 
         trial_error = 0.0
         for time_idx in eachindex(sol.u)
             pred = u_named[time_idx].mass_fractions.methylene_blue[observed_cell_id]
             obs = trial.compared_data.mass_fractions.methylene_blue[time_idx]
+            #println("pred: ", pred)
+            #println("obs: ", obs)
+            #println("")
+            predicted[trial_name][time_idx] = pred
+            observed[trial_name][time_idx] = obs
             trial_error += sum(abs2, pred .- obs)
         end
 
@@ -501,75 +630,304 @@ function loss(θ)
     return total_loss
 end
 
-loss([log(1516.363624655201), 50000])
+function loss(θ)
+    total_loss = 0.0
+    for trial_name in keys(trials)
+        trial = trials[trial_name]
+
+        tspan = (trial.state_time.temp[1], trial.state_time.temp[end])
+        p_adjusted = [exp(θ[1]), θ[2] * 1000]
+
+        #f_closure_implicit = (du, u, p, t) -> f_closure_implicit_pre(du, u, p, t, trial.state_data, trial.state_time)
+
+        #ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
+        #since this is just a diffusion problem, I doubt implicit solving is necessary
+
+        prob_trial = ODEProblem(trial_probs[trial_name], u0_vec, tspan, p_adjusted)
+
+        sol = solve(
+            prob_trial, Tsit5(), 
+            saveat = trial.compared_time.mass_fractions,
+            #reltol = 1e-14, abstol = 1e-14
+        )
+
+        #I FOUND THE PROBLEM: using an implicit solver like FBDF here does not seem to agree well with ForwardDiff, it makes using gradient on this loss function take 10 seconds
+        #instead of 0.6-1 second
+
+        u_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
+
+        #println(trial_name)
+
+        trial_error = 0.0
+        for time_idx in eachindex(sol.u)
+            pred = u_named[time_idx].mass_fractions.methylene_blue[observed_cell_id]
+            obs = trial.compared_data.mass_fractions.methylene_blue[time_idx]
+            #println("pred: ", pred)
+            #println("obs: ", obs)
+            #println("")
+            #predicted[trial_name][time_idx] = pred
+            #observed[trial_name][time_idx] = obs
+            trial_error += sum(abs2, pred .- obs)
+        end
+
+        total_loss += trial_error
+    end
+    return total_loss
+end
+
+grad = ForwardDiff.gradient(loss, [log(1.355e-5), 25.0]) #while using an implicit solver, this takes forever
+#VSCodeServer.@profview ForwardDiff.gradient(loss, [log(1.355e-5), 19.0])
+
+@time loss([log(1.355e-5), 19.0])
+
+#VSCodeServer.@profview ForwardDiff.gradient(loss, [log(0.00010695283811760264), 25.0])
+A_range = exp.(range(log(1e-4), log(5e-4), length = 20))
+Ea_range = exp.(range(log(10.0), log(35.0), length = 20))
+
+time_to_finish = (@timed loss([log(1e-7), 10.0])).time
+approximate_time_to_finish = time_to_finish * length(A_range) * length(Ea_range)
+
+losses = zeros(length(A_range), length(Ea_range))
+
+for (A_idx, A) in enumerate(A_range)
+    for (Ea_idx, Ea) in enumerate(Ea_range)
+        curr_loss = loss([log(A), Ea])
+        losses[A_idx, Ea_idx] = curr_loss
+        #=
+        if Ea_idx > 1
+            if losses[A_idx, Ea_idx] > losses[A_idx, Ea_idx-1]
+                losses[A_idx, Ea_idx:end] .= losses[A_idx, Ea_idx-1]
+                break
+            end
+        end
+        if A_idx > 1
+            if losses[A_idx, Ea_idx] > losses[A_idx-1, Ea_idx]
+                losses[A_idx:end, Ea_idx] .= losses[A_idx-1, Ea_idx]
+                break
+            end
+        end
+        =#
+        println("loss: ", curr_loss, "    A: ", A, "    Ea: ", Ea)
+    end
+end
+
+losses
+
+idx = argmin(losses)
+
+losses[idx]
+A_range[idx[1]] #1.0e-7
+Ea_range[idx[2]] #4638.456927175568
+
+surface(A_range, Ea_range, losses)
+
+check_predicted_against_observed([log(A_range[idx[1]]), Ea_range[idx[2]]])
+check_predicted_against_observed([log(1e-6), 14.5])
+
+predicted
+observed
+
+plot(trials["T1"].compared_time.mass_fractions, observed["T1"])
+plot!(trials["T1"].compared_time.mass_fractions, predicted["T1"])
+
+plot(trials["T2"].compared_time.mass_fractions, observed["T2"])
+plot!(trials["T2"].compared_time.mass_fractions, predicted["T2"])
+
+plot(trials["T3"].compared_time.mass_fractions, observed["T3"])
+plot!(trials["T3"].compared_time.mass_fractions, predicted["T3"])
+
+loss([log(9.999999999999994e-8), 5.979065872502011])
+loss([log(1.0000000000000004e-6), 12.543765464255612])
+loss([log(2.154434690031887e-6), 15.000000000000004])
+loss([log(1.0000000000000004e-6), 12.331060371652355])
+loss([log(3.593813663804624e-6), 15.606791157835269])
+loss([log(9.999999999999997e-6), 18.51749424574579])
+loss([log(9.999999999999997e-6), 18.51749424574579])
+loss([log(1.2915496650148832e-5), 19.085051367516022])
+loss([log(1.4384498882876651e-5), 19.38754259111162])
+loss([log(1.355e-5), 19.3875])
+
+
+loss([log(0.00010707372974861651), 24.97650595937726])
+loss([log(0.00011707372974861651), 24.97650595937726])
+loss([log(0.00013048154721256904), 24.930239690378226])
+loss([log(0.00008648154721256904), 28.330239690378226])
+check_predicted_against_observed([log(0.00001), 5.0])
+
+predicted
+observed
+
+plot(trials["T1"].compared_time.mass_fractions, observed["T1"])
+plot!(trials["T1"].compared_time.mass_fractions, predicted["T1"])
+
+plot(trials["T2"].compared_time.mass_fractions, observed["T2"])
+plot!(trials["T2"].compared_time.mass_fractions, predicted["T2"])
+
+plot(trials["T3"].compared_time.mass_fractions, observed["T3"])
+plot!(trials["T3"].compared_time.mass_fractions, predicted["T3"])
+
+#=
+for trial_name in keys(trials)
+    trial = trials[trial_name]
+    plot(trial.compared_time.mass_fractions, predicted[trial_name])
+    display(plot!(trial.compared_time.mass_fractions, observed[trial_name]))
+end
+=#
+
 
 loss_history = [] #loss accumulator
 parameter_history = [] #parameter accumulator
 
 optimization_callback_tracker = function (state, l)
     println("loss: ", l)
-    append!(loss_history, l)
-    append!(parameter_history, [create_views_inline(state.u, system.u_proto_axes)])
+    println("optimized_parameters, ", state.u)
+    println("grad, ", state.grad)
+    #println("parameters: ", state.p)
+    push!(loss_history, l)
+    push!(parameter_history, state.p)
+    return false
 end
 
-N = ForwardDiff.pickchunksize(length(u0_vec))
+N = 2
+#ForwardDiff.pickchunksize(length(u0_vec))
 
-adtype = Optimization.AutoForwardDiff(chunksize = N)
+adtype = Optimization.AutoForwardDiff()
 optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 
 #diffusion pre-exponential factor, diffusion activation energy
-guess_params = Float64[log(1516.363624655201), 50000]
+guess_params = Float64[log(1e-6), 14.5]
 loss(guess_params)
 
-lower_bounds = [log(300.0), 1000.0]
-upper_bounds = [log(1e12), 100000.0]
+lower_bounds = [log(1e-7), 5.0000]
+upper_bounds = [log(1e-2), 50.0000]
 
-optprob = Optimization.OptimizationProblem(optf, guess_params, lb=lower_bounds, ub=upper_bounds)
+optprob = Optimization.OptimizationProblem(optf, guess_params, lb = lower_bounds, ub = upper_bounds)
 
-@time res = Optimization.solve(
+abstol = 1e-19
+#bruh, this whole time I could've just decreased the tolerance to get it to explore more 
+#what the fuck, how does that even make any sense
+
+res = Optimization.solve(
     optprob,
-    #callback=cb,
+    callback = optimization_callback_tracker,
     OptimizationOptimJL.LBFGS(),
     #LBFGS, BFGS, and Fminbox don't work if the guess is very far away from the actual value
-    #IPNewton works kinda fine
-    f_abstol=1e-4,
-    g_abstol=1e-4,
+    #IPNewton works ok
+    f_abstol = abstol,
+    g_abstol = abstol,
 )
 
 optimized_diffusion_pre_exponential_factor = exp(res.u[1])
 optimized_diffusion_activation_energy = res.u[2]
+
+optimized_diffusion_pre_exponential_factor = 0.0004162952651817045
+optimized_diffusion_activation_energy = 29.393547291504646
 #END OF OPTIMIZATION SOLVING
+#-7.88737964833364
+#-7.88737964833364
+#-29.214739988696778
+#-29.214739988696778
+
+check_predicted_against_observed([log(optimized_diffusion_pre_exponential_factor), optimized_diffusion_activation_energy])
+
+predicted
+observed
+
+plot(trials["T1"].compared_time.mass_fractions, observed["T1"])
+plot!(trials["T1"].compared_time.mass_fractions, predicted["T1"])
+
+plot(trials["T2"].compared_time.mass_fractions, observed["T2"])
+plot!(trials["T2"].compared_time.mass_fractions, predicted["T2"])
+
+plot(trials["T3"].compared_time.mass_fractions, observed["T3"])
+plot!(trials["T3"].compared_time.mass_fractions, predicted["T3"])
+
+
+#FINAL OPTIMIZED PARAMETERS (DO NOT TOUCH)
+    # - A: 0.0003754521036840595
+    # - Ea: 29.214739988696778
+#
+
+#TODO: check if add_patch! actually creates two connections per facet
+
+loss([log(9.998618464786643e-5), 27.999999950598372])
+loss([log(0.00010695283811760264), 24.99999997677348])
+loss([log(7.41846435984539e-5), 23.999997648035107])
+loss([log(5.129888295561744e-5), 22.9999977703627])
+loss([log(3.548090572948086e-5), 21.999997914997068])
+loss([log(1.3559637272570382e-5), 19.38750000355438])
+loss([log(0.00010707372974861651), 24.97650595937726])
+loss([log(0.00040703854247398335), 24.548420545838148])
+
+#FINAL PARAMETERS (DO NOT TOUCH):
+#   - A = 0.00010707372974861651
+#   - Ea = 24.97650595937726
 
 #START OF INITIAL SEARCHING
 
-guess_lb = 1000
-guess_ub = 1000000
+check_predicted_against_observed([log(0.00010707372974861651), 24.97650595937726])
 
-Ea_range = collect(range(guess_lb, guess_ub, 20))
+predicted
+observed
+
+plot(trials["T1"].compared_time.mass_fractions, observed["T1"])
+plot!(trials["T1"].compared_time.mass_fractions, predicted["T1"])
+
+plot(trials["T2"].compared_time.mass_fractions, observed["T2"])
+plot!(trials["T2"].compared_time.mass_fractions, predicted["T2"])
+
+plot(trials["T3"].compared_time.mass_fractions, observed["T3"])
+plot!(trials["T3"].compared_time.mass_fractions, predicted["T3"])
+
+
+Ea_guess_lb = 4000
+Ea_guess_ub = 25000
+
+Ea_range = collect(range(Ea_guess_lb, Ea_guess_ub, 2))
+
+A_lb = 1e-9
+A_ub = 5e-6
+
+A_guess = 1e-6
 
 function loss_for_fixed_Ea(ln_A_val, fixed_Ea)
     return loss([ln_A_val[1], fixed_Ea])
 end
 
-function profile_Ea_scan(Ea_range)
+zoop(x) = loss_for_fixed_Ea(x, 30000)
+
+ForwardDiff.gradient(zoop, [1e-6])
+#=
+function profile_Ea_scan(Ea_range, tol)
     results = []
 
     for Ea_val in Ea_range
         prob_1D = Optimization.OptimizationProblem(
-            Optimization.OptimizationFunction((x, p) -> loss_for_fixed_Ea(x, Ea_val), Optimization.AutoForwardDiff()),
-            [log(1000.0)], # Initial guess for A
-            lb = [log(100.0)], ub = [log(1e12)]
+            Optimization.OptimizationFunction((x, p) -> loss_for_fixed_Ea(x, Ea_val), 
+            Optimization.AutoForwardDiff()),
+            [log(A_guess)], # Initial guess for A
+            lb = [log(A_lb)], 
+            ub = [log(A_ub)],
         )
 
-        sol = Optimization.solve(prob_1D, OptimizationOptimJL.BFGS()) # Brent is optimal for 1D
+        sol = Optimization.solve(
+            prob_1D, 
+            callback = optimization_callback_tracker,
+            OptimizationOptimJL.LBFGS(),
+            f_abstol = tol,
+            g_abstol = tol,
+        ) # Brent is optimal for 1D
 
         push!(results, (Ea=Ea_val, A=exp(sol.u[1]), Loss=sol.objective))
         println("Ea: $Ea_val, Opt_A: $(exp(sol.u[1])), Loss: $(sol.objective)")
     end
     return results
 end
+=#
 
-results = profile_Ea_scan(Ea_range)
+tol = 1e-18
+
+results = profile_Ea_scan(Ea_range, tol)
 
 A_range = [results[i].Ea for i in eachindex(results)]
 loss_range = [results[i].Loss for i in eachindex(results)]
@@ -580,11 +938,6 @@ results[min_idx]
 results[min_idx].Ea
 results[min_idx].A
 results[min_idx].Loss
-
-#FINAL PARAMETERS (DO NOT TOUCH)
-#61.14478947368421
-#650.6316641398093
-#0.03102647047431776
 
 #using Plots
 plot(Ea_range, A_range)
