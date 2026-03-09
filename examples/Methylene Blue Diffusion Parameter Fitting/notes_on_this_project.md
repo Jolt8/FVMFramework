@@ -1,0 +1,7 @@
+Just going to copy-past my commit message for this one:
+    - Getting this to work properly was absolutely hellish. For some reason decreasing the tolerance of the optimization solver somehow allowed it to find the global minimum while I feel like dropping the tolerance would make it pursue to the local minimum it's closest to. Tldr; just increase the tolerance if it gets stuck. 
+    - A custom method was added to parameter_fitting_optimizer to make the fluid surrounding the dialysis tubing well mixed like it was in the experiment. 
+    - Implicit methods still do not seem to work well with ForwardDiff for some reason so an explicit solver was used. I think this is because KLUFactorization doesn't play nice with AD. 
+    - The calibration for the third trial was thrown off because I did it on a different day, so a different calibration curve was used for that trial as you can see in line 392. The actual fit itself is pretty good, but I think I needed to run my experimental trials for longer or all of them at higher temperatures (which isn't feasible because increasing the temperature any further would cause the water to boil). 
+    - I should probably do a regular arrenhius plot and compare the results to show that this method is actually useful. 
+    - However, with how messy the data was and how unideal the mesh was and how unideal basically everything was, I'm still thoroughly impressed by how well this works. I'm also suprised at how fast it ran, although this is mostly due to how unstiff this problem is and how small the mesh is (≈ 1000 nodes). 
