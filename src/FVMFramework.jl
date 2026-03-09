@@ -27,6 +27,10 @@ import SparseConnectivityTracer
 import ADTypes
 import Logging
 
+#for future me, if you use this project on a new computer, in the FVMFramework environment just do:
+#] activate .
+#] instantiate
+
 # ----- Geometry -----
 include("geometry/geometry_helper_functions.jl")
 export get_node_coordinates, get_cell_topology, get_nodes_of_cells, get_face_nodes
@@ -73,7 +77,7 @@ export get_k_effective, numerical_flux, temp_diffusion!
 #   ---- Internal Methods ----
 #       --- Internal Capacities ---
 include("physics/internal_methods/capacity_helper_functions.jl")
-export cap_heat_flux_to_temp_change!, cap_mass_flux_to_pressure_change!
+export cap_heat_flux_to_temp_change!, cap_mass_flux_to_pressure_change!, cap_species_mass_flux_to_mass_fraction_change!
 
 #       --- Internal Physics ---
 include("physics/internal_methods/internal_physics/chemistry.jl")

@@ -22,25 +22,21 @@ function mw_avg!(u, cell_id)
     u.mw_avg[cell_id] = 0.0
 
     map(keys(u.mass_fractions)) do species_name
+        #println("species_name: $(species_name)")
+        #println("u.mass_fractions[species_name][cell_id] = $(u.mass_fractions[species_name][cell_id])")
+        #println("u.molecular_weights[species_name][cell_id] = $(u.molecular_weights[species_name][cell_id])")
         u.mw_avg[cell_id] += u.mass_fractions[species_name][cell_id] / u.molecular_weights[species_name][cell_id]
     end
 
     u.mw_avg[cell_id] = u.mw_avg[cell_id]^-1.0
-
-    #println(u.mw_avg[cell_id])
 end
 
 function rho_ideal!(u, cell_id)
-    #should we even make mw_avg a cache variable?
-    #=
-    println("rho_type: ", typeof(u.rho[cell_id]))
-    println("pressure_type: ", typeof(u.pressure[cell_id]))
-    println("mw_avg_type: ", typeof(u.mw_avg[cell_id]))
-    println("temp_type: ", typeof(u.temp[cell_id]))
-    println("R_gas_type: ", typeof(R_gas))
-    =#
+    #println("u.pressure[cell_id] = $(u.pressure[cell_id])")
+    #println("u.mw_avg[cell_id] = $(u.mw_avg[cell_id])")
+    #println("u.temp[cell_id] = $(u.temp[cell_id])")
+    #println("R_gas = $(R_gas)")
     u.rho[cell_id] = (u.pressure[cell_id] * u.mw_avg[cell_id]) / (R_gas * u.temp[cell_id])
-    
 end
 
 function molar_concentrations!(u, cell_id)
