@@ -1,7 +1,7 @@
 function prandtl_number!(du, u, cell_id, vol)
-    dynamic_viscosity = u.viscosity(u.temp, u.pressure)[1] #not sure why this returns a matrix 
-    k = u.k(u.temp, u.pressure)[1]
-    cp = u.cp(u.temp, u.pressure)[1]
+    dynamic_viscosity = u.mu[cell_id] #u.viscosity(u.temp, u.pressure)[1] #not sure why this returns a matrix 
+    k = u.k[cell_id] #u.k(u.temp, u.pressure)[1]
+    cp = u.cp[cell_id]  #u.cp(u.temp, u.pressure)[1]
 
     u.Pr[cell_id] = (dynamic_viscosity * cp) / (k)
 end
