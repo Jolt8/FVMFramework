@@ -135,16 +135,18 @@ end
 
 #this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
 #this needs to be updated, it currently doesn't work
-function get_neighboring_cell_from_face_idx(cell_id, face_idx, top)
+function get_neighboring_cell_and_face_idx_from_face_idx(cell_id, face_idx, top)
     neighbor_info = top.face_face_neighbor[cell_id, face_idx]
 
     if !isempty(neighbor_info)
-        neighbor_id = collect(neighbor_info[1].idx)[1]
+        face_idx_neighbor = first(neighbor_info)
+        neighbor_id = face_idx_neighbor.idx[1]
+        neighbor_face_idx = face_idx_neighbor.idx[2]
     else
-        return nothing
+        return nothing, nothing
     end
 
-    return neighbor_id
+    return neighbor_id, neighbor_face_idx
 end
 
 function add_patch!(
@@ -163,9 +165,10 @@ function add_patch!(
     top = ExclusiveTopology(config.grid)
 
     for (cell_id, face_idx) in cell_ids_and_face_idxs
-        neighbor_id = get_neighboring_cell_from_face_idx(cell_id, face_idx, top)
+        neighbor_id, neighbor_face_idx = get_neighboring_cell_and_face_idx_from_face_idx(cell_id, face_idx, top)
         if !isnothing(neighbor_id)
             push!(cell_neighbors[cell_id][2], (neighbor_id, face_idx))
+            #push!(cell_neighbors[neighbor_id][2], (cell_id, neighbor_face_idx)) #I don't think this is necessary
         end
     end
 
