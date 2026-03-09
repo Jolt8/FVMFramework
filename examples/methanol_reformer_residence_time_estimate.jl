@@ -224,7 +224,7 @@ plot(sol.t, methanol_conversions)
 t_idx_at_desired_conversion = argmin(abs.(methanol_conversions .- 0.95))
 t_at_desired_conversion = sol.t[t_idx_at_desired_conversion]
 
-#@VSCodeServer.profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
+#@VSCodeServer.profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), zero, concrete_jac = true))
 
 #=
 explicit_prob = ODEProblem(f_closure_implicit, u0, tspan, p_guess)
