@@ -239,8 +239,8 @@ properties = (
 add_patch!(
     config, "dialysis_tubing_surface";
     properties = (
-        diffusion_pre_exponential_factor = 0.0030754521036840595,
-        diffusion_activation_energy = 25214.739988696778
+        diffusion_pre_exponential_factor = 0.0006951928076296322,
+        diffusion_activation_energy = 28718.5536309222
     ), 
     optimized_syms = [
         :diffusion_pre_exponential_factor,
@@ -274,7 +274,7 @@ function fluid_fluid_flux!(
     du, u,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
-)
+    )
 end
 
 function fluid_well_mixed_flux!(
