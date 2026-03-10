@@ -16,5 +16,6 @@ function mass_fraction_diffusion!(
         diffusion_coeff_effective = harmonic_mean(u.diffusion_coefficients[species_name][idx_a], u.diffusion_coefficients[species_name][idx_b])
         numerical_flux = species_numerical_flux(rho_avg, diffusion_coeff_effective, u.mass_fractions[species_name][idx_a], u.mass_fractions[species_name][idx_b], area, dist)
         du.mass_fractions[species_name][idx_a] -= numerical_flux
+        #println("du.mass_fraction[", species_name, "][", idx_a, "] = ", numerical_flux)
     end
 end
