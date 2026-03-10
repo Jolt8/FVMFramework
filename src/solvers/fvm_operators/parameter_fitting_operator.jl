@@ -106,6 +106,28 @@ function methylene_blue_diffuion_parameter_fitting_f!(
                 du.mass_fractions.water[cell_id] = well_mixed_water_dt
             end
         end
+        if reg.name == "dialysis_tubing_interior"
+            total_methylene_blue_dm_dt = 0.0
+            total_water_dm_dt = 0.0
+            total_reservoir_mass = 0.0
+            total_reservoir_volume = 0.0
+
+            for cell_id in reg.region_cells
+                total_methylene_blue_dm_dt += du.mass_fractions.methylene_blue[cell_id] * u.rho[cell_id] * cell_volumes[cell_id]
+                total_water_dm_dt += du.mass_fractions.water[cell_id] * u.rho[cell_id] * cell_volumes[cell_id]
+
+                total_reservoir_mass += u.rho[cell_id] * cell_volumes[cell_id]
+                total_reservoir_volume += cell_volumes[cell_id]
+            end
+
+            well_mixed_methylene_blue_dt = total_methylene_blue_dm_dt / total_reservoir_mass
+            well_mixed_water_dt = total_water_dm_dt / total_reservoir_mass
+            
+            for cell_id in reg.region_cells
+                du.mass_fractions.methylene_blue[cell_id] = well_mixed_methylene_blue_dt
+                du.mass_fractions.water[cell_id] = well_mixed_water_dt
+            end
+        end
     end
 end
 

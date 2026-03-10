@@ -28,7 +28,18 @@ function arrenhius_mass_fraction_diffusion_meth_blue_and_water!(
     #we should probably divide by rho * vol in a capacity function instead later
     du.mass_fractions[:methylene_blue][idx_a] -= meth_blue_diffusion / (u.rho[idx_a] * vol_a)
     du.mass_fractions[:water][idx_a] += meth_blue_diffusion / (u.rho[idx_a] * vol_a)
+    
+    #=
+    if idx_a == 64 
+        println("64 as idx_a was applied to")
+    elseif idx_a == 1008
+        println("1008 as idx_a was applied to")
+    end
 
-    du.mass_fractions[:methylene_blue][idx_b] += meth_blue_diffusion / (u.rho[idx_b] * vol_a)
-    du.mass_fractions[:water][idx_b] -= meth_blue_diffusion / (u.rho[idx_b] * vol_a)
+    if idx_b == 64 
+        println("64 as idx_b was applied to")
+    elseif idx_b == 1008
+        println("1008 as idx_b was applied to")
+    end
+    =#
 end

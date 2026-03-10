@@ -93,10 +93,10 @@ add_region!(
         rho = 1000, # rho (kg/m^3)
         mu = 1e-3, # mu (Pa*s)
         species_ids = (methylene_blue = 1, water = 2), #we could use mass_fractions for species loops, but this is just more consistent
-        diffusion_coefficients = (
-            methylene_blue = 1e-9,
-            water = 1e-9
-        ), #diffusion coefficients (m^2/s)
+        #=diffusion_coefficients = (
+            methylene_blue = 1e-3,
+            water = 1e-3
+        ), #diffusion coefficients (m^2/s)=#
         molecular_weights = (
             methylene_blue = 0.31985, 
             water = 0.01802
@@ -239,8 +239,8 @@ properties = (
 add_patch!(
     config, "dialysis_tubing_surface";
     properties = (
-        diffusion_pre_exponential_factor = 1.4384498882876651e-5,
-        diffusion_activation_energy = 19387.54259111162
+        diffusion_pre_exponential_factor = 0.0030754521036840595,
+        diffusion_activation_energy = 25214.739988696778
     ), 
     optimized_syms = [
         :diffusion_pre_exponential_factor,
@@ -275,11 +275,6 @@ function fluid_fluid_flux!(
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
 )
-    mass_fraction_diffusion!(
-        du, u,
-        idx_a, idx_b, face_idx,
-        cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )
 end
 
 function fluid_well_mixed_flux!(
@@ -682,7 +677,7 @@ grad = ForwardDiff.gradient(loss, [log(1.355e-5), 25.0]) #while using an implici
 
 #VSCodeServer.@profview ForwardDiff.gradient(loss, [log(0.00010695283811760264), 25.0])
 A_range = exp.(range(log(1e-4), log(5e-4), length = 20))
-Ea_range = exp.(range(log(10.0), log(35.0), length = 20))
+Ea_range = exp.(range(log(26.0), log(30.0), length = 20))
 
 time_to_finish = (@timed loss([log(1e-7), 10.0])).time
 approximate_time_to_finish = time_to_finish * length(A_range) * length(Ea_range)
@@ -722,7 +717,6 @@ Ea_range[idx[2]] #4638.456927175568
 surface(A_range, Ea_range, losses)
 
 check_predicted_against_observed([log(A_range[idx[1]]), Ea_range[idx[2]]])
-check_predicted_against_observed([log(1e-6), 14.5])
 
 predicted
 observed
@@ -735,44 +729,6 @@ plot!(trials["T2"].compared_time.mass_fractions, predicted["T2"])
 
 plot(trials["T3"].compared_time.mass_fractions, observed["T3"])
 plot!(trials["T3"].compared_time.mass_fractions, predicted["T3"])
-
-loss([log(9.999999999999994e-8), 5.979065872502011])
-loss([log(1.0000000000000004e-6), 12.543765464255612])
-loss([log(2.154434690031887e-6), 15.000000000000004])
-loss([log(1.0000000000000004e-6), 12.331060371652355])
-loss([log(3.593813663804624e-6), 15.606791157835269])
-loss([log(9.999999999999997e-6), 18.51749424574579])
-loss([log(9.999999999999997e-6), 18.51749424574579])
-loss([log(1.2915496650148832e-5), 19.085051367516022])
-loss([log(1.4384498882876651e-5), 19.38754259111162])
-loss([log(1.355e-5), 19.3875])
-
-
-loss([log(0.00010707372974861651), 24.97650595937726])
-loss([log(0.00011707372974861651), 24.97650595937726])
-loss([log(0.00013048154721256904), 24.930239690378226])
-loss([log(0.00008648154721256904), 28.330239690378226])
-check_predicted_against_observed([log(0.00001), 5.0])
-
-predicted
-observed
-
-plot(trials["T1"].compared_time.mass_fractions, observed["T1"])
-plot!(trials["T1"].compared_time.mass_fractions, predicted["T1"])
-
-plot(trials["T2"].compared_time.mass_fractions, observed["T2"])
-plot!(trials["T2"].compared_time.mass_fractions, predicted["T2"])
-
-plot(trials["T3"].compared_time.mass_fractions, observed["T3"])
-plot!(trials["T3"].compared_time.mass_fractions, predicted["T3"])
-
-#=
-for trial_name in keys(trials)
-    trial = trials[trial_name]
-    plot(trial.compared_time.mass_fractions, predicted[trial_name])
-    display(plot!(trial.compared_time.mass_fractions, observed[trial_name]))
-end
-=#
 
 
 loss_history = [] #loss accumulator
@@ -795,15 +751,15 @@ adtype = Optimization.AutoForwardDiff()
 optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 
 #diffusion pre-exponential factor, diffusion activation energy
-guess_params = Float64[log(1e-6), 14.5]
+guess_params = Float64[log(0.0006951927961775613), 28.718553641885585]
 loss(guess_params)
 
-lower_bounds = [log(1e-7), 5.0000]
-upper_bounds = [log(1e-2), 50.0000]
+lower_bounds = [log(1e-7), 1.0000]
+upper_bounds = [log(1e-1), 100.0000]
 
 optprob = Optimization.OptimizationProblem(optf, guess_params, lb = lower_bounds, ub = upper_bounds)
 
-abstol = 1e-19
+abstol = 1e-100
 #bruh, this whole time I could've just decreased the tolerance to get it to explore more 
 #what the fuck, how does that even make any sense
 
@@ -820,13 +776,7 @@ res = Optimization.solve(
 optimized_diffusion_pre_exponential_factor = exp(res.u[1])
 optimized_diffusion_activation_energy = res.u[2]
 
-optimized_diffusion_pre_exponential_factor = 0.0004162952651817045
-optimized_diffusion_activation_energy = 29.393547291504646
 #END OF OPTIMIZATION SOLVING
-#-7.88737964833364
-#-7.88737964833364
-#-29.214739988696778
-#-29.214739988696778
 
 check_predicted_against_observed([log(optimized_diffusion_pre_exponential_factor), optimized_diffusion_activation_energy])
 
@@ -843,9 +793,23 @@ plot(trials["T3"].compared_time.mass_fractions, observed["T3"])
 plot!(trials["T3"].compared_time.mass_fractions, predicted["T3"])
 
 
+using DataFrames
+
+df1 = DataFrame(AA = trials["T1"].compared_time.mass_fractions, AB = observed["T1"], AC = predicted["T1"])
+df2 = DataFrame(AA = trials["T2"].compared_time.mass_fractions, AB = observed["T2"], AC = predicted["T2"])
+df3 = DataFrame(AA = trials["T3"].compared_time.mass_fractions, AB = observed["T3"], AC = predicted["T3"])
+
+results_output = joinpath(@__DIR__, "dialysis_tubing_parameter_fitting_results.xlsx")
+
+XLSX.writetable(results_output, 
+    "T1" => df1, 
+    "T2" => df2,
+    "T3" => df3
+)
+
 #FINAL OPTIMIZED PARAMETERS (DO NOT TOUCH)
-    # - A: 0.0003754521036840595
-    # - Ea: 29.214739988696778
+    # - A: 0.0006951928076296322
+    # - Ea: 28.7185536309222
 #
 
 #TODO: check if add_patch! actually creates two connections per facet
@@ -858,10 +822,6 @@ loss([log(3.548090572948086e-5), 21.999997914997068])
 loss([log(1.3559637272570382e-5), 19.38750000355438])
 loss([log(0.00010707372974861651), 24.97650595937726])
 loss([log(0.00040703854247398335), 24.548420545838148])
-
-#FINAL PARAMETERS (DO NOT TOUCH):
-#   - A = 0.00010707372974861651
-#   - Ea = 24.97650595937726
 
 #START OF INITIAL SEARCHING
 

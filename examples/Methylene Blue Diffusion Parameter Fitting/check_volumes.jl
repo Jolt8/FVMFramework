@@ -4,7 +4,7 @@ using FVMFramework
 using Ferrite
 using FerriteGmsh
 
-mesh_path = "c:/Users/wille/Desktop/FVMFramework/examples/Methylene Blue Diffusion Parameter Fitting/cone_end/dialysis_tubing_cone_output.msh"
+mesh_path = joinpath(@__DIR__, "cone_end/dialysis_tubing_cone_output.msh")
 grid = togrid(mesh_path)
 
 u_proto = (

@@ -135,7 +135,7 @@ end
 
 #this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
 #this needs to be updated, it currently doesn't work
-function get_neighboring_cell_and_face_idx_from_face_idx(cell_id, face_idx, top)
+function get_neighboring_cell_and_face_idx_from_face_idx(cell_id, face_idx, top) #returning the neighbor_face_idx is not really necessary
     neighbor_info = top.face_face_neighbor[cell_id, face_idx]
 
     if !isempty(neighbor_info)
@@ -168,7 +168,7 @@ function add_patch!(
         neighbor_id, neighbor_face_idx = get_neighboring_cell_and_face_idx_from_face_idx(cell_id, face_idx, top)
         if !isnothing(neighbor_id)
             push!(cell_neighbors[cell_id][2], (neighbor_id, face_idx))
-            #push!(cell_neighbors[neighbor_id][2], (cell_id, neighbor_face_idx)) #I don't think this is necessary
+            #push!(cell_neighbors[neighbor_id][2], (cell_id, neighbor_face_idx)) #This is not necessary
         end
     end
 
@@ -475,6 +475,7 @@ function finish_fvm_config(config, connection_map_function, special_caches)
                 )
             elseif (region_a.name, region_b.name) in unique_region_connection_pairs && isempty(connection_groups[connection_group_id].cell_neighbors[idx_a])
                 println("I'm unsure if this actually ever happens, check to line 237 in sim config if it does")
+                #after using this framework for a while, I've never actually seen this trigger
                 connection_group_id = findfirst(item -> item == (region_a.name, region_b.name), unique_region_connection_pairs)
                 push!(connection_groups[connection_group_id].cell_neighbors[idx_a], (
                     (idx_a, Vector{Tuple{Int, Int}}((idx_b, face_idx)))
