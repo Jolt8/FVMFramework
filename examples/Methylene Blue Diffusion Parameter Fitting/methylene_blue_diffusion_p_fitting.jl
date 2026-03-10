@@ -254,11 +254,11 @@ add_patch!(
         cell_volumes
     )
         
-        #zeroing out regular diffusion that would happen across this face
-        #du.mass_fractions[:methylene_blue][idx_a] *= 0.0
-        #du.mass_fractions[:water][idx_a] *= 0.0
-        #du.mass_fractions[:methylene_blue][idx_b] *= 0.0
-        #du.mass_fractions[:water][idx_b] *= 0.0
+        #zeroing out regular diffusion that would happen across this face (now not necessary due to different connection groups)
+        #du.mass_fractions.methylene_blue[idx_a] *= 0.0
+        #du.mass_fractions.water[idx_a] *= 0.0
+        #du.mass_fractions.methylene_blue[idx_b] *= 0.0
+        #du.mass_fractions.water[idx_b] *= 0.0
 
         arrenhius_mass_fraction_diffusion_meth_blue_and_water!(
             du, u,
