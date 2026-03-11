@@ -20,14 +20,14 @@ function arrenhius_mass_fraction_diffusion_meth_blue_and_water!(
     
     meth_blue_species_diffusion_coefficient = diffusion_arrenhius_equation(du, u, idx_a, temp_avg)
 
-    meth_blue_concentration_gradient = (u.mass_fractions[:methylene_blue][idx_b] - u.mass_fractions[:methylene_blue][idx_a]) / dist
+    meth_blue_concentration_gradient = (u.mass_fractions.methylene_blue[idx_b] - u.mass_fractions.methylene_blue[idx_a]) / dist
     meth_blue_diffusion = -rho_avg * meth_blue_species_diffusion_coefficient * meth_blue_concentration_gradient * area
 
     #I should probably check the units here
 
     #we should probably divide by rho * vol in a capacity function instead later
-    du.mass_fractions[:methylene_blue][idx_a] -= meth_blue_diffusion / (u.rho[idx_a] * vol_a)
-    du.mass_fractions[:water][idx_a] += meth_blue_diffusion / (u.rho[idx_a] * vol_a)
+    du.mass_fractions.methylene_blue[idx_a] -= meth_blue_diffusion / (u.rho[idx_a] * vol_a)
+    du.mass_fractions.water[idx_a] += meth_blue_diffusion / (u.rho[idx_a] * vol_a)
     
     #=
     if idx_a == 64 
