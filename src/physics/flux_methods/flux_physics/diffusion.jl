@@ -12,10 +12,16 @@ function mass_fraction_diffusion!(
 
     rho_avg = 0.5 * (u.rho[idx_a] + u.rho[idx_b])
 
-    map(keys(u.mass_fractions)) do species_name
-        diffusion_coeff_effective = harmonic_mean(u.diffusion_coefficients[species_name][idx_a], u.diffusion_coefficients[species_name][idx_b])
-        numerical_flux = species_numerical_flux(rho_avg, diffusion_coeff_effective, u.mass_fractions[species_name][idx_a], u.mass_fractions[species_name][idx_b], area, dist)
-        du.mass_fractions[species_name][idx_a] -= numerical_flux
+    #map(keys(u.mass_fractions)) do species_name
+        #diffusion_coeff_effective = harmonic_mean(u.diffusion_coefficients[species_name][idx_a], u.diffusion_coefficients[species_name][idx_b])
+        #numerical_flux = species_numerical_flux(rho_avg, diffusion_coeff_effective, u.mass_fractions[species_name][idx_a], u.mass_fractions[species_name][idx_b], area, dist)
+        #du.mass_fractions[species_name][idx_a] -= numerical_flux
+        diffusion_coeff_effective = harmonic_mean(u.diffusion_coefficients.methylene_blue[idx_a], u.diffusion_coefficients.methylene_blue[idx_b])
+        numerical_flux = species_numerical_flux(rho_avg, diffusion_coeff_effective, u.mass_fractions.methylene_blue[idx_a], u.mass_fractions.methylene_blue[idx_b], area, dist)
+        du.mass_fractions.methylene_blue[idx_a] -= numerical_flux
+        diffusion_coeff_effective = harmonic_mean(u.diffusion_coefficients.water[idx_a], u.diffusion_coefficients.water[idx_b])
+        numerical_flux = species_numerical_flux(rho_avg, diffusion_coeff_effective, u.mass_fractions.water[idx_a], u.mass_fractions.water[idx_b], area, dist)
+        du.mass_fractions.water[idx_a] -= numerical_flux
         #println("du.mass_fraction[", species_name, "][", idx_a, "] = ", numerical_flux)
-    end
+    #end
 end
