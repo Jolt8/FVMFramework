@@ -18,14 +18,6 @@ using DataInterpolations
 
 using XLSX
 
-using SciMLSensitivity
-using Optimization
-using OptimizationOptimJL
-using ForwardDiff
-
-using BenchmarkTools
-using Plots
-
 using Unitful
 
 mesh_path = joinpath(@__DIR__, "DEHI_meshes/dehi_model_output_fine.msh")
@@ -61,8 +53,8 @@ struct ImplantInterior <: AbstractPhysics end
 struct SurroundingTissue <: AbstractPhysics end
 
 dialysis_tubing_initial_mass_fractions = (
-    methylene_blue = [0.01],
-    water = [0.99]
+    methylene_blue = [0.1],
+    water = [0.9]
 )
 
 dialysis_tubing_initial_mass_fractions = normalize_mass_fractions(dialysis_tubing_initial_mass_fractions)
@@ -74,15 +66,15 @@ add_region!(
         mass_fractions = dialysis_tubing_initial_mass_fractions,
     ),
     properties = (
-        temp = ustrip(40.13u"°C" |> u"K"),
+        temp = ustrip(37.13u"°C" |> u"K"),
         k = 0.6, # k (W/(m*K))
         cp = 4184, # cp (J/(kg*K))
         rho = 1000, # rho (kg/m^3)
         mu = 1e-3, # mu (Pa*s)
         species_ids = (methylene_blue = 1, water = 2), #we could use mass_fractions for species loops, but this is just more consistent
         diffusion_coefficients = (
-            methylene_blue = 2.2e-10,
-            water = 5.0e-10
+            methylene_blue = 1.0e-8,
+            water = 1.0e-8
         ), #diffusion coefficients (m^2/s)
         molecular_weights = (
             methylene_blue = 0.31985, 
@@ -118,15 +110,15 @@ surrounding_fluid_initial_mass_fractions = (
 surrounding_fluid_initial_mass_fractions = normalize_mass_fractions(surrounding_fluid_initial_mass_fractions)
 
 surrounding_fluid_properties = (
-    temp = ustrip(40.13u"°C" |> u"K"),
+    temp = ustrip(37.13u"°C" |> u"K"),
     k = 0.6, # k (W/(m*K))
     cp = 4184, # cp (J/(kg*K))
     rho = 1000, # rho (kg/m^3)
     mu = 1e-3, # mu (Pa*s)
     species_ids = (methylene_blue = 1, water = 2), #we could use mass_fractions for species loops, but this is just more consistent
     diffusion_coefficients = (
-            methylene_blue = 2.2e-10,
-            water = 5.0e-10
+            methylene_blue = 1.0e-8,
+            water = 1.0e-8
         ), #diffusion coefficients (m^2/s)
     molecular_weights = (
         methylene_blue = 0.31985, 
@@ -162,12 +154,14 @@ add_region!(
     end
 )
 
+typeof(ExclusiveTopology(grid))
+
 include("arrenhius_mass_fraction_diffusion_meth_blue_and_water.jl") 
 
-add_patch!(
+VSCodeServer.@profview add_patch!(
     config, "implant_surface";
     properties = (
-        diffusion_pre_exponential_factor = 0.0006951928076296322,
+        diffusion_pre_exponential_factor = 0.000139038533,
         diffusion_activation_energy = 28718.5536309222
     ), 
     optimized_syms = [],
@@ -180,10 +174,10 @@ add_patch!(
     )
         
         #zeroing out regular diffusion that would happen across this face
-        #du.mass_fractions[:methylene_blue][idx_a] *= 0.0
-        #du.mass_fractions[:water][idx_a] *= 0.0
-        #du.mass_fractions[:methylene_blue][idx_b] *= 0.0
-        #du.mass_fractions[:water][idx_b] *= 0.0
+        #du.mass_fractions.methylene_blue[idx_a] *= 0.0
+        #du.mass_fractions.water[idx_a] *= 0.0
+        #du.mass_fractions.methylene_blue[idx_b] *= 0.0
+        #du.mass_fractions.water[idx_b] *= 0.0
 
         arrenhius_mass_fraction_diffusion_meth_blue_and_water!(
             du, u,
@@ -200,11 +194,11 @@ function implant_implant_flux!(
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
 )
-    #=mass_fraction_diffusion!(
+    mass_fraction_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )=#
+    )
 end
 
 function implant_surrounding_flux!(
@@ -220,13 +214,22 @@ function surrounding_surrounding_flux!(
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
 )
-    #=mass_fraction_diffusion!(
+    mass_fraction_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )=#
+    )
 end
 
+using Unitful
+
+Unitful.preferunits(u"s", u"m", u"kg", u"K")
+
+upreferred(1.0u"cm")
+
+upreferred(1.0u"J")
+
+upreferred(1.0u"kg*m^2/s^2") |> u"J"
 
 #this is the smallest I could make this function
 #I like using <: here because it makes it look nice with syntax highlighting
@@ -269,8 +272,17 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     system.du_proto_axes, system.u_proto_axes,
     system.du_cache_axes, system.u_cache_axes
 )
+#=
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
+p_guess = 0.0
+#=
+prob = ODEProblem(f_closure_implicit, u0_vec, (0, 0), p_guess)
+@time sol = solve(prob, Tsit5(), tspan = (0.0, 1e-12))
+
+t_interval = 3600.0 / 200
+@time sol = solve(prob, Tsit5(), tspan = (0.0, 3600.0), saveat = t_interval, callback = approximate_time_to_finish_cb)
+=#
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 
 jac_sparsity = ADTypes.jacobian_sparsity(
@@ -280,24 +292,37 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 0.000000000001
+tMax = ustrip.((168u"hr" |> u"s"))
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, system.p_vec)
 
-desired_steps = 100
-save_interval = (tspan[end] / desired_steps)
+save_interval = tMax / 200
 
-@time sol = solve(implicit_prob, FBDF(linsolve = KLUFactorization()), callback = approximate_time_to_finish_cb)
+VSCodeServer.@profview sol = solve(
+    implicit_prob, 
+    FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), 
+    callback = approximate_time_to_finish_cb,
+    saveat = save_interval
+)
+#holy moly, KrylovJL_GMRES is so much faster than KLUFactorization for these large problems
 
-sol_u_named_0 = create_views_inline(sol.u[1], system.u_proto_axes)
+u_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
 
-sol_u_named_end = create_views_inline(sol.u[end], system.u_proto_axes)
+drug_mass_fractions = [u_named[i].mass_fractions.methylene_blue[76914] for i in eachindex(u_named)]
 
-sol_u_named_0.mass_fractions.methylene_blue == sol_u_named_end.mass_fractions.methylene_blue
+using DataFrames
+
+df1 = DataFrame(AA = sol.t, AB = drug_mass_fractions)
+
+output_path = joinpath(@__DIR__, "drug_eluting_hydrogel_implant_normal_natural_diffusion_results.xlsx")
+
+rm(output_path)
+
+XLSX.writetable(output_path, 
+    "normal" => df1
+)
 
 sim_file = @__FILE__
 
-u_proto_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
-
-sol_to_vtk(sol, u_proto_named, grid, sim_file)
+sol_to_vtk(sol, u_named, grid, sim_file)
