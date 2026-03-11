@@ -1,5 +1,5 @@
 TODO:
-    
+    - I should probably implement second order meshes at some point. In my Biology IA that contained a lot of cylinders, I had to make a very fine mesh to capture the curve of the cylinders. This was especially bad for very thin cylinders.
     - Implement a method to check units right after finish_fvm_config 
         - This would also mean that unitful values would have to be stripped when finish_fvm_config is called
         - Note that you can turn any quantity into base SI units by doing upreferred(1.0u"cm")
