@@ -37,9 +37,9 @@ struct SimulationConfigInfo
 end
 
 function create_fvm_config(grid, u_proto)
-    geo = build_fvm_geo_into_struct(grid)
-
     top = ExclusiveTopology(grid)
+
+    geo = build_fvm_geo_into_struct(grid, top)
 
     return SimulationConfigInfo(
         grid,

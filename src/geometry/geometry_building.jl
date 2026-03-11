@@ -86,9 +86,7 @@ function compress_geo_to_struct(
     )
 end
 
-function build_fvm_geo_into_struct(grid)
-    top = ExclusiveTopology(grid)
-
+function build_fvm_geo_into_struct(grid, top)
     initial_node_coordinates = get_node_coordinates(grid)
     nodes_of_cells = get_nodes_of_cells(grid)
 
@@ -112,11 +110,6 @@ function build_fvm_geo_into_struct(grid)
 
     cell_face_areas = [zero(MVector{n_facets, T}) for _ in 1:n_cells]
     cell_face_normals = [zero(MVector{n_facets, CoordType}) for _ in 1:n_cells]
-
-    println(typeof(cell_face_areas))
-    println(typeof(cell_neighbor_normals))
-    println(T)
-    println(CoordType)
 
     #we use the dynamic dispatch of compress_geo_to_struct to prevent having to check the grid's type with if statements
     #the reason this mutates is that it will be later used for geometry optimization which is one of the biggest applications of this framework
