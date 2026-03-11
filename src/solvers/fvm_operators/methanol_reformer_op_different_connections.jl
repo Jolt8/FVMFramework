@@ -102,6 +102,7 @@ function methanol_reformer_f_test!(
         )
     end
 
+    #=
     for reg in region_groups
         if reg.name == "surrounding_tissue"
             total_methylene_blue_dm_dt = 0.0
@@ -148,6 +149,7 @@ function methanol_reformer_f_test!(
             end
         end
     end
+    =#
 
 
     #du_vec[1:length(du.mass_fractions.methylene_blue)] = Vector(du.mass_fractions.methylene_blue)
