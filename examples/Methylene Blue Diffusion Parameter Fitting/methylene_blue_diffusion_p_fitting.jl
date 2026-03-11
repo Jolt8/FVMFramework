@@ -582,6 +582,7 @@ end
 #START OF OPTIMIZATION SOLVING
 function check_predicted_against_observed(θ)
     total_loss = 0.0
+    solutions = Dict()
     for trial_name in keys(trials)
         trial = trials[trial_name]
 
@@ -593,13 +594,17 @@ function check_predicted_against_observed(θ)
         #ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
         #since this is just a diffusion problem, I doubt implicit solving is necessary
 
+        t_interval = trial.compared_time.mass_fractions[end] / 200
+
         prob_trial = ODEProblem(trial_probs[trial_name], u0_vec, tspan, p_adjusted)
 
         sol = solve(
             prob_trial, Tsit5(), 
-            saveat = trial.compared_time.mass_fractions,
+            saveat = t_interval,
             #reltol = 1e-10, abstol = 1e-10
         )
+
+        solutions[trial_name] = sol
 
         #I FOUND THE PROBLEM: using an implicit solver like FBDF here does not seem to agree well with ForwardDiff, it makes using gradient on this loss function take 10 seconds
         #instead of 0.6-1 second
@@ -609,7 +614,7 @@ function check_predicted_against_observed(θ)
         #println(trial_name)
 
         trial_error = 0.0
-        for time_idx in eachindex(sol.u)
+        for time_idx in eachindex(trial.compared_time.mass_fractions)
             pred = u_named[time_idx].mass_fractions.methylene_blue[observed_cell_id]
             obs = trial.compared_data.mass_fractions.methylene_blue[time_idx]
             #println("pred: ", pred)
@@ -622,7 +627,7 @@ function check_predicted_against_observed(θ)
 
         total_loss += trial_error
     end
-    return total_loss
+    return total_loss, solutions
 end
 
 function loss(θ)
@@ -670,6 +675,23 @@ function loss(θ)
     return total_loss
 end
 
+#= This is for recording once you've done your optimization
+total_loss, solutions = check_predicted_against_observed([log(0.0006951928076296322), 28.7185536309222])
+
+T1_u_named = [create_views_inline(solutions["T1"].u[i], system.u_proto_axes) for i in eachindex(solutions["T1"].u)]
+T2_u_named = [create_views_inline(solutions["T2"].u[i], system.u_proto_axes) for i in eachindex(solutions["T2"].u)]
+T3_u_named = [create_views_inline(solutions["T3"].u[i], system.u_proto_axes) for i in eachindex(solutions["T3"].u)]
+
+sim_file = @__FILE__
+
+t_interval = solutions["T1"].t[end] 
+test = trials["T1"].compared_time.mass_fractions[end] 
+
+sol_to_vtk(solutions["T1"], T1_u_named, grid, sim_file)
+sol_to_vtk(solutions["T2"], T2_u_named, grid, sim_file)
+sol_to_vtk(solutions["T3"], T3_u_named, grid, sim_file)
+=#
+
 grad = ForwardDiff.gradient(loss, [log(1.355e-5), 25.0]) #while using an implicit solver, this takes forever
 #VSCodeServer.@profview ForwardDiff.gradient(loss, [log(1.355e-5), 19.0])
 
@@ -684,6 +706,7 @@ approximate_time_to_finish = time_to_finish * length(A_range) * length(Ea_range)
 
 losses = zeros(length(A_range), length(Ea_range))
 
+#=
 for (A_idx, A) in enumerate(A_range)
     for (Ea_idx, Ea) in enumerate(Ea_range)
         curr_loss = loss([log(A), Ea])
@@ -705,6 +728,7 @@ for (A_idx, A) in enumerate(A_range)
         println("loss: ", curr_loss, "    A: ", A, "    Ea: ", Ea)
     end
 end
+=#
 
 losses
 
@@ -716,7 +740,7 @@ Ea_range[idx[2]] #4638.456927175568
 
 surface(A_range, Ea_range, losses)
 
-check_predicted_against_observed([log(A_range[idx[1]]), Ea_range[idx[2]]])
+total_loss, solutions = check_predicted_against_observed([log(A_range[idx[1]]), Ea_range[idx[2]]])
 
 predicted
 observed
@@ -729,7 +753,6 @@ plot!(trials["T2"].compared_time.mass_fractions, predicted["T2"])
 
 plot(trials["T3"].compared_time.mass_fractions, observed["T3"])
 plot!(trials["T3"].compared_time.mass_fractions, predicted["T3"])
-
 
 loss_history = [] #loss accumulator
 parameter_history = [] #parameter accumulator
@@ -778,7 +801,7 @@ optimized_diffusion_activation_energy = res.u[2]
 
 #END OF OPTIMIZATION SOLVING
 
-check_predicted_against_observed([log(optimized_diffusion_pre_exponential_factor), optimized_diffusion_activation_energy])
+total_loss, solutions = check_predicted_against_observed([log(optimized_diffusion_pre_exponential_factor), optimized_diffusion_activation_energy])
 
 predicted
 observed
@@ -825,7 +848,7 @@ loss([log(0.00040703854247398335), 24.548420545838148])
 
 #START OF INITIAL SEARCHING
 
-check_predicted_against_observed([log(0.00010707372974861651), 24.97650595937726])
+total_loss, solutions = check_predicted_against_observed([log(0.00010707372974861651), 24.97650595937726])
 
 predicted
 observed
