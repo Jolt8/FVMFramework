@@ -15,6 +15,7 @@ using PreallocationTools
 using ForwardDiff
 using Polyester
 using DataInterpolations
+using DataFrames
 
 using XLSX
 
@@ -32,7 +33,7 @@ u_proto = (
     mass_fractions = (methylene_blue = zeros(n_cells), water = zeros(n_cells)),
 )
 
-config = create_fvm_config(grid, u_proto)
+config = create_fvm_config(grid, u_proto);
 
 function normalize_mass_fractions(mass_fractions)
     total_mass_fractions = 0.0
@@ -82,7 +83,7 @@ add_region!(
         ), #species_molecular_weights [kg/mol]
     ), 
     optimized_syms = [],
-    cache_syms = [:heat, :molar_concentrations, :mw_avg, :rho], 
+    cache_syms = [:heat, :molar_concentrations, :mass, :species_mass_flows, :mw_avg, :rho], 
     region_function =
     function reforming_area!(du, u, cell_id, vol)
         #property updating/retrieval
@@ -99,6 +100,8 @@ add_region!(
 
         #capacities
         #cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
+
+        cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
     end
 )
 
@@ -134,7 +137,7 @@ add_region!(
     ),
     properties = surrounding_fluid_properties,
     optimized_syms = [],
-    cache_syms = [:heat, :molar_concentrations, :mw_avg, :rho], 
+    cache_syms = [:heat, :molar_concentrations, :mass, :species_mass_flows, :mw_avg, :rho], 
     region_function =
     function surrounding_fluid!(du, u, cell_id, vol)
         #property updating/retrieval
@@ -150,15 +153,13 @@ add_region!(
         #variable summations
 
         #capacities
-        #cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
+        cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
     end
 )
 
-typeof(ExclusiveTopology(grid))
-
 include("arrenhius_mass_fraction_diffusion_meth_blue_and_water.jl") 
 
-VSCodeServer.@profview add_patch!(
+add_patch!(
     config, "implant_surface";
     properties = (
         diffusion_pre_exponential_factor = 0.000139038533,
@@ -221,15 +222,6 @@ function surrounding_surrounding_flux!(
     )
 end
 
-using Unitful
-
-Unitful.preferunits(u"s", u"m", u"kg", u"K")
-
-upreferred(1.0u"cm")
-
-upreferred(1.0u"J")
-
-upreferred(1.0u"kg*m^2/s^2") |> u"J"
 
 #this is the smallest I could make this function
 #I like using <: here because it makes it look nice with syntax highlighting
@@ -247,15 +239,15 @@ species_names = keys(config.regions[1].properties.species_ids)
 #species caches are for things like mass_face, which has an entry for every face of every cell rather than entries for each cell
 special_caches = (
     molar_concentrations = NamedTuple{species_names}(fill(zeros(n_cells), length(species_names))), #I'm starting to really enjoy these NamedTuple constructors
+    species_mass_flows = NamedTuple{species_names}(fill(zeros(n_cells), length(species_names)))
 )
 
-du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches)
-
-getfacetset(grid, "implant_surface")
-sum(system.merged_properties.diffusion_activation_energy)
-argmax(system.merged_properties.diffusion_activation_energy)
+du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches);
 
 u_test = (; create_views_inline(u0_vec, system.u_proto_axes)..., create_views_inline(get_tmp(system.u_diff_cache_vec, 0.0), system.u_cache_axes)...
+)
+
+du_test = (; create_views_inline(du0_vec, system.du_proto_axes)..., create_views_inline(get_tmp(system.du_diff_cache_vec, 0.0), system.du_cache_axes)...
 )
 
 f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
@@ -272,7 +264,6 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     system.du_proto_axes, system.u_proto_axes,
     system.du_cache_axes, system.u_cache_axes
 )
-#=
 #just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
 p_guess = 0.0
@@ -292,7 +283,7 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = ustrip.((168u"hr" |> u"s"))
+tMax = ustrip.((1.0u"hr" |> u"s"))#ustrip.((168u"hr" |> u"s"))
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, system.p_vec)
@@ -309,9 +300,7 @@ VSCodeServer.@profview sol = solve(
 
 u_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
 
-drug_mass_fractions = [u_named[i].mass_fractions.methylene_blue[76914] for i in eachindex(u_named)]
-
-using DataFrames
+drug_mass_fractions = [u_named[i].mass_fractions.methylene_blue[36103] for i in eachindex(u_named)]
 
 df1 = DataFrame(AA = sol.t, AB = drug_mass_fractions)
 
@@ -325,4 +314,4 @@ XLSX.writetable(output_path,
 
 sim_file = @__FILE__
 
-sol_to_vtk(sol, u_named, grid, sim_file)
+#sol_to_vtk(sol, u_named, grid, sim_file)
