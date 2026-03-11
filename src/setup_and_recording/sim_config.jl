@@ -28,6 +28,7 @@ end
 struct SimulationConfigInfo
     grid::Ferrite.Grid
     geo::FVMGeometry
+    top::ExclusiveTopology
     regions::Vector{RegionSetupInfo}
     patches::Vector{PatchSetupInfo}
     controllers::Vector{ControllerSetupInfo}
@@ -38,9 +39,12 @@ end
 function create_fvm_config(grid, u_proto)
     geo = build_fvm_geo_into_struct(grid)
 
+    top = ExclusiveTopology(grid)
+
     return SimulationConfigInfo(
         grid,
         geo,
+        top, 
         RegionSetupInfo[],
         PatchSetupInfo[],
         ControllerSetupInfo[],
@@ -128,9 +132,18 @@ function add_region!(
         config.optimized_parameters[field] = properties[field]
     end
 
-    append!(cache_syms, optimized_syms) #this is so that the optimized parameters are initialized as a DiffCache
+    region = RegionSetupInfo(name, type, initial_conditions, properties, cache_syms, region_function, region_cells)
 
-    push!(config.regions, RegionSetupInfo(name, type, initial_conditions, properties, cache_syms, region_function, region_cells))
+    if region in config.regions
+        existing_region_idx = findfirst(x -> x == region, config.regions)
+
+        config.regions[existing_region_idx] = region
+    else   
+        push!(config.regions, region)
+
+        append!(config.regions[1].cache_syms, optimized_syms) 
+    end
+    return 
 end
 
 #this could probably also be handled by dynamic dispatch for facets, but it helps the user know a different routine is happening
@@ -162,10 +175,8 @@ function add_patch!(
     
     cell_neighbors = [(cell_id, Vector{Tuple{Int, Int}}()) for cell_id in 1:n_cells]
 
-    top = ExclusiveTopology(config.grid)
-
     for (cell_id, face_idx) in cell_ids_and_face_idxs
-        neighbor_id, neighbor_face_idx = get_neighboring_cell_and_face_idx_from_face_idx(cell_id, face_idx, top)
+        neighbor_id, neighbor_face_idx = get_neighboring_cell_and_face_idx_from_face_idx(cell_id, face_idx, config.top)
         if !isnothing(neighbor_id)
             push!(cell_neighbors[cell_id][2], (neighbor_id, face_idx))
             #push!(cell_neighbors[neighbor_id][2], (cell_id, neighbor_face_idx)) #This is not necessary
@@ -180,9 +191,18 @@ function add_patch!(
         config.optimized_parameters[field] = properties[field]
     end
 
-    append!(config.regions[1].cache_syms, optimized_syms) #this is so that the optimized parameters are initialized as a DiffCache
+    patch = PatchSetupInfo(name, properties, patch_function, cell_neighbors)
 
-    push!(config.patches, PatchSetupInfo(name, properties, patch_function, cell_neighbors))
+    if patch in config.patches
+        existing_patch_idx = findfirst(x -> x == patch, config.patches)
+
+        config.patches[existing_patch_idx] = patch
+    else   
+        push!(config.patches, patch)
+
+        append!(config.regions[1].cache_syms, optimized_syms) 
+    end
+    return 
 end
 
 function add_controller!(
@@ -195,7 +215,16 @@ function add_controller!(
     monitored_cells = collect(getcellset(config.grid, monitored_cellset))
     affected_cells = collect(getcellset(config.grid, affected_cellset))
 
-    push!(config.controllers, ControllerSetupInfo(name, controller, monitored_cellset, affected_cellset, controller_function, monitored_cells, affected_cells))
+    controller = ControllerSetupInfo(name, controller, monitored_cellset, affected_cellset, controller_function, monitored_cells, affected_cells)
+
+    if controller in config.controllers
+        existing_controller_idx = findfirst(x -> x == controller, config.controllers)
+
+        config.controllers[existing_controller_idx] = controller
+    else
+        push!(config.controllers, controller)
+    end
+    return
 end
 
 #this...
