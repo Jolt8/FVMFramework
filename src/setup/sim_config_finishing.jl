@@ -234,19 +234,34 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
 
     p_axes = create_axes(optimized_parameter_nt, n_cells)
 
+
+    #we have to split up properties to strip it of units
+    properties_vec_units = Vector(ComponentArray(; merged_properties...))
+    properties_vec = ustrip.(upreferred.(deepcopy(properties_vec_units)))
+
+    properties_axes = create_axes(merged_properties, n_cells)
+
+    if check_units == true
+        system = FVMSystem(
+            connection_groups, controller_groups, patch_groups, region_groups,
+            p_vec, p_axes,
+            create_views_inline(properties_vec_units, properties_axes),
+            du_diff_cache_vec, u_diff_cache_vec,
+            du_proto_axes, u_proto_axes,
+            du_cache_axes, u_cache_axes
+        )
+        du_nt_units, u_nt_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
+        return du_nt_units, u_nt_units, 0, 0
+    end
+
     system = FVMSystem(
         connection_groups, controller_groups, patch_groups, region_groups,
         p_vec, p_axes,
-        merged_properties,
+        create_views_inline(properties_vec, properties_axes),
         du_diff_cache_vec, u_diff_cache_vec,
         du_proto_axes, u_proto_axes,
         du_cache_axes, u_cache_axes
     )
-
-    if check_units == true
-        du_nt_units, u_nt_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
-        return du_nt_units, u_nt_units, 0, 0
-    end
 
     return du0_vec, u0_vec, config.geo, system
 end
