@@ -42,19 +42,7 @@ u_proto = (
 
 config = create_fvm_config(grid, u_proto)
 
-#=
-for (cell_id, facet_idx) in grid.facetsets["dialysis_tubing_surface"]
-    println(cell_id, " ", facet_idx)
-end
-=#
-
-check_cellset_connectivity(config.grid, "dialysis_tubing_interior")
-
-
-
 #since each mass fraction is modified, they have to be vectors
-
-
 function normalize_mass_fractions(mass_fractions)
     total_mass_fractions = 0.0
 
@@ -96,7 +84,8 @@ add_region!(
         #=diffusion_coefficients = (
             methylene_blue = 1e-3,
             water = 1e-3
-        ), #diffusion coefficients (m^2/s)=#
+        ), #diffusion coefficients (m^2/s)=# 
+        #not needed due to the assumption that the dialysis tubing interior and surrounding fluid are perfectly mixed
         molecular_weights = (
             methylene_blue = 0.31985, 
             water = 0.01802
