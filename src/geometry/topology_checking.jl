@@ -55,4 +55,5 @@ end
         - putting Coherence in my .geo file
         - Using a compound filter in freecad
     - if you want to check for this in any future gmsh file, just turn on node labels once meshed and check for duplicate node labels
+    - I'm also angry because I'm realizing that this is why my initial endeavor with OpenFOAM failed because of this exact issue
 =#
