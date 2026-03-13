@@ -1,3 +1,8 @@
+function unit_independent_max(val, min_val)
+    return max(ustrip(val), min_val) * unit(val)
+end
+
+#this is for Peppley-Amphlett methanol steam reforming (MSR) kinetics
 function PAM_reforming_react_cell!(du, u, cell_id, vol)
     mw_avg!(u, cell_id)
     rho_ideal!(u, cell_id)
@@ -8,15 +13,14 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
     #we add a tiny epsilon (1e-12) to prevent division by zero in the denominators/roots
     #during the start-up phase when concentrations are close to 0.0
 
-    conversion_factor = ((R_gas * u.temp[cell_id]) * 1e-5)
-    eps = 1e-12
-    P_CH3OH = max(u.molar_concentrations.methanol[cell_id] * conversion_factor, eps)
-    P_H2O = max(u.molar_concentrations.water[cell_id] * conversion_factor, eps)
-    P_CO = max(u.molar_concentrations.carbon_monoxide[cell_id] * conversion_factor, eps)
-    P_H2 = max(u.molar_concentrations.hydrogen[cell_id] * conversion_factor, eps)
-    P_CO2 = max(u.molar_concentrations.carbon_dioxide[cell_id] * conversion_factor, eps)
+    conversion_factor = ((u.R_gas[cell_id] * u.temp[cell_id]) * 1e-5)
+    P_CH3OH = unit_independent_max(u.molar_concentrations.methanol[cell_id] * conversion_factor, 1e-12)
+    P_H2O = unit_independent_max(u.molar_concentrations.water[cell_id] * conversion_factor, 1e-12)
+    P_CO = unit_independent_max(u.molar_concentrations.carbon_monoxide[cell_id] * conversion_factor, 1e-12)
+    P_H2 = unit_independent_max(u.molar_concentrations.hydrogen[cell_id] * conversion_factor, 1e-12)
+    P_CO2 = unit_independent_max(u.molar_concentrations.carbon_dioxide[cell_id] * conversion_factor, 1e-12)
 
-    if P_H2 > 1e-8 && P_CH3OH > 1e-8
+    if ustrip(P_H2) > 1e-8 && ustrip(P_CH3OH) > 1e-8
 
         #=
         println("P_CH3OH: $(P_CH3OH)")
@@ -30,17 +34,20 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         K_CH3O = van_t_hoff(
             u.reactions.reforming_reactions.MSR_rxn.van_t_hoff_A.CH3O[cell_id], 
             u.reactions.reforming_reactions.MSR_rxn.van_t_hoff_dH.CH3O[cell_id], 
-            u.temp[cell_id]
+            u.temp[cell_id],
+            u.R_gas[cell_id]
         )
         K_HCOO = van_t_hoff(
             u.reactions.reforming_reactions.MSR_rxn.van_t_hoff_A.HCOO[cell_id], 
             u.reactions.reforming_reactions.MSR_rxn.van_t_hoff_dH.HCOO[cell_id], 
-            u.temp[cell_id]
+            u.temp[cell_id],
+            u.R_gas[cell_id]
         )
         K_OH = van_t_hoff(
             u.reactions.reforming_reactions.MSR_rxn.van_t_hoff_A.OH[cell_id], 
             u.reactions.reforming_reactions.MSR_rxn.van_t_hoff_dH.OH[cell_id], 
-            u.temp[cell_id]
+            u.temp[cell_id],
+            u.R_gas[cell_id]
         )
 
         #=
@@ -71,7 +78,7 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         end
 
         #MSR
-        k_MSR = u.reactions.reforming_reactions.MSR_rxn.kf_A[cell_id] * exp(-u.reactions.reforming_reactions.MSR_rxn.kf_Ea[cell_id] / (R_gas * u.temp[cell_id]))
+        k_MSR = u.reactions.reforming_reactions.MSR_rxn.kf_A[cell_id] * exp(-u.reactions.reforming_reactions.MSR_rxn.kf_Ea[cell_id] / (u.R_gas[cell_id] * u.temp[cell_id]))
         K_eq_MSR = K_gibbs_free(u, cell_id, u.reactions.reforming_reactions.MSR_rxn)
 
         driving_force = 1.0 - ((P_CO2 * P_H2^3) / (K_eq_MSR * P_CH3OH * P_H2O))
@@ -94,7 +101,7 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         =#
 
         #MD
-        k_MD = u.reactions.reforming_reactions.MD_rxn.kf_A[cell_id] * exp(-u.reactions.reforming_reactions.MD_rxn.kf_Ea[cell_id] / (R_gas * u.temp[cell_id]))
+        k_MD = u.reactions.reforming_reactions.MD_rxn.kf_A[cell_id] * exp(-u.reactions.reforming_reactions.MD_rxn.kf_Ea[cell_id] / (u.R_gas[cell_id] * u.temp[cell_id]))
         K_eq_MD = K_gibbs_free(u, cell_id, u.reactions.reforming_reactions.MD_rxn)
         driving_force = 1.0 - ((P_CO * P_H2^2) / (K_eq_MD * P_CH3OH))
 
@@ -109,7 +116,7 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         =#
 
         #WGS
-        k_WGS = u.reactions.reforming_reactions.WGS_rxn.kf_A[cell_id] * exp(-u.reactions.reforming_reactions.WGS_rxn.kf_Ea[cell_id] / (R_gas * u.temp[cell_id]))
+        k_WGS = u.reactions.reforming_reactions.WGS_rxn.kf_A[cell_id] * exp(-u.reactions.reforming_reactions.WGS_rxn.kf_Ea[cell_id] / (u.R_gas[cell_id] * u.temp[cell_id]))
         K_eq_WGS = K_gibbs_free(u, cell_id, u.reactions.reforming_reactions.WGS_rxn)
         driving_force = 1.0 - ((P_CO2 * P_H2) / (K_eq_WGS * P_CO * P_H2O))
 
