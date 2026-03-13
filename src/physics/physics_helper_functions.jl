@@ -28,6 +28,10 @@ function mw_avg!(u, cell_id)
 end
 
 function rho_ideal!(u, cell_id)
+    #=println(u.pressure[cell_id])
+    println(u.mw_avg[cell_id])
+    println(u.R_gas[cell_id])
+    println(u.temp[cell_id])=#
     u.rho[cell_id] = (u.pressure[cell_id] * u.mw_avg[cell_id]) / (u.R_gas[cell_id] * u.temp[cell_id])
 end
 
