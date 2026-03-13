@@ -1,3 +1,6 @@
+#hmm, I wonder if we could use overloading to make it so that accessing u.viscosity would call an interpolation rather than having to do u.viscosity(u.temp, u.pressure)[1]
+#however, it would probably be better to define the interpolations used and then just make u.viscosity = u.viscosity(u.temp, u.pressure)[1] before the rest of the operator runs
+
 temp_range = range(270.0, 570.0, length = 100)
 pressure_range = range(100000.0, 1000000.0, length = 100)
 
