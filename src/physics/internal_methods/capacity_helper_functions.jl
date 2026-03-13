@@ -27,7 +27,6 @@ function cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
 
     map(keys(u.mass_fractions)) do species_name
         du.mass_fractions[species_name][cell_id] = (du.species_mass_flows[species_name][cell_id] - u.mass_fractions[species_name][cell_id] * du.mass[cell_id]) / total_mass
-        #du.mass_fractions.methylene_blue[cell_id] = (du.species_mass_flows.methylene_blue[cell_id] - u.mass_fractions.methylene_blue[cell_id] * du.mass[cell_id]) / total_mass
     end
 end
 

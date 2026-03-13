@@ -1,5 +1,3 @@
-#use get_cell_rho from helper functions to get rho for cell a and b
-
 function all_species_advection!(
     du, u,
     idx_a, idx_b, face_idx,
@@ -10,8 +8,6 @@ function all_species_advection!(
         du.species_mass_flows[species_name][idx_a] += (du.mass_face[idx_a][face_idx] * upwinded_mass_fraction)
     end
 end
-
-#use get_cell_cp from helper functions to get cp for cell a and b
 
 function enthalpy_advection!(
     du, u,

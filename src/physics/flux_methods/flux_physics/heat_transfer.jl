@@ -1,13 +1,6 @@
 function get_k_effective(k_a, k_b)
     return 2 * k_a * k_b / (k_a + k_b)
 end
-#=
-function numerical_flux(k_avg, temp_a, temp_b, area, dist)
-    grad_T = (temp_b - temp_a) / dist
-    q = -k_avg * grad_T
-    return q * area
-end
-=#
 
 function temp_diffusion!(
     du, u, 
