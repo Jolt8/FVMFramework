@@ -5,9 +5,9 @@ using Ferrite
 using SparseConnectivityTracer
 import ADTypes
 
-total_pipe_length = 50.0u"cm" |> u"m"
+total_pipe_length = 16.5u"cm"
 stripped_pipe_length = ustrip(total_pipe_length)
-pipe_width = ustrip(1.0u"cm" |> u"m")
+pipe_width = ustrip(0.5u"cm" |> u"m")
 
 grid_dimensions = (100, 1, 1)
 left = Ferrite.Vec{3}((0.0, 0.0, 0.0))
@@ -51,7 +51,7 @@ MSR_rxn = (
     heat_of_reaction = 49500.0u"J/mol", 
     ref_delta_G = -3800.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 1.25e8u"s^-1", #sources online point to values around 1.25e7 mol / (kg * s * bar)
+    kf_A = 1.59e9u"s^-1", #sources online point to values around 1.25e7 mol / (kg * s * bar)
     kf_Ea = 103000.0u"J/mol",
     reactant_stoich_coeffs = (methanol = 1, water = 1),
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 3), 
@@ -64,7 +64,7 @@ MD_rxn = (
     heat_of_reaction = 90200.0u"J/mol", 
     ref_delta_G = 24800.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 1.15e12u"s^-1", #sources online point to values around 1.15e11 mol / (kg * s * bar)
+    kf_A = 1.46e13u"s^-1", #sources online point to values around 1.15e11 mol / (kg * s * bar)
     kf_Ea = 170000.0u"J/mol",
     reactant_stoich_coeffs = (methanol = 1,), 
     product_stoich_coeffs = (carbon_monoxide = 1, hydrogen = 2), 
@@ -77,7 +77,7 @@ WGS_rxn = (
     heat_of_reaction = -41100.0u"J/mol", 
     ref_delta_G = -28600.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 3.65e8u"s^-1", #sources online point to values around 3.65e7 mol / (kg * s * bar)
+    kf_A = 4.63e9u"s^-1", #sources online point to values around 3.65e7 mol / (kg * s * bar)
     kf_Ea = 87500.0u"J/mol",
     reactant_stoich_coeffs = (carbon_monoxide = 1, water = 1), 
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 1), 
@@ -128,15 +128,15 @@ initial_mass_fractions = NamedTuple{keys(initial_mass_fractions)}(first.(values(
 empty_mass_fractions = NamedTuple{keys(empty_mass_fractions)}(first.(values(empty_mass_fractions)))
 #this is not ideal, but we can't use scalars inside the initial mass_fractions because the values of NamedTuples can't be modified 
 
-total_pipe_length = 50.1u"cm"
+total_pipe_length = 16.5u"cm"
 n_segments = length(grid.cells)
 
-pipe_width = 0.35u"cm"
-pipe_height = 0.35u"cm"
+pipe_width = 0.5u"cm"
+pipe_height = 0.5u"cm"
 pipe_area = pipe_width * pipe_height
 
 pipe_mass_flow = 0.0278u"g/s"
-pipe_volumetric_flow = pipe_mass_flow / 791u"kg/m^3"
+pipe_volumetric_flow = pipe_mass_flow / 0.54u"kg/m^3"
 velocity = pipe_volumetric_flow / pipe_area
 superficial_mass_velocity = pipe_mass_flow / pipe_area #forgot to use bed void fraction here
 
@@ -145,7 +145,7 @@ pipe_hydraulic_diameter = (2 * pipe_width * pipe_height) / (pipe_width + pipe_he
 pipe_thickness = 1.0u"cm"
 pipe_k = 237.0u"W/(m*K)"
 
-approximate_residence_time = total_pipe_length / velocity
+approximate_residence_time = total_pipe_length / velocity |> u"s"   
 
 reforming_area_properties = (
     k = 237.0u"W/(m*K)", 
@@ -219,7 +219,7 @@ add_region!(
     initial_conditions = (
         mass_fractions = initial_mass_fractions,
         pressure = 1.0u"atm",
-        temp = 270.0u"°C",
+        temp = 21.0u"°C",
     ),
     properties = reforming_area_properties,
     optimized_syms = (),
@@ -258,7 +258,7 @@ add_region!(
     initial_conditions = (
         mass_fractions = empty_mass_fractions,
         pressure = 1.0u"atm",
-        temp = 270.0u"°C",
+        temp = 21.0u"°C",
     ),
     properties = reforming_area_properties,
     optimized_syms = (),
@@ -290,7 +290,7 @@ add_region!(
     initial_conditions = (
         mass_fractions = empty_mass_fractions,
         pressure = 1.0u"atm",
-        temp = 270.0u"°C",
+        temp = 21.0u"°C",
     ),
     properties = reforming_area_properties,
     optimized_syms = (),
@@ -326,7 +326,7 @@ add_region!(
     initial_conditions = (
         mass_fractions = empty_mass_fractions,
         pressure = 1.0u"atm",
-        temp = 270.0u"°C",
+        temp = 21.0u"°C",
     ),
     properties = reforming_area_properties,
     optimized_syms = (),
@@ -347,9 +347,9 @@ add_region!(
             du.species_mass_flows[species_name][cell_id] *= 0.0
         end
 
-        #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
-        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
-        du.heat[cell_id] *= 0.0#UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
+        UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
+        surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
+        du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         #ergun_pressure_drop!(du, u, cell_id, vol)
 
@@ -372,13 +372,12 @@ function fluid_fluid_flux!(
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
     )
-    #=
+    
     enthalpy_advection!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
     )
-        =#
 
     #=mass_fraction_diffusion!(
         du, u,
@@ -397,7 +396,7 @@ config.regions[1].properties.reactions
 n_reactions = length(config.regions[1].properties.reactions.reforming_reactions)
 reaction_names = keys(config.regions[1].properties.reactions.reforming_reactions)
 species_names = keys(config.regions[1].properties.species_ids)
-
+ 
 #species caches are for things like mass_face, which has an entry for every face of every cell rather than entries for each cell
 special_caches = (
     mass_face = fill(
@@ -477,7 +476,7 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 10000.0
+tMax = 100.0
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
@@ -486,7 +485,7 @@ desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
-VSCodeServer.@profview sol = solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
+@time sol = solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
 
 record_sol = true
 
@@ -494,13 +493,13 @@ sim_file = @__FILE__
 
 u_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
 
-u_named[end].mass_fractions.methanol[1]
+u_named[1].mass_fractions.methanol[1]
 u_named[end].mass_fractions.methanol[99]
 
 inlet_cell_id = 1
 outlet_cell_id = 99
 
-conversion = ((u_named[end].mass_fractions.methanol[inlet_cell_id] - u_named[end].mass_fractions.methanol[outlet_cell_id]) / u_named[end].mass_fractions.methanol[inlet_cell_id]
+conversion = ((u_named[1].mass_fractions.methanol[inlet_cell_id] - u_named[end].mass_fractions.methanol[outlet_cell_id]) / u_named[1].mass_fractions.methanol[inlet_cell_id]
 )
 
 if record_sol == true
