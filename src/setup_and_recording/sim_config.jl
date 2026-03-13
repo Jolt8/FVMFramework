@@ -3,7 +3,7 @@ mutable struct RegionSetupInfo{P <: AbstractPhysics} #this must be defined befor
     type::P
     initial_conditions::NamedTuple
     properties::NamedTuple
-    cache_syms::Vector{Symbol}
+    cache_syms_and_units::NamedTuple
     region_function::Function
     region_cells::Vector{Int}
 end
@@ -108,7 +108,7 @@ function add_region!(
     initial_conditions,
     properties,
     optimized_syms,
-    cache_syms,
+    cache_syms_and_units,
     region_function
 )
 
@@ -132,7 +132,7 @@ function add_region!(
         config.optimized_parameters[field] = properties[field]
     end
 
-    region = RegionSetupInfo(name, type, initial_conditions, properties, cache_syms, region_function, region_cells)
+    region = RegionSetupInfo(name, type, initial_conditions, properties, cache_syms_and_units, region_function, region_cells)
 
     if region in config.regions
         existing_region_idx = findfirst(x -> x == region, config.regions)
@@ -141,7 +141,7 @@ function add_region!(
     else   
         push!(config.regions, region)
 
-        append!(config.regions[1].cache_syms, optimized_syms) 
+        config.regions[1].cache_syms_and_units = merge(config.regions[1].cache_syms_and_units, optimized_syms) 
     end
     return 
 end
@@ -200,7 +200,7 @@ function add_patch!(
     else   
         push!(config.patches, patch)
 
-        append!(config.regions[1].cache_syms, optimized_syms) 
+        merge(config.regions[1].cache_syms_and_units, optimized_syms) 
     end
     return 
 end
@@ -237,8 +237,7 @@ function _build_blank_dict!(current_dict, properties, n_cells)
             _build_blank_dict!(current_dict[property_name], value, n_cells)
         else
             if !haskey(current_dict, property_name)
-
-                current_dict[property_name] = zeros(Float64, n_cells)
+                current_dict[property_name] = zeros(n_cells) .* upreferred(unit(value))
             end
         end
     end
@@ -312,18 +311,18 @@ function merge_region_properties(config)
 end
 
 
-function _drill_down_and_fill_caches!(merged_caches, region_cache_syms, special_caches, merged_properties)
-    for property_name in region_cache_syms
+function _drill_down_and_fill_caches!(merged_caches, region_cache_syms_and_units, special_caches, merged_properties)
+    for (property_name, property_unit) in pairs(region_cache_syms_and_units)
         if property_name in keys(special_caches)
 
         elseif merged_caches[property_name] isa NamedTuple
-            _drill_down_and_fill_caches!(merged_caches[property_name], region_cache_syms, (_ = 0.0,), merged_properties)
+            _drill_down_and_fill_caches!(merged_caches[property_name], region_cache_syms_and_units, (_ = 0.0,), merged_properties)
         elseif merged_caches[property_name] isa AbstractArray
             #since we use the properties as the initial value for the cache, we might not even need properties and could just preemptively merge them
             if hasproperty(merged_properties, property_name) && merged_properties[property_name] isa AbstractArray
                 merged_caches[property_name] .= merged_properties[property_name]
             else
-                merged_caches[property_name] .= 0.0
+                merged_caches[property_name] .= 0.0 * upreferred(property_unit)
             end
         else
             error("The cache $property_name was not handled")
@@ -337,12 +336,12 @@ function merge_region_caches(config, special_caches, merged_properties)
     cache_dict = Dict{Symbol, Any}()
 
     for region in config.regions
-        for cache_name in region.cache_syms
+        for (cache_name, cache_unit) in pairs(region.cache_syms_and_units)
             if !haskey(cache_dict, cache_name)
                 if cache_name in keys(special_caches)
                     cache_dict[cache_name] = special_caches[cache_name]
                 else
-                    cache_dict[cache_name] = zeros(Float64, n_cells)
+                    cache_dict[cache_name] = zeros(n_cells) .* upreferred(cache_unit)
                 end
             end
         end
@@ -351,7 +350,7 @@ function merge_region_caches(config, special_caches, merged_properties)
     merged_caches = _dict_to_namedtuple(cache_dict)
 
     for region in config.regions
-        _drill_down_and_fill_caches!(merged_caches, region.cache_syms, special_caches, merged_properties)
+        _drill_down_and_fill_caches!(merged_caches, region.cache_syms_and_units, special_caches, merged_properties)
     end
 
     return merged_caches
@@ -364,7 +363,7 @@ end
 struct RegionGroup{P <: NamedTuple, F <: Function}
     name::String
     properties::P
-    cache_syms::Vector{Symbol}
+    cache_syms_and_units::NamedTuple
     region_function!::F
     region_cells::Vector{Int}
 end
@@ -404,7 +403,7 @@ struct FVMSystem
     controller_groups::Vector{ControllerGroup}
     patch_groups::Vector{PatchGroup}
     region_groups::Vector{RegionGroup}
-    p_vec::Vector{Float64}
+    p_vec::Vector{Number}
     p_axes::NamedTuple
     merged_properties::NamedTuple
     du_diff_cache_vec::DiffCache
@@ -415,7 +414,7 @@ struct FVMSystem
     u_cache_axes::NamedTuple
 end
 
-function finish_fvm_config(config, connection_map_function, special_caches)
+function finish_fvm_config(config, connection_map_function, special_caches; check_units::Bool)
     n_cells = length(config.geo.cell_volumes)
 
     #in order from when they're executed in the solver 
@@ -436,7 +435,7 @@ function finish_fvm_config(config, connection_map_function, special_caches)
     #although this could be a part of RegionGroup, I'd rather not contaminate it with information not required in the simulation
 
     for region in config.regions
-        push!(region_groups, RegionGroup(region.name, region.properties, region.cache_syms, region.region_function, region.region_cells))
+        push!(region_groups, RegionGroup(region.name, region.properties, region.cache_syms_and_units, region.region_function, region.region_cells))
 
         for cell_id in region.region_cells
             cell_region_types_map[cell_id] = region.type
@@ -547,10 +546,10 @@ function finish_fvm_config(config, connection_map_function, special_caches)
     for (field, value) in pairs(du_proto_nt)
         if du_proto_nt[field] isa NamedTuple
             for (sub_field, value) in pairs(du_proto_nt[field])
-                du_proto_nt[field][sub_field] .= 0.0
+                du_proto_nt[field][sub_field] .= 0.0 * unit(du_proto_nt[field][sub_field][1])
             end
         else
-            du_proto_nt[field] .= 0.0
+            du_proto_nt[field] .= 0.0 * unit(du_proto_nt[field][1])
         end
     end
     #du_proto_nt = (; du_proto...)
@@ -562,26 +561,30 @@ function finish_fvm_config(config, connection_map_function, special_caches)
 
     merged_caches = merge_region_caches(config, special_caches, merged_properties)
 
-    du_cache_nt = deepcopy(merged_caches)
+    du_unitful_cache_nt = deepcopy(merged_caches)
     #du_cache_nt = (; du_cache...)
 
-    u_cache_nt = deepcopy(merged_caches)
+    u_unitful_cache_nt = deepcopy(merged_caches)
     #u_cache_nt = (; u_cache...)
 
-    du0_vec = Vector(ComponentArray(; du_proto_nt...))
-    u0_vec = Vector(ComponentArray(; u_proto_nt...))
-    du_cache_vec = Vector(ComponentArray(; du_cache_nt...))
-    u_cache_vec = Vector(ComponentArray(; u_cache_nt...))
+    du0_vec_units = Vector(ComponentArray(; du_proto_nt...))
+    u0_vec_units = Vector(ComponentArray(; u_proto_nt...))
+
+    du0_vec = ustrip.(upreferred.(deepcopy(du0_vec_units)))
+    u0_vec = ustrip.(upreferred.(deepcopy(u0_vec_units)))
 
     N::Int = ForwardDiff.pickchunksize(length(u0_vec))
 
-    du_diff_cache_vec = DiffCache(du_cache_vec, N)
-    u_diff_cache_vec = DiffCache(u_cache_vec, N)
+    du_unitful_cache_vec = Vector(ComponentArray(; du_unitful_cache_nt...))
+    u_unitful_cache_vec = Vector(ComponentArray(; u_unitful_cache_nt...))
+
+    du_diff_cache_vec = DiffCache(ustrip.(upreferred.(deepcopy(du_unitful_cache_vec))), N)
+    u_diff_cache_vec = DiffCache(ustrip.(upreferred.(deepcopy(u_unitful_cache_vec))), N)
     
     du_proto_axes = create_axes(du_proto_nt, n_cells)
     u_proto_axes = create_axes(u_proto_nt, n_cells)
-    du_cache_axes = create_axes(du_cache_nt, n_cells)
-    u_cache_axes = create_axes(u_cache_nt, n_cells)
+    du_cache_axes = create_axes(du_unitful_cache_nt, n_cells)
+    u_cache_axes = create_axes(u_unitful_cache_nt, n_cells)
 
     optimized_parameters_keys = keys(config.optimized_parameters)
     optimized_parameters_1_element_vectors = [[config.optimized_parameters[field]] for field in keys(config.optimized_parameters)]
@@ -592,7 +595,7 @@ function finish_fvm_config(config, connection_map_function, special_caches)
 
     p_axes = create_axes(optimized_parameter_nt, n_cells)
 
-    return du0_vec, u0_vec, config.geo, FVMSystem(
+    system = FVMSystem(
         connection_groups, controller_groups, patch_groups, region_groups,
         p_vec, p_axes,
         merged_properties,
@@ -600,5 +603,82 @@ function finish_fvm_config(config, connection_map_function, special_caches)
         du_proto_axes, u_proto_axes,
         du_cache_axes, u_cache_axes
     )
+
+    if check_units == true
+        du_nt_units, u_nt_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
+        return du_nt_units, u_nt_units, 0, 0
+    end
+
+    return du0_vec, u0_vec, config.geo, system
 end
+
+function run_and_check_units(du0_vec_units, u0_vec_units, geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
+    global R_gas = 8.314u"J/(mol*K)"
+
+    du_unitful_cache_vec = upreferred.(du_unitful_cache_vec)
+    du_unitful_cache_vec .*= 0.0
+    du_unitful_cache_vec ./= 1.0u"s"
+    u_unitful_cache_vec = upreferred.(u_unitful_cache_vec)
+    u_unitful_cache_vec .*= 0.0
+
+    du_cache_nt = create_views_inline(upreferred.(du_unitful_cache_vec), system.du_cache_axes)
+    u_cache_nt = create_views_inline(upreferred.(u_unitful_cache_vec), system.u_cache_axes)
+
+    du0_vec_units .*= 0.0
+    du0_vec_units ./= 1.0u"s"
+
+    du_nt = create_views_inline(upreferred.(du0_vec_units), system.du_proto_axes)
+    u_nt = create_views_inline(upreferred.(u0_vec_units), system.u_proto_axes)
+
+    du = (; du_nt..., du_cache_nt...)
+    u = (; system.merged_properties..., u_nt..., u_cache_nt...)
+    #remember, the right-most fields overwrite other fields with the same name
+
+    u.rho .= (u_cache_nt.rho .+ system.merged_properties.rho)
+
+
+    #applying units 
+    cell_volumes = geo.cell_volumes .* u"m^3"
+    cell_centroids = geo.cell_centroids .* u"m"
+    
+    cell_neighbor_areas = geo.cell_neighbor_areas .* u"m^2"
+    cell_neighbor_normals = geo.cell_neighbor_normals .* u"m"
+    cell_neighbor_distances = geo.cell_neighbor_distances .* u"m"
+
+    cell_face_areas = geo.cell_face_areas .* u"m^2"
+    cell_face_normals = geo.cell_face_normals .* u"m"
+
+    for conn in system.connection_groups
+        solve_connection_group!(
+            du, u,
+            conn.flux_function!, conn.cell_neighbors,
+            cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        )
+    end
+
+    for patch in system.patch_groups
+        solve_patch_group!(
+            du, u,
+            patch.patch_function!, patch.cell_neighbors,
+            cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+            cell_volumes
+        )
+    end
+    
+    for reg in system.region_groups
+        solve_region_group!(
+            du, u,
+            reg.region_function!, reg.region_cells,
+            cell_volumes
+        )
+    end
+
+    return du, u
+end
+
+#just an idea, but we could also run a separate run-through of the solver that doesn't contain units 
+#and then at the end strip the units from the unitful run-through and compare the two
+#while I'm pretty sure that upreferred would take care of most of this, it would make you extra
+#confident that you're not missing any unit conversions
+
 
