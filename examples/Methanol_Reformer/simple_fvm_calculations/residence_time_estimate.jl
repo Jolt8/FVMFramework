@@ -215,7 +215,7 @@ conversion = (methanol_initial_mass_fraction - methanol_final_mass_fraction) / m
 #400000 seconds for 90% conversion, this needs to be fixed 
 
 hi = 1
-#=
+
 t0 = 0.0
 tMax = 1000.0
 tspan = (t0, tMax)
