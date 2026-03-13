@@ -1,5 +1,10 @@
 TODO:
     - I should probably implement second order meshes at some point. In my Biology IA that contained a lot of cylinders, I had to make a very fine mesh to capture the curve of the cylinders. This was especially bad for very thin cylinders.
+
+    - The other thing that would be great to implement is a method to handle moving meshes, I'm sure this would be kinda challenging, but I've already implement deform box mesh moving in the past, so I don't think that Arbitrary Langrangian-Eulerian would be too far out of reach
+
+    - We have to choose between implementing second-order spatial discretization, second-order meshes, moving meshes, and adaptive mesh refinement as the next project
+
     - Implement a method to check units right after finish_fvm_config 
         - This would also mean that unitful values would have to be stripped when finish_fvm_config is called
         - Note that you can turn any quantity into base SI units by doing upreferred(1.0u"cm")
