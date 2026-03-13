@@ -45,8 +45,10 @@ function add_patch!(
 
     patch = PatchSetupInfo(name, properties, patch_function, cell_neighbors)
 
-    if patch in config.patches
-        existing_patch_idx = findfirst(x -> x == patch, config.patches)
+    all_patch_names = [patch.name for patch in config.patches]
+
+    if name in all_patch_names
+        existing_patch_idx = findfirst(x -> x == name, all_patch_names)
 
         config.patches[existing_patch_idx] = patch
     else   

@@ -30,8 +30,10 @@ function add_region!(
 
     region = RegionSetupInfo(name, type, initial_conditions, properties, cache_syms_and_units, region_function, region_cells)
 
-    if region in config.regions
-        existing_region_idx = findfirst(x -> x == region, config.regions)
+    all_region_names = [region.name for region in config.regions]
+
+    if name in all_region_names
+        existing_region_idx = findfirst(x -> x == name, all_region_names)
 
         config.regions[existing_region_idx] = region
     else   

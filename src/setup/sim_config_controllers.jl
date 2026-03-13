@@ -11,8 +11,10 @@ function add_controller!(
 
     controller = ControllerSetupInfo(name, controller, monitored_cellset, affected_cellset, controller_function, monitored_cells, affected_cells)
 
-    if controller in config.controllers
-        existing_controller_idx = findfirst(x -> x == controller, config.controllers)
+    all_controller_names = [controller.name for controller in config.controllers]
+
+    if name in all_controller_names
+        existing_controller_idx = findfirst(x -> x == name, all_controller_names)
 
         config.controllers[existing_controller_idx] = controller
     else
