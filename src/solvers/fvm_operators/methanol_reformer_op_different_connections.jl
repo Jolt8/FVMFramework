@@ -15,9 +15,7 @@ function methanol_reformer_f_test!(
 )
     du_cache_vec = get_tmp(du_diff_cache_vec, u_vec)
     u_cache_vec = get_tmp(u_diff_cache_vec, u_vec)
-
-    #println(typeof(du_cache_vec))
-
+    
     #do you know what is fucking crazy?
     #the only reason this worked in the past was because I zeroed out the caches
     #otherwise, it just returns #undef for everything
