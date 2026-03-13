@@ -99,37 +99,33 @@ include("physics/physics_face_summation_functions.jl")
 export sum_mass_flux_face_to_cell!
 
 # ----- Setup Methods -----
-include("setup_and_recording/sim_config_helper_functions.jl")
+include("setup/sim_config_helper_functions.jl")
 export get_cell_set_total_volume, get_facet_set_total_area, get_facet_set_cells_respective_areas, get_cell_ids_in_facet_set
 
-include("setup_and_recording/sim_config_base.jl")
+include("setup/sim_config_base.jl")
 export create_fvm_config, RegionSetupInfo, PatchSetupInfo, ControllerSetupInfo, SimulationConfigInfo
 
-include("setup_and_recording/sim_config_merge_handling.jl")
+include("setup/sim_config_merge_handling.jl")
 export merge_region_properties, merge_region_caches
 
-include("setup_and_recording/sim_config_regions.jl")
+include("setup/sim_config_regions.jl")
 export add_region!
 
-include("setup_and_recording/sim_config_patches.jl")
+include("setup/sim_config_patches.jl")
 export add_patch!
 
-include("setup_and_recording/sim_config_controllers.jl")
+include("setup/sim_config_controllers.jl")
 export add_controller!
 
-include("setup_and_recording/sim_config_units.jl")
+include("setup/sim_config_units.jl")
 export run_and_check_units
 
-include("setup_and_recording/sim_config_finishing.jl")
+include("setup/sim_config_finishing.jl")
 export finish_fvm_config, FVMSystem
 
 #   ---- Sim Recording ----
-include("setup_and_recording/sim_recording.jl")
+include("recording/sim_recording.jl")
 export sol_to_vtk
-
-#   ---- Workflow Helper Functions ----
-include("setup_and_recording/workflow_helper_functions.jl")
-export rebuild_u_named, rebuild_u_named_vel, rebuild_u_named_mass_fractions
 
 # ----- Solvers -----
 #   ---- Preconditioners ----
