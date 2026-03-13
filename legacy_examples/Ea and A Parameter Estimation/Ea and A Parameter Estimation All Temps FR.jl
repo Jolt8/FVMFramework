@@ -163,7 +163,7 @@ function FVM_iter_f!(
             kf_Ea = A_Ea_pairs[reaction_id][2]
 
             #find reverse pre exponential_factor
-            K_ref = K_gibbs_free(temperatures_vec[time_idx, cell_id], reaction.K_gibbs_free_ref_temp, reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
+            #K_ref = K_gibbs_free(temperatures_vec[time_idx, cell_id], reaction.K_gibbs_free_ref_temp, reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
 
             kr_A = (kf_A / K_ref) * exp(-reaction.heat_of_reaction / (8.314e-3 * temperatures_vec[time_idx, cell_id]))
 
