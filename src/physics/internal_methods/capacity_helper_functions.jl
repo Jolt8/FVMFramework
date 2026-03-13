@@ -17,16 +17,17 @@ function cap_mass_flux_to_pressure_change!(du, u, cell_id, vol)
     # kg/s /= (m^3 / (J/(mol*K) * K))
     #remember: J = Pa*m^3
     # = Pa/s
-    du.pressure[cell_id] += du.mass[cell_id] / (vol / (R_gas * u.temp[cell_id]))
+    du_moles = du.mass[cell_id] / u.mw_avg[cell_id]
+    du.pressure[cell_id] += (du_moles * u.R_gas[cell_id] * u.temp[cell_id]) / vol
+    #du.mass[cell_id] / (vol / ((R_gas * u.temp[cell_id]))
 end
 
 function cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
     total_mass = vol * u.rho[cell_id]
 
-    #map(keys(u.mass_fractions)) do species_name
-        #du.mass_fractions[species_name][cell_id] = (du.species_mass_flows[species_name][cell_id] - u.mass_fractions[species_name][cell_id] * du.mass[cell_id]) / total_mass
-        du.mass_fractions.methylene_blue[cell_id] = (du.species_mass_flows.methylene_blue[cell_id] - u.mass_fractions.methylene_blue[cell_id] * du.mass[cell_id]) / total_mass
-        du.mass_fractions.water[cell_id] = (du.species_mass_flows.water[cell_id] - u.mass_fractions.water[cell_id] * du.mass[cell_id]) / total_mass
-    #end
+    map(keys(u.mass_fractions)) do species_name
+        du.mass_fractions[species_name][cell_id] = (du.species_mass_flows[species_name][cell_id] - u.mass_fractions[species_name][cell_id] * du.mass[cell_id]) / total_mass
+        #du.mass_fractions.methylene_blue[cell_id] = (du.species_mass_flows.methylene_blue[cell_id] - u.mass_fractions.methylene_blue[cell_id] * du.mass[cell_id]) / total_mass
+    end
 end
 
