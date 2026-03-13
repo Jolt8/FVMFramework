@@ -21,7 +21,7 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
     P_CO2 = unit_independent_max(u.molar_concentrations.carbon_dioxide[cell_id] * conversion_factor, 1e-12)
 
     if ustrip(P_H2) > 1e-8 && ustrip(P_CH3OH) > 1e-8
-
+        
         #=
         println("P_CH3OH: $(P_CH3OH)")
         println("P_H2O: $(P_H2O)")
@@ -86,11 +86,9 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         u.net_rates.reforming_reactions.MSR_rxn[1] = (k_MSR * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2)
         
         #=
-        println("R_gas: $(R_gas)")
         println("temp: $(u.temp[cell_id])")
-        println("R_gas * temp: $(R_gas * u.temp[cell_id])")
         println("kf_Ea: $(u.reactions.reforming_reactions.MSR_rxn.kf_Ea[cell_id])")
-        println("exp(-kf_Ea / (R_gas * temp)): $(exp(-u.reactions.reforming_reactions.MSR_rxn.kf_Ea[cell_id] / (R_gas * u.temp[cell_id])))")
+        println("exp(-kf_Ea / (R_gas * temp)): $(exp(-u.reactions.reforming_reactions.MSR_rxn.kf_Ea[cell_id] / (u.R_gas[cell_id] * u.temp[cell_id])))")
         println("kf_A: $(u.reactions.reforming_reactions.MSR_rxn.kf_A[cell_id])")
         println("k_MSR: $(k_MSR)")    
         
@@ -99,6 +97,7 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         println("u.net_rates.reforming_reactions.MSR_rxn[1]: $(u.net_rates.reforming_reactions.MSR_rxn[1])")
         println("")
         =#
+        
 
         #MD
         k_MD = u.reactions.reforming_reactions.MD_rxn.kf_A[cell_id] * exp(-u.reactions.reforming_reactions.MD_rxn.kf_Ea[cell_id] / (u.R_gas[cell_id] * u.temp[cell_id]))
