@@ -1,0 +1,43 @@
+function add_region!(
+    config, name;
+    type,
+    initial_conditions,
+    properties,
+    optimized_syms,
+    cache_syms_and_units,
+    region_function
+)
+
+    region_cells = collect(getcellset(config.grid, name))
+
+    for cell_id in region_cells
+        for field in propertynames(initial_conditions)
+            var = config.u_proto[field]
+            initial_condition = initial_conditions[field]
+            if var isa NamedTuple
+                for sub_name in propertynames(var)
+                    var[sub_name][cell_id] = initial_condition[sub_name]
+                end
+            else
+                var[cell_id] = initial_condition
+            end
+        end
+    end
+
+    for field in optimized_syms
+        config.optimized_parameters[field] = properties[field]
+    end
+
+    region = RegionSetupInfo(name, type, initial_conditions, properties, cache_syms_and_units, region_function, region_cells)
+
+    if region in config.regions
+        existing_region_idx = findfirst(x -> x == region, config.regions)
+
+        config.regions[existing_region_idx] = region
+    else   
+        push!(config.regions, region)
+
+        config.regions[1].cache_syms_and_units = merge(config.regions[1].cache_syms_and_units, optimized_syms) 
+    end
+    return 
+end

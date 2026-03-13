@@ -98,15 +98,30 @@ export mw_avg!, rho_ideal!, molar_concentrations!, get_cell_cp #other misc props
 include("physics/physics_face_summation_functions.jl")
 export sum_mass_flux_face_to_cell!
 
-# ----- Setup and Recording Methods -----
-#   ---- Sim Config ----
+# ----- Setup Methods -----
 include("setup_and_recording/sim_config_helper_functions.jl")
 export get_cell_set_total_volume, get_facet_set_total_area, get_facet_set_cells_respective_areas, get_cell_ids_in_facet_set
 
-include("setup_and_recording/sim_config.jl")
-export create_fvm_config, add_region!, add_patch!, add_controller!, finish_fvm_config, run_and_check_units
-export SimulationConfigInfo, RegionSetupInfo, FVMSystem, AbstractController, ControllerSetupInfo
+include("setup_and_recording/sim_config_base.jl")
+export create_fvm_config, RegionSetupInfo, PatchSetupInfo, ControllerSetupInfo, SimulationConfigInfo
 
+include("setup_and_recording/sim_config_merge_handling.jl")
+export merge_region_properties, merge_region_caches
+
+include("setup_and_recording/sim_config_regions.jl")
+export add_region!
+
+include("setup_and_recording/sim_config_patches.jl")
+export add_patch!
+
+include("setup_and_recording/sim_config_controllers.jl")
+export add_controller!
+
+include("setup_and_recording/sim_config_units.jl")
+export run_and_check_units
+
+include("setup_and_recording/sim_config_finishing.jl")
+export finish_fvm_config, FVMSystem
 
 #   ---- Sim Recording ----
 include("setup_and_recording/sim_recording.jl")
