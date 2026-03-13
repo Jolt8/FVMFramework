@@ -90,7 +90,6 @@ export PAM_reforming_react_cell!
 #   ---- Helper Functions ----
 include("physics/physics_helper_functions.jl")
 export upwind, harmonic_mean #for fluxes
-export R_gas #constant referenced almost everywhere
 export van_t_hoff, arrenhius_k, K_gibbs_free #for chemical reactions
 export mw_avg!, rho_ideal!, molar_concentrations!, get_cell_cp #other misc props
 
