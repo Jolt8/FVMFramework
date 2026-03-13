@@ -11,7 +11,7 @@ function append_axes!(temp_axes, axes_length, data, property_name, n_cells)
                 n_faces = length(data[property_name][1])
                 start_idx = axes_length + 1
 
-                push!(temp_axes, (property_name => (start_idx, n_faces)))
+                push!(temp_axes, (property_name => (start_idx, n_faces, n_cells)))
                 axes_length += n_cells * n_faces
             elseif data[property_name][1] isa Number #this is for basically everything else including n_cell properties
                 n = length(data[property_name])
