@@ -410,7 +410,7 @@ special_caches = (
                 0.0u"mol/s", 
                 length(reaction_names)
             )
-        )
+        ), #don't forget the comma!
     ), 
     molar_concentrations = NamedTuple{species_names}(
         fill(
@@ -427,10 +427,7 @@ special_caches = (
 )
 
 #you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful named tuples
-du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches, check_units = true);
-
-hi = 1
-#=
+du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches, check_units = false);
 
 f_closure_implicit = (du, u, p, t) -> pipe_f!(
     du, u, p, t, 
@@ -489,7 +486,7 @@ desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
-sol = solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
+VSCodeServer.@profview sol = solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
 
 record_sol = true
 
@@ -511,7 +508,6 @@ if record_sol == true
 end
 
 hi = 1
-
 
 #=
 function conversion_from_residence_time(tMax)
