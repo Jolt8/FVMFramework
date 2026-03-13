@@ -2,7 +2,7 @@ using ComponentArrays
 using BenchmarkTools
 
 u = ComponentVector(a = [0.0, 0.0], b = [0.0, 0.0])
-Base.getindex(u::ComponentArray, i::Symbol) = Base._views(getproperty(u, i))
+Base.getindex(u::ComponentArray, i::Symbol) = getproperty(u, i)
 #@inline Base.setindex(x::ComponentArray, f::Symbol, v::Float64)::test = setproperty!(x::ComponentArray, f::Symbol, v::Float64)
 
 getaxes(u)[1]
