@@ -1,5 +1,5 @@
 #Ok, so, I've been struggling for a while now to get a data structure that can support all the things shown off in this file
-#thus, I think I'm going to have to create my own data structure 
+#thus, I think I'm going to have to create my own data structure to handle these specific edge cases. Can you take a look at requirements_example and why_we_cant_use_componentarrays to inform your design of this new datatype and its methods?
 #
 
 using ComponentArrays 
@@ -44,7 +44,6 @@ function ode_for_testing_f!(
     du_total_vec = LazyArrays.Vcat(du_vec, du_cache_vec)
     u_total_vec = LazyArrays.Vcat(properties_vec, u_vec, u_cache_vec) 
     #this cannot be a lazy merge, it must be a eager/dense merge
-    #
 
     du = ComponentArray(du_total_vec, du_total_axes)
     u = ComponentArray(u_total_vec, u_total_axes)
@@ -64,7 +63,7 @@ function ode_for_testing_f!(
 
     #CAPABILITIES THAT REQUIRE 0 ALLOCATIONS
     @batch for cell_id in 1:length(cell_volumes) #supports @batch
-        du.mass_fractions[:methylene_blue][cell_id] += 1.0 #symbolic indexing
+        du.mass_fractions[:methylene_blue][cell_id] += 1.0 #symbolic indexing 
         du.mass_fractions.methylene_blue[cell_id] += 1.0 #dot indexing
 
         du[1] #looks or is an array under the hood to @batch can use it
@@ -213,14 +212,3 @@ save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 @time sol = solve(implicit_prob, FBDF())
-
-function test_get_tmp(du, u)
-    println(typeof(du))
-    test = get_tmp(DiffCache([0.0, 0.0], 10), du)
-
-    println(test)
-end
-
-jac_sparsity = ADTypes.jacobian_sparsity(
-    test_get_tmp, du_vec, u_vec, TracerSparsityDetector()
-)
