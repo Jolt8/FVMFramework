@@ -287,7 +287,8 @@ Zero-allocation after the first call (no resizing).
     offset = 0
     for v in vecs
         n = length(v)
-        @inbounds copyto!(buffer, offset + 1, v, 1, n)
+        #@views buffer[offset+1:offset+n] = v
+        @inbounds copyto!(buffer, offset + 1, v, 1, n) #this still allocates and causes runtime dispatch
         offset += n
     end
     return buffer
@@ -314,6 +315,8 @@ function merge_axes(axes_tuple::Tuple, lengths::Tuple)
 end
 
 function _collect_shifted!(entries, values, ax::NamedTuple, offset::Int)
+    #ISSUE #1: duplicate fields should be allowed where the first instance is made equal to the last instance
+    #this will ensure that if u.rho is a state variable, either u.rho from u_caches or u.rho from properties will be used
     for name in keys(ax)
         if name in entries
             error("Duplicate field name during merge: $name. Rename one of the fields.")
@@ -665,5 +668,3 @@ end
 if abspath(PROGRAM_FILE) == @__FILE__
     __test__()
 end
-
-__test__()
