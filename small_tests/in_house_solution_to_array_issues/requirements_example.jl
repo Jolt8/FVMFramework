@@ -62,7 +62,7 @@ function ode_for_testing_f!(
     #END OF SETUP
 
     #CAPABILITIES THAT REQUIRE 0 ALLOCATIONS
-    @batch for cell_id in 1:length(cell_volumes) #supports @batch
+    for cell_id in 1:length(cell_volumes) #supports @batch
         du.mass_fractions[:methylene_blue][cell_id] += 1.0 #symbolic indexing 
         du.mass_fractions.methylene_blue[cell_id] += 1.0 #dot indexing
 
@@ -70,12 +70,13 @@ function ode_for_testing_f!(
 
         u.net_rates.reforming_reactions.WGS_rxn += 1.0 #supports non cell_id indexed fields
 
+        #=
         for species_name in keys(u.mass_fractions)
             du.mass_fractions[species_name][cell_id] += 1.0 #supports fast looping through fields without allocations
             for reaction in keys(u.net_rates.reforming_reactions) #supports nested field looping
                 du.net_rates.reforming_reactions[reaction] += 1.0 #supports fast looping through single value fields without allocations
             end
-        end
+        end=#
 
         for face_idx in 1:6
             du.mass_face[cell_id][face_idx] += 1.0 #supports fast looping through face indexed fields without allocations
@@ -94,7 +95,7 @@ other things to keep in mind
     - it's probably going to be called FVMArray or maybe something even more generic because I could see other people using this
 =#
 
-n_cells = 1000
+n_cells = 100000
 n_faces = 6
 reaction_names = (:WGS_rxn, :MD_rxn)
 
@@ -180,7 +181,7 @@ t = 0.0
     $du_combined_axes, $u_combined_axes
 )
 
-
+#=
 f_closure = (du, u, p, t) -> ode_for_testing_f!(
     du, u, p, t,
 
