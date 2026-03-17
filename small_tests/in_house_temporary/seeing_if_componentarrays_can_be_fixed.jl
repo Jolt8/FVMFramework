@@ -13,6 +13,9 @@ using ComponentArrays
 end
 
 @generated function foreach_field_at!(f, cell_id::Int, groups::Vararg{ComponentVector, N}) where {N}
+    #println(fieldnames(groups[1].parameters[1]))
+    #println(fieldnames(groups[1].parameters[3]))
+    println(fieldnames(groups[1].parameters[3]))
     first_ax = fieldnames(groups[1].parameters[3])
     exprs = []
     for n in first_ax
@@ -39,3 +42,5 @@ getfield(test, :axes)
 foreach_field_at!(1, test.mass_fractions) do species_name, mass_fractions
 
 end
+
+getaxes(test.parent)
