@@ -11,20 +11,20 @@ include("FVMArray.jl")
 function ode_for_testing_f!(
     du_vec, u_vec, p_vec, t,
 
-    du_merged_buffer, u_merged_buffer,
-    du_merged_axes, u_merged_axes,
+    du_merged_diff_cache_vec, du_merged_axes, 
+    u_merged_vec, u_merged_axes,
+    
+    property_unitrange,
+    p_unitrange,
 
-    du_axes, u_axes, 
-    du_caches_vec, du_caches_axes, 
-    u_caches_vec, u_caches_axes,
-    properties_vec, properties_axes, 
-    p_axes,
+    properties_vec,
     
     cell_volumes,
 )
 
-    du_cache_vec = get_tmp(du_diff_cache_vec, first(u_vec) + first(p_vec))
-    u_cache_vec = get_tmp(u_diff_cache_vec, first(u_vec) + first(p_vec)) 
+    #=
+    du_cache_vec = get_tmp(du_caches_vec, first(u_vec) + first(p_vec))
+    u_cache_vec = get_tmp(u_caches_vec, first(u_vec) + first(p_vec)) 
 
     du_cache_vec .= 0.0 
     u_cache_vec .= 0.0
@@ -40,14 +40,22 @@ function ode_for_testing_f!(
     properties_fvm = FVMArray(properties_vec, properties_axes)
     p_fvm = FVMArray(p_vec, p_axes)
 
-    merge_into!(du_merged_buffer, (du_vec, du_cache_fvm))
-    merge_into!(u_merged_buffer, (u_vec, u_cache_fvm, properties_fvm, p_fvm))
 
-    du = FVMArray(du_merged_buffer, du_merged_axes)
-    u = FVMArray(u_merged_buffer, u_merged_axes)
+    merge_into!(du_merged, (du_vec, du_cache_fvm))
+    merge_into!(u_merged, (u_vec, u_cache_fvm, properties_fvm, p_fvm))
+
+    
 
     #u.diffusion_pre_exponential_factor .= p_fvm.diffusion_pre_exponential_factor[1]
     #u.diffusion_activation_energy .= p_fvm.diffusion_activation_energy[1]
+    =#
+
+    du = FVMArray(get_tmp(du_merged_diff_cache_vec, first(u_vec) + first(p_vec)), du_merged_axes)
+    du .= 0.0
+    u = FVMArray(u_merged_vec, u_merged_axes)
+
+    @views u[property_unitrange] = properties_vec
+    @views u[p_unitrange] = p_vec
 
     @batch for cell_id in 1:length(cell_volumes)
         du.mass_fractions[:methylene_blue][cell_id] += 1.0 
@@ -56,7 +64,7 @@ function ode_for_testing_f!(
         u.net_rates.reforming_reactions.WGS_rxn[1] += 1.0 
 
         foreach_field_at!(cell_id, du.mass_fractions) do species_name, mass_fraction
-            #mass_fraction[species_name] += 1.0 
+            mass_fraction[species_name] += 1.0 
             #foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #this allocates a ton when doing @batch
                 #net_rate[reaction_name] += 1.0 
             #end
@@ -72,7 +80,6 @@ function ode_for_testing_f!(
 
         du.mass[cell_id] += sum(du.mass_face[cell_id]) 
     end
-    return 
 end
 
 #=
@@ -163,36 +170,25 @@ cell_volumes = ones(n_cells)
 du_view = view(du_merged_buffer, 1:length(du_vec))
 u_view = view(u_merged_buffer, 1:length(u_vec))
 
+du_merged_diff_cache = DiffCache(du_merged_buffer, N)
+
+caches_unitrange = length(du_vec) + 1 : length(du_vec) + length(du_caches_vec)
+property_unitrange = length(u_vec) + length(u_caches_vec) + 1 : length(u_vec) + length(u_caches_vec) + length(properties_vec)
+p_unitrange = length(u_vec) + length(u_caches_vec) + length(properties_vec) + 1 : length(u_vec) + length(u_caches_vec) + length(properties_vec) + length(p_vec)
+
 @btime ode_for_testing_f!(
     $du_view, $u_view, $p_vec, 0.0,
 
-    $du_merged_buffer, $u_merged_buffer,
-    $du_merged_axes, $u_merged_axes,
+    $du_merged_diff_cache, $du_merged_axes,
+    $u_merged_buffer, $u_merged_axes,
 
-    $du_axes, $u_axes, 
-    $du_diff_cache_vec, $du_caches_axes, 
-    $u_diff_cache_vec, $u_caches_axes,
-    $properties_vec, $properties_axes, 
-    $p_axes,
+    $property_unitrange,
+    $p_unitrange,
+
+    $properties_vec,
     
     $cell_volumes,
 )
-
-ode_for_testing_f!(
-    du_view, u_view, p_vec, 0.0,
-
-    du_merged_buffer, u_merged_buffer,
-    du_merged_axes, u_merged_axes,
-
-    du_axes, u_axes, 
-    du_diff_cache_vec, du_caches_axes, 
-    u_diff_cache_vec, u_caches_axes,
-    properties_vec, properties_axes, 
-    p_axes,
-    
-    cell_volumes,
-)
-
 #this takes 22.8 μs with 37 allocations and 2.62 KiB with 1000 cells
 #this takes 201.1 μs with 37 allocations and 2.62 KiB with 10000 cells (this is with @batch)
 #this takes 267.3 μs with 37 allocations and 2.62 KiB with 10000 cells (this is without @batch)
@@ -201,6 +197,23 @@ ode_for_testing_f!(
 #this takes 267.3 μs with 37 allocations and 2.62 KiB with 1000 cells (this is without @batch)
 #4.929 ms (37 allocations: 2.62 KiB) with 100000 cells (without @batch)
 #4.223 ms (37 allocations: 2.62 KiB) with 100000 cells (with @batch)
+#5.554 (22 allocations, 4.58 MiB) with 100000 cells (with DiffCached du_merged and u_merged)
+#2.175 ms (1 allocations, 288 bytes) 
+
+ode_for_testing_f!(
+    du_view, u_view, p_vec, 0.0,
+
+    du_merged_diff_cache, du_merged_axes,
+    u_merged_buffer, u_merged_axes,
+
+    property_unitrange,
+    p_unitrange,
+
+    properties_vec,
+    
+    cell_volumes,
+)
+
 
 
 function test_raw_loop_performance(du_merged_buffer, u_merged_buffer)
@@ -217,22 +230,19 @@ end
 f_closure = (du, u, p, t) -> ode_for_testing_f!(
     du, u, p, t,
 
-    du_merged_buffer, u_merged_buffer,
-    du_merged_axes, u_merged_axes,
+    du_merged_diff_cache, du_merged_axes,
+    u_merged_buffer, u_merged_axes,
 
-    du_axes, u_axes, 
-    du_diff_cache_vec, du_caches_axes, 
-    u_diff_cache_vec, u_caches_axes,
-    properties_vec, properties_axes, 
-    p_axes,
+    property_unitrange,
+    p_unitrange,
+
+    properties_vec,
     
     cell_volumes,
 )
 
-detector = SparseConnectivityTracer.TracerSparsityDetector()
-
 jac_sparsity = ADTypes.jacobian_sparsity(
-    (du, u) -> f_closure(du, u, p_vec, 0.0), du_vec, u_vec, detector
+    (du, u) -> f_closure(du, u, p_vec, 0.0), du_view, u_view, SparseConnectivityTracer.TracerSparsityDetector()
 )
 
 ode_func = ODEFunction(f_closure, jac_prototype = float.(jac_sparsity))
@@ -247,7 +257,7 @@ desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
-@time sol = solve(implicit_prob, FBDF())
+@btime sol = solve(implicit_prob, FBDF())
 
 explicit_prob = ODEProblem(f_closure, u_view, tspan, p_vec)
 @btime sol = solve(explicit_prob, Tsit5())
