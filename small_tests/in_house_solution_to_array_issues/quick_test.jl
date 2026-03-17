@@ -67,6 +67,34 @@ end
     end
 end
 
+function _loop_function(du, u, cell_volumes)
+    @batch for cell_id in 1:100000
+        #du.mass_fractions.methylene_blue[cell_id] += 1.0 
+        #du.mass_fractions[:methylene_blue][cell_id] += 1.0 
+
+        #u.net_rates.reforming_reactions.WGS_rxn[1] += 1.0 
+
+        #=
+        foreach_field_at!(cell_id, du.mass_fractions) do species_name, mass_fraction
+            mass_fraction[species_name] += 1.0 
+            #foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #this allocates a ton when doing @batch
+                #net_rate[reaction_name] += 1.0 
+            #end
+        end
+        
+        foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #oh, this is fine when used outside another foreach_field_at!
+            net_rate[reaction_name] += 1.0 
+        end
+
+        for face_idx in 1:6
+            du.mass_face[cell_id][face_idx] += 1.0 
+        end
+
+        du.mass[cell_id] += sum(du.mass_face[cell_id]) 
+        =#
+    end
+end
+
 function ode_for_testing_f!(
     du_vec, u_vec, p_vec, t,
 
@@ -87,30 +115,17 @@ function ode_for_testing_f!(
         du = VirtualFVMArray((du_vec, get_tmp(du_diff_cache, first(u_vec) + first(p_vec))), virtual_du_axes)
     end
 
-    @batch for cell_id in 1:length(cell_volumes)
-        du.mass_fractions[:methylene_blue][cell_id] += 1.0 
-        du.mass_fractions.methylene_blue[cell_id] += 1.0 
+    du_mass_fractions_methylene_blue = du.mass_fractions.methylene_blue
 
-        u.net_rates.reforming_reactions.WGS_rxn[1] += 1.0 
 
-        foreach_field_at!(cell_id, du.mass_fractions) do species_name, mass_fraction
-            mass_fraction[species_name] += 1.0 
-            #foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #this allocates a ton when doing @batch
-                #net_rate[reaction_name] += 1.0 
-            #end
-        end
-
-        foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #oh, this is fine when used outside another foreach_field_at!
-            net_rate[reaction_name] += 1.0 
-        end
-
-        for face_idx in 1:6
-            du.mass_face[cell_id][face_idx] += 1.0 
-        end
-
-        du.mass[cell_id] += sum(du.mass_face[cell_id]) 
+    @batch for i in 1:length(cell_volumes) #oh, ok, so creating a separate variable for the field does not incur allocations but the methods in _loop_function does
+        du_mass_fractions_methylene_blue[i] += 1.0 
     end
-    return 
+
+    #this does not make me feel any better because why was it working fine in the first place
+    
+
+    _loop_function(du, u, cell_volumes)
 end
 
 #=
@@ -196,9 +211,14 @@ cell_volumes = ones(n_cells)
 virtual_du_axes = virtual_merge_axes((du_axes, du_caches_axes))
 virtual_u_axes = virtual_merge_axes((u_axes, u_caches_axes, properties_axes, p_axes))
 
-du_view = view(du_vec, 1:length(du_vec))
+du_view = view(du_vec, 1:length(du_vec)) #for some reason this is faster than du_view = view(test, 1:length(du_vec))
 u_view = view(u_vec, 1:length(u_vec))
 
+du_view .= 0.0
+
+#I FUCKING CAN'T, THERE MUST BE A GHOST IN THE MACHINE
+#there was this one time where I deleted all the methods for ode_for_testing_f! and it didn't allocate, but then I restarted my session and now it does allocate
+#I'm going insane
 @btime ode_for_testing_f!(
     $du_view, $u_view, $p_vec, 0.0,
     
@@ -211,6 +231,8 @@ u_view = view(u_vec, 1:length(u_vec))
     $cell_volumes,
 )
 
+
+#=
 #this takes 22.8 μs with 37 allocations and 2.62 KiB with 1000 cells
 #this takes 201.1 μs with 37 allocations and 2.62 KiB with 10000 cells (this is with @batch)
 #this takes 267.3 μs with 37 allocations and 2.62 KiB with 10000 cells (this is without @batch)
@@ -222,7 +244,7 @@ u_view = view(u_vec, 1:length(u_vec))
 #5.554 (22 allocations, 4.58 MiB) with 100000 cells (with DiffCached du_merged and u_merged)
 #2.175 ms (1 allocations, 288 bytes) 
 
-@time ode_for_testing_f!(
+ode_for_testing_f!(
     du_view, u_view, p_vec, 0.0,
     
     virtual_du_axes, virtual_u_axes,
@@ -293,7 +315,7 @@ save_interval = (tspan[end] / desired_steps)
 
 u_view .= 0.0
 explicit_prob = ODEProblem(f_closure, u_view, tspan, p_vec)
-@btime sol = solve(explicit_prob, Tsit5(), save_everystep = false, save_start = false)
+@time sol = solve(explicit_prob, Tsit5())
 
 u_named = FVMArray(sol.u[1], u_axes)
 

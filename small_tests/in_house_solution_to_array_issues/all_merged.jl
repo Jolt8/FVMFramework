@@ -54,15 +54,15 @@ function ode_for_testing_f!(
         du.net_rates.reforming_reactions.WGS_rxn[1] += 1.0 
 
         foreach_field_at!(cell_id, du.mass_fractions) do species_name, mass_fraction
-            #mass_fraction[species_name] += 1.0 
+            mass_fraction[species_name] += 1.0 
             #foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #this allocates a ton when doing @batch
                 #net_rate[reaction_name] += 1.0 
             #end
         end
 
-        #foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #oh, this is fine when used outside another foreach_field_at!
-            #net_rate[reaction_name] += 1.0 
-        #end
+        foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #oh, this is fine when used outside another foreach_field_at!
+            net_rate[reaction_name] += 1.0 
+        end
 
         for face_idx in 1:6
             du.mass_face[cell_id][face_idx] += 1.0 
@@ -72,7 +72,7 @@ function ode_for_testing_f!(
     end
 end
 
-n_cells = 10000
+n_cells = 100000
 n_faces = 6
 reaction_names = (:WGS_rxn, :MD_rxn)
 N = 2
@@ -173,7 +173,7 @@ function test_raw_loop_performance(du_merged_buffer, u_merged_buffer)
     end
 end
 
-@btime test_raw_loop_performance(du_merged_buffer, u_merged_buffer)
+#@btime test_raw_loop_performance(du_merged_buffer, u_merged_buffer)
 #1.308 ms (0 allocations: 0 bytes) for 100000 cells (with @batch)
 #1.086 ms (0 allocations: 0 bytes) for 100000 cells (without @batch)
 #1.102 ms (58 allocations: 3.50 KiB) for 100000 cells (with #threads)
@@ -215,11 +215,11 @@ function iluzero(W, du, u, p, t, newW, Plprev, Prprev, solverdata)
     Pl, nothing
 end
 
-VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
-@btime sol = solve(implicit_prob, FBDF())
-#=
+#VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
+#@btime sol = solve(implicit_prob, FBDF())
+
 explicit_prob = ODEProblem(f_closure, u_merged_buffer, tspan, p_vec)
-@btime sol = solve(explicit_prob, Tsit5())
+@btime sol = solve(explicit_prob, Tsit5(), save_everystep = false)
 
 findall(x -> x != 0.0, sol.u[1])
 
