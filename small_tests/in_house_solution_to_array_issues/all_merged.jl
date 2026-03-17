@@ -72,7 +72,7 @@ function ode_for_testing_f!(
     end
 end
 
-n_cells = 100000
+n_cells = 10000
 n_faces = 6
 reaction_names = (:WGS_rxn, :MD_rxn)
 N = 2
@@ -215,9 +215,9 @@ function iluzero(W, du, u, p, t, newW, Plprev, Prprev, solverdata)
     Pl, nothing
 end
 
-@btime sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
+VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
 @btime sol = solve(implicit_prob, FBDF())
-
+#=
 explicit_prob = ODEProblem(f_closure, u_merged_buffer, tspan, p_vec)
 @btime sol = solve(explicit_prob, Tsit5())
 
