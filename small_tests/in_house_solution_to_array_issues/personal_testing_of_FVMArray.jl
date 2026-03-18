@@ -177,7 +177,7 @@ property_unitrange = length(u_vec) + length(u_caches_vec) + 1 : length(u_vec) + 
 p_unitrange = length(u_vec) + length(u_caches_vec) + length(properties_vec) + 1 : length(u_vec) + length(u_caches_vec) + length(properties_vec) + length(p_vec)
 
 @btime ode_for_testing_f!(
-    $du_view, $u_view, $p_vec, 0.0,
+    $du_vec, $u_vec, $p_vec, 0.0,
 
     $du_merged_diff_cache, $du_merged_axes,
     $u_merged_buffer, $u_merged_axes,
@@ -214,8 +214,28 @@ ode_for_testing_f!(
     cell_volumes,
 )
 
+du_test = ComponentArray(
+    mass_fractions = (
+        methylene_blue = zeros(n_cells),
+        water = zeros(n_cells)
+    ),
+    pressure = zeros(n_cells)
+)
 
+du_test_axes, du_test_offset = create_axes(du_test)
+du_test_vec = zeros(du_test_offset)
+du_test_fvm_array = FVMArray(du_test_vec, du_test_axes)
 
+function test_regular_FVMArray(du, n_cells)
+    @batch for cell_id in 1:n_cells
+        du.mass_fractions.methylene_blue[cell_id] += 1.0
+    end
+end
+
+@btime test_regular_FVMArray($du_test_fvm_array, $n_cells)
+
+hi = 1
+#=
 function test_raw_loop_performance(du_merged_buffer, u_merged_buffer)
     for i in eachindex(du_merged_buffer)
         du_merged_buffer[i] += 1.0
