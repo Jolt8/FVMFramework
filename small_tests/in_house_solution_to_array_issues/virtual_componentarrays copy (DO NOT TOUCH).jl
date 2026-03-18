@@ -4,6 +4,8 @@ using Polyester
 using BenchmarkTools
 using SparseConnectivityTracer
 import ADTypes
+using OrdinaryDiffEq
+
 
 # ============================================================================
 # FaceVectorView — view into a flat vector as [cell_id][face_idx]
@@ -181,7 +183,7 @@ end
 # Test Bench
 # ============================================================================
 
-n_cells = 100000
+n_cells = 1000
 n_faces = 6
 reaction_names = (:WGS_rxn, :MD_rxn)
 N = 2
@@ -200,10 +202,6 @@ u_proto = ComponentVector(
         methylene_blue = zeros(n_cells),
         water = zeros(n_cells)
     ),
-    molar_concentrations = (
-        methylene_blue = zeros(n_cells),
-        water = zeros(n_cells)
-    ),
     pressure = zeros(n_cells)
 )
 
@@ -213,6 +211,10 @@ du_cache_proto = ComponentVector(
     net_rates = (
         reforming_reactions = NamedTuple{reaction_names}(fill(0.0, length(reaction_names))),
     ), 
+    molar_concentrations = (
+        methylene_blue = zeros(n_cells),
+        water = zeros(n_cells)
+    ),
     rho = zeros(n_cells)
 )
 
@@ -221,6 +223,10 @@ u_cache_proto = ComponentVector(
     mass_face = fill(zeros(n_faces), n_cells),
     net_rates = (
         reforming_reactions = NamedTuple{reaction_names}(fill(0.0, length(reaction_names))),
+    ),
+    molar_concentrations = (
+        methylene_blue = zeros(n_cells),
+        water = zeros(n_cells)
     ),
     rho = zeros(n_cells)
 )
@@ -276,17 +282,17 @@ function ode_for_testing_f!(
         
         # Unrolled iteration over multiple logical arrays
         # Closure args: cid, field1, field2 (Matching best style)
-        foreach_field_at!(cell_id, u.mass_fractions, u.molar_concentrations) do cid, mf, mc
+        foreach_field_at!(cell_id, du.mass_fractions, du.molar_concentrations) do cell_id, mass_fractions, molar_concentrations
             # mf and mc are already resolved views
-            mf[cid] += 1.0
-            mc[cid] += 1.0
+            mass_fractions[cell_id] += 1.0
+            molar_concentrations[cell_id] += 1.0
         end
         
         # Unrolled iteration over scalars/sub-caches
         # Closure args: name, groups... (Matching best style)
-        foreach_field_at!(u.net_rates.reforming_reactions) do reaction_symbol, reforming_net_rates
+        foreach_field_at!(du.net_rates.reforming_reactions) do reaction_name, reforming_net_rates
             # Match best_componentarrays_looping_style.jl: Use indexing via the symbol
-            reforming_net_rates[reaction_symbol] += 1.0
+            reforming_net_rates[reaction_name] += 1.0
         end
         
         # Cross-buffer access
@@ -295,14 +301,48 @@ function ode_for_testing_f!(
 end
 
 # Benchmark
-du_view = du_vec
-u_view = u_vec
-
 println("Benchmarking ode_for_testing_f! with 'Best' Looping Style...")
 @btime ode_for_testing_f!(
-    $du_view, $u_view, $p_vec, 0.0,
+    $du_vec, $u_vec, $p_vec, 0.0,
     $virtual_du_axes, $virtual_u_axes,
     $du_diff_cache_vec, $u_diff_cache_vec, 
     $properties_vec,
     $cell_volumes,
 )
+
+f_closure = (du, u, p, t) -> ode_for_testing_f!(
+    du, u, p, t,
+
+    virtual_du_axes, virtual_u_axes,
+
+    du_diff_cache_vec, u_diff_cache_vec, 
+
+    properties_vec,
+    
+    cell_volumes
+)
+
+length(du_vec)
+length(u_vec)
+
+jac_sparsity = SparseConnectivityTracer.jacobian_sparsity(
+    (du, u) -> f_closure(du, u, p_vec, 0.0), du_vec, u_vec, SparseConnectivityTracer.TracerLocalSparsityDetector()
+)
+
+ode_func = ODEFunction(f_closure, jac_prototype = float.(jac_sparsity))
+
+t0 = 0.0
+tMax = 1.0
+tspan = (t0, tMax)
+
+implicit_prob = ODEProblem(ode_func, u_vec, tspan, p_vec)
+
+desired_steps = 100
+save_interval = (tspan[end] / desired_steps)
+
+#@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
+@time sol = solve(implicit_prob, FBDF())
+
+u_vec .= 0.0
+explicit_prob = ODEProblem(f_closure, u_vec, tspan, p_vec)
+@time sol = solve(explicit_prob, Tsit5())
