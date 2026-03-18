@@ -1,11 +1,10 @@
-using ComponentArrays 
 using PreallocationTools
 using Polyester
-using LazyArrays
 using BenchmarkTools
 using SparseConnectivityTracer
 import ADTypes
 using OrdinaryDiffEq
+using ComponentArrays
 include("FVMArray.jl")
 
 struct VirtualAxis{Src, Ax}
@@ -67,31 +66,31 @@ end
     end
 end
 
+using LoopVectorization
+
 function _loop_function(du, u, cell_volumes)
-    @batch for cell_id in 1:100000
-        #du.mass_fractions.methylene_blue[cell_id] += 1.0 
-        #du.mass_fractions[:methylene_blue][cell_id] += 1.0 
+    @batch for cell_id in 1:length(cell_volumes)
+        du.mass_fractions.methylene_blue[cell_id] += 1.0 
 
         #u.net_rates.reforming_reactions.WGS_rxn[1] += 1.0 
 
-        #=
-        foreach_field_at!(cell_id, du.mass_fractions) do species_name, mass_fraction
+        
+        #=foreach_field_at!(cell_id, du.mass_fractions) do species_name, mass_fraction
             mass_fraction[species_name] += 1.0 
             #foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #this allocates a ton when doing @batch
                 #net_rate[reaction_name] += 1.0 
             #end
-        end
+        end=#
         
-        foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #oh, this is fine when used outside another foreach_field_at!
+        #=foreach_field_at!(1, du.net_rates.reforming_reactions) do reaction_name, net_rate #oh, this is fine when used outside another foreach_field_at!
             net_rate[reaction_name] += 1.0 
-        end
+        end=#
 
         for face_idx in 1:6
             du.mass_face[cell_id][face_idx] += 1.0 
         end
 
         du.mass[cell_id] += sum(du.mass_face[cell_id]) 
-        =#
     end
 end
 
@@ -114,16 +113,6 @@ function ode_for_testing_f!(
         u = VirtualFVMArray((u_vec, get_tmp(u_diff_cache, first(u_vec) + first(p_vec)), properties_vec, p_vec), virtual_u_axes)
         du = VirtualFVMArray((du_vec, get_tmp(du_diff_cache, first(u_vec) + first(p_vec))), virtual_du_axes)
     end
-
-    du_mass_fractions_methylene_blue = du.mass_fractions.methylene_blue
-
-
-    @batch for i in 1:length(cell_volumes) #oh, ok, so creating a separate variable for the field does not incur allocations but the methods in _loop_function does
-        du_mass_fractions_methylene_blue[i] += 1.0 
-    end
-
-    #this does not make me feel any better because why was it working fine in the first place
-    
 
     _loop_function(du, u, cell_volumes)
 end
@@ -219,6 +208,19 @@ du_view .= 0.0
 #I FUCKING CAN'T, THERE MUST BE A GHOST IN THE MACHINE
 #there was this one time where I deleted all the methods for ode_for_testing_f! and it didn't allocate, but then I restarted my session and now it does allocate
 #I'm going insane
+#I FIGURED IT OUT
+#for some reason if you have @batch fail on 
+    #FieldError: type StrideArraysCore.AbstractPtrArray has no field `mass_fractions`, 
+    #available fields: `ptr`, `sizes`, `strides`, `offsets`
+#and then run it, it will run multithreaded without allocations
+#the only way to do this consistently is to try to do @batch and try to get a field from a ComponentArray
+#and then the error will show up,
+#and then everything past that point will work fine 
+#this resets once you restart your session
+#perhaps we're going to have to overload some StrideArraysCore stuff
+#Based on the fact that StrideArraysCore.AbstractPtrArray is used for SIMD, I'm guess it's just denying SIMD from working
+#which is bad
+#strangely, just using @simd without @batch works fine
 @btime ode_for_testing_f!(
     $du_view, $u_view, $p_vec, 0.0,
     
@@ -232,7 +234,28 @@ du_view .= 0.0
 )
 
 
-#=
+du_test = ComponentArray(
+    mass_fractions = (
+        methylene_blue = zeros(n_cells),
+        water = zeros(n_cells)
+    ),
+    pressure = zeros(n_cells)
+)
+
+du_test_axes, du_test_offset = create_axes(du_test)
+du_test_vec = zeros(du_test_offset)
+du_test_fvm_array = FVMArray(du_test_vec, du_test_axes)
+
+using LoopVectorization
+
+function test_regular_FVMArray(du, n_cells)
+    @batch for cell_id in 1:n_cells
+        du.mass_fractions.methylene_blue[cell_id] += 1.0
+    end
+end
+
+@btime test_regular_FVMArray($du_test, $n_cells)
+
 #this takes 22.8 μs with 37 allocations and 2.62 KiB with 1000 cells
 #this takes 201.1 μs with 37 allocations and 2.62 KiB with 10000 cells (this is with @batch)
 #this takes 267.3 μs with 37 allocations and 2.62 KiB with 10000 cells (this is without @batch)
@@ -302,7 +325,7 @@ jac_sparsity = SparseConnectivityTracer.jacobian_sparsity(
 ode_func = ODEFunction(f_closure, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 100000.0
+tMax = 1.0
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u_view, tspan, p_vec)
