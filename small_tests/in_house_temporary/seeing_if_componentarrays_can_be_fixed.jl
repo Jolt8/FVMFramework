@@ -19,19 +19,21 @@ using ComponentArrays
     end
 end
 
+n_cells = 100
+
 u = ComponentArray(
     mass_fractions = (
-        methylene_blue = zeros(100),
-        water = zeros(100),
+        methylene_blue = zeros(n_cells),
+        water = zeros(n_cells),
     ),
     molar_concentrations = (
-        methylene_blue = zeros(100), 
-        water = zeros(100)
+        methylene_blue = zeros(n_cells), 
+        water = zeros(n_cells)
     )
 )
 
-function test_foreach_field_allocations(u)
-    for cell_id in 1:100
+function test_foreach_field_allocations(u, n_cells)
+    for cell_id in 1:n_cells
         foreach_field_at!(cell_id, u.mass_fractions, u.molar_concentrations) do species, mass_fractions, molar_concentrations
             mass_fractions[species] += 1.0
             molar_concentrations[species] += 1.0
@@ -40,4 +42,4 @@ function test_foreach_field_allocations(u)
     return nothing
 end
 
-@btime test_foreach_field_allocations($u) 
+@btime test_foreach_field_allocations($u, $n_cells) 
