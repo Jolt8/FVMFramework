@@ -6,21 +6,11 @@ function run_and_check_units(du0_vec_units, u0_vec_units, geo, system, du_unitfu
     u_unitful_cache_vec = upreferred.(u_unitful_cache_vec)
     u_unitful_cache_vec .*= 0.0
 
-    du_cache_nt = create_views_inline(upreferred.(du_unitful_cache_vec), system.du_cache_axes)
-    u_cache_nt = create_views_inline(upreferred.(u_unitful_cache_vec), system.u_cache_axes)
-
     du0_vec_units .*= 0.0
     du0_vec_units ./= 1.0u"s"
 
-    du_nt = create_views_inline(upreferred.(du0_vec_units), system.du_proto_axes)
-    u_nt = create_views_inline(upreferred.(u0_vec_units), system.u_proto_axes)
-
-    du = (; du_nt..., du_cache_nt...)
-    u = (; system.merged_properties..., u_nt..., u_cache_nt...)
-    #remember, the right-most fields overwrite other fields with the same name
-
-    u.rho .= (u_cache_nt.rho .+ system.merged_properties.rho)
-
+    u = VirtualFVMArray((u0_vec_units, u_unitful_cache_vec, system.merged_properties), system.u_virtual_axes)
+    du = VirtualFVMArray((du0_vec_units, du_unitful_cache_vec), system.du_virtual_axes)
 
     #applying units 
     cell_volumes = geo.cell_volumes .* u"m^3"

@@ -46,7 +46,7 @@ struct FVMSystem
     u_virtual_axes::NamedTuple
     du_diff_cache_vec::DiffCache
     u_diff_cache_vec::DiffCache
-    merged_properties::ComponentVector
+    merged_properties::Vector{Number}
     p_vec::Vector{Number}
 end
 
@@ -197,22 +197,26 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
     du_diff_cache_vec = DiffCache(ustrip.(upreferred.(deepcopy(du_unitful_cache_vec))), N)
     u_diff_cache_vec = DiffCache(ustrip.(upreferred.(deepcopy(u_unitful_cache_vec))), N)
 
-    p_vec_units = Vector(config.optimized_parameters)
-    p_vec = ustrip.upreferred(Vector(config.optimized_parameters))
+    p_vec_units = Vector(ComponentVector(config.optimized_parameters))
+    p_vec = ustrip.(upreferred.(Vector(ComponentVector(config.optimized_parameters))))
 
     #we have to split up properties to strip it of units
     properties_vec_units = Vector(merged_properties)
     properties_vec = ustrip.(upreferred.(deepcopy(properties_vec_units)))
 
     #virtual_merge_axes takes in a tuple of ComponentArrays
-    du_virtual_axes = virtual_merge_axes((ComponentVector(du_proto_nt), ComponentVector(merged_caches)))
-    u_virtual_axes = virtual_merge_axes((ComponentVector(u_proto_nt), ComponentVector(merged_caches), ComponentVector(merged_properties), config.optimized_parameters))
+    du_virtual_axes = virtual_merge_axes((ComponentVector(config.u_proto), ComponentVector(merged_caches)))
+    if ComponentVector(config.optimized_parameters) == Union{}[] #if the user doesn't provide any optimized parameters, we ignore them
+        u_virtual_axes = virtual_merge_axes((ComponentVector(config.u_proto), ComponentVector(merged_caches), ComponentVector(merged_properties)))
+    else
+        u_virtual_axes = virtual_merge_axes((ComponentVector(config.u_proto), ComponentVector(merged_caches), ComponentVector(merged_properties), ComponentVector(config.optimized_parameters)))
+    end
 
     if check_units == true
         system = FVMSystem(
             connection_groups, controller_groups, patch_groups, region_groups,
             du_virtual_axes, u_virtual_axes,
-            du_unitful_cache_vec, u_unitful_cache_vec,
+            du_diff_cache_vec, u_diff_cache_vec,
             properties_vec_units,
             p_vec_units
         )

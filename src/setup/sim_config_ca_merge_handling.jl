@@ -6,16 +6,10 @@ function _build_blank_dict!(current_dict, properties, n_cells)
                 current_dict[property_name] = Dict{Symbol, Any}()
             end
             _build_blank_dict!(current_dict[property_name], value, n_cells)
-        elseif value isa AbstractArray || value isa SubArray
+        else
             if !haskey(current_dict, property_name)
                 current_dict[property_name] = zeros(n_cells) .* upreferred(unit(value))
             end
-        elseif value isa Number
-            if !haskey(current_dict, property_name)
-                current_dict[property_name] = value
-            end
-        else
-            println("property: $property_name was not handled")
         end
     end
 end
@@ -52,10 +46,12 @@ function _drill_down_and_fill_patch_properties!(merged_properties, properties, c
         end
     end
 end
+#I don't think this is actually necessary, in fact, it's causing a lot of problems
 
 function _dict_to_namedtuple(dict::Dict{Symbol, Any})
     NamedTuple(k => (v isa Dict{Symbol, Any} ? _dict_to_namedtuple(v) : v) for (k, v) in dict)
 end
+
 
 function merge_region_properties(config)
     n_cells = length(config.geo.cell_volumes)
@@ -71,7 +67,7 @@ function merge_region_properties(config)
         _build_blank_dict!(prop_dict, patch.properties, n_cells)
     end
 
-    merged_properties = ComponentVector(_dict_to_namedtuple(prop_dict))
+    merged_properties = ComponentVector(_dict_to_namedtuple(prop_dict)) #dict to named tuple seems to be required here, but it breaks caches
 
     for region in config.regions
         _drill_down_and_fill_properties!(merged_properties, region.properties, region.region_cells)
@@ -90,6 +86,7 @@ function _drill_down_and_fill_caches!(merged_caches, region_cache_syms_and_units
         property_unit = getproperty(region_cache_syms_and_units, property_name)
         
         if property_name in keys(special_caches)
+            
             #special caches are already handled during initialization in cache_dict
         elseif merged_caches[property_name] isa ComponentArray
             #recursively drill down both caches and properties if possible
