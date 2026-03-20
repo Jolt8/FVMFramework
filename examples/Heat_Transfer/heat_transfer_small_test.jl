@@ -2,7 +2,6 @@ using Revise
 using Logging
 
 using FVMFramework
-#I think this take a long time because Enzyme (despite not being installed) throws a warning from DiffEqBaseEnzyme.jl
 
 using Ferrite
 using FerriteGmsh
@@ -137,7 +136,6 @@ f_closure_implicit = (du, u, p, t) -> heat_transfer_f_test!(
     system.du_proto_axes, system.u_proto_axes,
     system.du_cache_axes, system.u_cache_axes
 )
-#just remove t from the above closure function and from methanol_reformer_f_test! itself to NonlinearSolve this system
 
 p_guess = 0.0
 
