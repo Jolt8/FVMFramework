@@ -382,11 +382,9 @@ reaction_names = keys(config.regions[1].properties.reactions.reforming_reactions
 species_names = keys(config.regions[1].properties.species_ids)
  
 #species caches are for things like mass_face, which has an entry for every face of every cell rather than entries for each cell
-special_caches = ComponentVector(
-    mass_face = fill(
-        zeros(n_faces)u"kg", 
-        n_cells
-    ),
+special_caches = ComponentArray(
+    mass_face = zeros(n_cells, n_faces)u"kg",
+    #[zeros(n_faces)u"kg" for _ in 1:n_cells],
     net_rates = (
         reforming_reactions = NamedTuple{reaction_names}(
             fill(
@@ -409,13 +407,7 @@ special_caches = ComponentVector(
     ), #I'm starting to really enjoy these NamedTuple constructors
 )
 
-special_caches.species_mass_flows
-
-ComponentVector(special_caches)
-
-
-typeof(reforming_area_properties.reactions.reforming_reactions.WGS_rxn)
-#you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful named tuples
+#you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful ComponentVectors
 du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches, check_units = false);
 
 f_closure_implicit = (du, u, p, t) -> pipe_f!(
@@ -426,13 +418,12 @@ f_closure_implicit = (du, u, p, t) -> pipe_f!(
     geo.unconnected_cell_face_map, geo.cell_face_areas, geo.cell_face_normals,
 
     system.connection_groups, system.controller_groups, system.region_groups, system.patch_groups,
-    system.merged_properties,
 
+    system.du_virtual_axes, system.u_virtual_axes,
     system.du_diff_cache_vec, system.u_diff_cache_vec,
-    system.du_proto_axes, system.u_proto_axes,
-    system.du_cache_axes, system.u_cache_axes
+    system.merged_properties
 )
-#=
+
 p_guess = 0.0
 #=
 prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 5.0), p_guess)
@@ -458,6 +449,12 @@ sol_u_named_end.mass_fractions.hydrogen
 
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 #not sure if pure TracerSparsityDetector is faster
+
+cache_vec = get_tmp(system.du_diff_cache_vec, 1.0)
+du = VirtualFVMArray((du0_vec, get_tmp(system.du_diff_cache_vec, 1.0)), system.du_virtual_axes)
+
+u = VirtualFVMArray((u0_vec, get_tmp(system.u_diff_cache_vec, 1.0), system.merged_properties), system.u_virtual_axes)
+u.pipe_mass_flow[:]
 
 jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0_vec, u0_vec, detector
@@ -497,6 +494,9 @@ if record_sol == true
 end
 
 hi = 1
+
+explicit_prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1.0), p_guess)
+@time sol = solve(explicit_prob, Tsit5())
 
 #=
 function conversion_from_residence_time(tMax)

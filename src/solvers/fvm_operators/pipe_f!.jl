@@ -6,32 +6,21 @@ function pipe_f!(
     unconnected_cell_face_map, cell_face_areas, cell_face_normals,
 
     connection_groups, controller_groups, region_groups, patch_groups,
-    
-    properties,
 
+    du_virtual_axes, u_virtual_axes,
     du_diff_cache_vec, u_diff_cache_vec,
-    du_proto_axes, u_proto_axes,
-    du_cache_axes, u_cache_axes
+    properties_vec,
 )
-    du_cache_vec = get_tmp(du_diff_cache_vec, u_vec)
-    u_cache_vec = get_tmp(u_diff_cache_vec, u_vec)
-
-    du_cache_vec .= 0.0
-    u_cache_vec .= 0.0
-
-    du_cache_nt = create_views_inline(du_cache_vec, du_cache_axes)
-    u_cache_nt = create_views_inline(u_cache_vec, u_cache_axes)
-
+    
     du_vec .= 0.0
-    du_nt = create_views_inline(du_vec, du_proto_axes)
-    u_nt = create_views_inline(u_vec, u_proto_axes)
-
-    du = (; du_nt..., du_cache_nt...)
-    #u = (; u_nt..., u_cache_nt..., properties...)
-    u = (; properties..., u_nt..., u_cache_nt...)
-    #remember, the right-most fields overwrite other fields with the same name
-
-    u.rho .= (u_cache_nt.rho .+ properties.rho)
+    
+    if (first(u_vec) + first(p)) isa SparseConnectivityTracer.Dual{Float64}
+        u = VirtualFVMArray((u_vec, (get_tmp(u_diff_cache_vec, first(u_vec) + first(p)) .= 0.0), properties_vec), u_virtual_axes)
+        du = VirtualFVMArray((du_vec, (get_tmp(du_diff_cache_vec, first(u_vec) + first(p)) .= 0.0)), du_virtual_axes)
+    else
+        u = VirtualFVMArray((u_vec, get_tmp(u_diff_cache_vec, first(u_vec) + first(p)), properties_vec), u_virtual_axes)
+        du = VirtualFVMArray((du_vec, get_tmp(du_diff_cache_vec, first(u_vec) + first(p))), du_virtual_axes)
+    end
 
     #1st cell neighbors: 
         #- (1, [(2, 3)])
@@ -44,8 +33,8 @@ function pipe_f!(
         #- (cell_id, [(neighbor_cell_id, current_cell's_face_index_pointing_to_neighbor)])
     
     for cell_id in 1:length(cell_volumes)-1
-        du.mass_face[cell_id][3] -= u.pipe_mass_flow[cell_id]
-        du.mass_face[cell_id + 1][5] += u.pipe_mass_flow[cell_id]
+        du.mass_face[cell_id, 3] -= u.pipe_mass_flow[cell_id]
+        du.mass_face[cell_id + 1, 5] += u.pipe_mass_flow[cell_id]
     end
 
     for conn in connection_groups
@@ -56,6 +45,9 @@ function pipe_f!(
         )
     end
 
+    @show du.temp[:]
+    @show du.pressure[:]
+
     for patch in patch_groups
         solve_patch_group!(
             du, u,
@@ -64,6 +56,9 @@ function pipe_f!(
             cell_volumes
         )
     end
+
+    @show du.temp[:]
+    @show du.pressure[:]
     
     
     for reg in region_groups
@@ -73,4 +68,7 @@ function pipe_f!(
             cell_volumes
         )
     end
+    
+    @show du.temp[:]
+    @show du.pressure[:]
 end

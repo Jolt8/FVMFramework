@@ -3,7 +3,7 @@ function upwind(
     idx_a, idx_b, face_idx,
     var_a, var_b
 )
-    if ustrip(du.mass_face[idx_a][face_idx]) < 0.0
+    if ustrip(du.mass_face[idx_a, face_idx]) < 0.0
         return var_a
     else
         return var_b
