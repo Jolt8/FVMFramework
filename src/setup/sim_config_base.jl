@@ -1,8 +1,8 @@
 mutable struct RegionSetupInfo{P <: AbstractPhysics} #this must be defined before SimulationConfigInfo
     name::String
     type::P
-    initial_conditions::NamedTuple
-    properties::NamedTuple
+    initial_conditions::ComponentVector
+    properties::ComponentVector
     cache_syms_and_units::NamedTuple
     region_function::Function
     region_cells::Vector{Int}
@@ -10,14 +10,14 @@ end
 
 mutable struct PatchSetupInfo #this must be defined before SimulationConfigInfo
     name::String
-    properties::NamedTuple
+    properties::ComponentVector
     patch_function::Function
     cell_neighbors::Vector{Tuple{Int, Vector{Tuple{Int, Int}}}}
 end
 
 mutable struct ControllerSetupInfo #this must be defined before SimulationConfigInfo
     name::String
-    controller::NamedTuple
+    controller::ComponentVector
     monitored_cellset::String
     affected_cellset::String
     controller_function::Function
@@ -33,7 +33,7 @@ struct SimulationConfigInfo
     patches::Vector{PatchSetupInfo}
     controllers::Vector{ControllerSetupInfo}
     optimized_parameters::Dict{Symbol, Any}
-    u_proto::NamedTuple
+    u_proto::ComponentVector
 end
 
 function create_fvm_config(grid, u_proto)

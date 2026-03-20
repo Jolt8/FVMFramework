@@ -1,5 +1,5 @@
 
-struct RegionGroup{P <: NamedTuple, F <: Function}
+struct RegionGroup{P <: ComponentVector, F <: Function}
     name::String
     properties::P
     cache_syms_and_units::NamedTuple
@@ -7,14 +7,14 @@ struct RegionGroup{P <: NamedTuple, F <: Function}
     region_cells::Vector{Int}
 end
 
-struct PatchGroup{P <: NamedTuple, F <: Function}
+struct PatchGroup{P <: ComponentVector, F <: Function}
     name::String
     properties::P
     patch_function!::F
     cell_neighbors::Vector{Tuple{Int, Vector{Tuple{Int, Int}}}}
 end
 
-struct ControllerGroup{T <: NamedTuple, F <: Function}
+struct ControllerGroup{T <: ComponentVector, F <: Function}
     name::String
     id::Int
     controller::T
@@ -42,15 +42,12 @@ struct FVMSystem
     controller_groups::Vector{ControllerGroup}
     patch_groups::Vector{PatchGroup}
     region_groups::Vector{RegionGroup}
-    p_vec::Vector{Number}
-    p_axes::NamedTuple
-    merged_properties::NamedTuple
+    du_virtual_axes::NamedTuple
+    u_virtual_axes::NamedTuple
     du_diff_cache_vec::DiffCache
     u_diff_cache_vec::DiffCache
-    du_proto_axes::NamedTuple
-    u_proto_axes::NamedTuple
-    du_cache_axes::NamedTuple
-    u_cache_axes::NamedTuple
+    merged_properties::ComponentVector
+    p_vec::Vector{Number}
 end
 
 function finish_fvm_config(config, connection_map_function, special_caches; check_units::Bool)
@@ -81,12 +78,10 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
         end
     end
 
-    cell_properties_map = Vector{NamedTuple}(undef, n_cells)
     cell_regions_map = Vector{RegionGroup}(undef, n_cells)
 
     for region in region_groups
         for cell_id in region.region_cells
-            cell_properties_map[cell_id] = region.properties
             cell_regions_map[cell_id] = region
         end
     end
@@ -110,7 +105,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
 
     #Connections
     unique_region_connection_pairs = Vector{Tuple{String, String}}()
-    #we specifically use strings here because checking if (region_a, region_b) == (region_b, region_a) was fragile for some reason
+    #we specifically use strings here because checking if (region_a, region_b) == (region_b, region_a) was fragile
 
     for (idx_a, idx_a_neighbors) in config.geo.cell_neighbors
         for (idx_b, face_idx) in idx_a_neighbors
@@ -165,102 +160,72 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
         filter!(conn -> !(isempty(conn[2])), CG.cell_neighbors)
     end
 
+    #=
     #this code is to merge the state variables such as velocity, temperature or pressure with non-state variables such as integral_error
     #integral error is indexed at its respective controller id
     n_controllers = length(config.controllers)
     u_non_state_proto = ()
     if n_controllers != 0.0
-        u_non_state_proto = (
+        u_non_state_proto = ComponentVector(
             integral_error = zeros(n_controllers),
         )
     end
     #unlike u_proto, u_non_state_proto is accessed at controller_id
-
-    u_merged = (; config.u_proto..., u_non_state_proto...)
-
+    =#
+    #I'm going to ditch this BS, as I'd rather make defining integral_error explicit, but that's a future problem
+    #just remember that integral_error is indexed by controller_id
+    
     #deepcopy is needed for copying NamedTuples
-
-    du_proto_nt = deepcopy(u_merged)
-    #it might be worth it to convert it back into a ComponentArray so we can just broadcast .= 0.0 on everything 
-    for (field, value) in pairs(du_proto_nt)
-        if du_proto_nt[field] isa NamedTuple
-            for (sub_field, value) in pairs(du_proto_nt[field])
-                du_proto_nt[field][sub_field] .= 0.0 * unit(du_proto_nt[field][sub_field][1])
-            end
-        else
-            du_proto_nt[field] .= 0.0 * unit(du_proto_nt[field][1])
-        end
-    end
-    #du_proto_nt = (; du_proto...)
-
-    u_proto_nt = deepcopy(u_merged)
-    #u_proto_nt = (; u_proto...)
 
     merged_properties = merge_region_properties(config)
 
     merged_caches = merge_region_caches(config, special_caches, merged_properties)
 
-    du_unitful_cache_nt = deepcopy(merged_caches)
-    #du_cache_nt = (; du_cache...)
-
-    u_unitful_cache_nt = deepcopy(merged_caches)
-    #u_cache_nt = (; u_cache...)
-
-    du0_vec_units = Vector(ComponentArray(; du_proto_nt...))
-    u0_vec_units = Vector(ComponentArray(; u_proto_nt...))
+    du0_vec_units = Vector(deepcopy(upreferred.(config.u_proto)))
+    du0_vec_units .*= 0.0
+    u0_vec_units = Vector(deepcopy(upreferred.(config.u_proto)))
 
     du0_vec = ustrip.(upreferred.(deepcopy(du0_vec_units)))
+    du0_vec .= 0.0
     u0_vec = ustrip.(upreferred.(deepcopy(u0_vec_units)))
 
     N::Int = ForwardDiff.pickchunksize(length(u0_vec))
-
-    du_unitful_cache_vec = Vector(ComponentArray(; du_unitful_cache_nt...))
-    u_unitful_cache_vec = Vector(ComponentArray(; u_unitful_cache_nt...))
+    
+    du_unitful_cache_vec = Vector(ComponentArray(; deepcopy(merged_caches)...))
+    u_unitful_cache_vec = Vector(ComponentArray(; deepcopy(merged_caches)...))
 
     du_diff_cache_vec = DiffCache(ustrip.(upreferred.(deepcopy(du_unitful_cache_vec))), N)
     u_diff_cache_vec = DiffCache(ustrip.(upreferred.(deepcopy(u_unitful_cache_vec))), N)
-    
-    du_proto_axes = create_axes(du_proto_nt, n_cells)
-    u_proto_axes = create_axes(u_proto_nt, n_cells)
-    du_cache_axes = create_axes(du_unitful_cache_nt, n_cells)
-    u_cache_axes = create_axes(u_unitful_cache_nt, n_cells)
 
-    optimized_parameters_keys = keys(config.optimized_parameters)
-    optimized_parameters_1_element_vectors = [[config.optimized_parameters[field]] for field in keys(config.optimized_parameters)]
-    #we have to make it into a 1 element vector because create_axes requires a vector for each name
-
-    optimized_parameter_nt = (; zip(optimized_parameters_keys, optimized_parameters_1_element_vectors)...)
-    p_vec = Vector(ComponentVector(; optimized_parameter_nt...))
-
-    p_axes = create_axes(optimized_parameter_nt, n_cells)
-
+    p_vec_units = Vector(config.optimized_parameters)
+    p_vec = ustrip.upreferred(Vector(config.optimized_parameters))
 
     #we have to split up properties to strip it of units
-    properties_vec_units = Vector(ComponentArray(; merged_properties...))
+    properties_vec_units = Vector(merged_properties)
     properties_vec = ustrip.(upreferred.(deepcopy(properties_vec_units)))
 
-    properties_axes = create_axes(merged_properties, n_cells)
+    #virtual_merge_axes takes in a tuple of ComponentArrays
+    du_virtual_axes = virtual_merge_axes((ComponentVector(du_proto_nt), ComponentVector(merged_caches)))
+    u_virtual_axes = virtual_merge_axes((ComponentVector(u_proto_nt), ComponentVector(merged_caches), ComponentVector(merged_properties), config.optimized_parameters))
 
     if check_units == true
         system = FVMSystem(
             connection_groups, controller_groups, patch_groups, region_groups,
-            p_vec, p_axes,
-            create_views_inline(properties_vec_units, properties_axes),
-            du_diff_cache_vec, u_diff_cache_vec,
-            du_proto_axes, u_proto_axes,
-            du_cache_axes, u_cache_axes
+            du_virtual_axes, u_virtual_axes,
+            du_unitful_cache_vec, u_unitful_cache_vec,
+            properties_vec_units,
+            p_vec_units
         )
-        du_nt_units, u_nt_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
-        return du_nt_units, u_nt_units, 0, 0
+        du_units, u_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
+        return du_units, u_units, 0, 0
     end
 
     system = FVMSystem(
         connection_groups, controller_groups, patch_groups, region_groups,
-        p_vec, p_axes,
-        create_views_inline(properties_vec, properties_axes),
+        du_virtual_axes, u_virtual_axes,
         du_diff_cache_vec, u_diff_cache_vec,
-        du_proto_axes, u_proto_axes,
-        du_cache_axes, u_cache_axes
+        properties_vec,
+        p_vec
     )
 
     return du0_vec, u0_vec, config.geo, system

@@ -11,12 +11,12 @@ function add_region!(
     region_cells = collect(getcellset(config.grid, name))
 
     for cell_id in region_cells
-        for field in propertynames(initial_conditions)
-            var = config.u_proto[field]
-            initial_condition = initial_conditions[field]
-            if var isa NamedTuple
+        for property_name in propertynames(initial_conditions)
+            var = getproperty(config.u_proto, property_name)
+            initial_condition = getproperty(initial_conditions, property_name)
+            if var isa ComponentVector
                 for sub_name in propertynames(var)
-                    var[sub_name][cell_id] = initial_condition[sub_name]
+                    getproperty(var, sub_name)[cell_id] = getproperty(initial_condition, sub_name)
                 end
             else
                 var[cell_id] = initial_condition

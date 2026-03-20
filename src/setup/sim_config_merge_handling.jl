@@ -16,7 +16,7 @@ end
 
 function _dict_to_namedtuple(d::Dict)
     # Recursively convert Dicts to NamedTuples
-    named_tuple_pairs = Pair{Symbol,Any}[]
+    named_tuple_pairs = Pair{Symbol, Any}[]
     for (property_name, value) in pairs(d)
         if value isa Dict
             push!(named_tuple_pairs, property_name => _dict_to_namedtuple(value))
@@ -59,22 +59,23 @@ function merge_region_properties(config)
 
     prop_dict = Dict{Symbol,Any}()
 
+    #convert component arrays to named tuples
     for region in config.regions
-        _build_blank_dict!(prop_dict, region.properties, n_cells)
+        _build_blank_dict!(prop_dict, NamedTuple(region.properties), n_cells)
     end
 
     for patch in config.patches
-        _build_blank_dict!(prop_dict, patch.properties, n_cells)
+        _build_blank_dict!(prop_dict, NamedTuple(patch.properties), n_cells)
     end
 
-    merged_properties = _dict_to_namedtuple(prop_dict)
+    merged_properties = ComponentArray(_dict_to_namedtuple(prop_dict))
 
     for region in config.regions
-        _drill_down_and_fill_properties!(merged_properties, region.properties, region.region_cells)
+        _drill_down_and_fill_properties!(merged_properties, NamedTuple(region.properties), region.region_cells)
     end
 
     for patch in config.patches
-        _drill_down_and_fill_patch_properties!(merged_properties, patch.properties, patch.cell_neighbors)
+        _drill_down_and_fill_patch_properties!(merged_properties, NamedTuple(patch.properties), patch.cell_neighbors)
     end
 
     return merged_properties
@@ -120,8 +121,8 @@ function merge_region_caches(config, special_caches, merged_properties)
     merged_caches = _dict_to_namedtuple(cache_dict)
 
     for region in config.regions
-        _drill_down_and_fill_caches!(merged_caches, region.cache_syms_and_units, special_caches, merged_properties)
+        _drill_down_and_fill_caches!(merged_caches, region.cache_syms_and_units, NamedTuple(special_caches), merged_properties)
     end
 
-    return merged_caches
+    return ComponentArray(merged_caches)
 end

@@ -341,8 +341,10 @@ desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
-@time sol = solve(implicit_prob, FBDF())
+@btime sol = solve(implicit_prob, FBDF())
+#3.878 ms (1368 allocations: 8.56 MiB)
 
 u_vec .= 0.0
 explicit_prob = ODEProblem(f_closure, u_vec, tspan, p_vec)
-@time sol = solve(explicit_prob, Tsit5())
+@btime sol = solve(explicit_prob, Tsit5())
+#371.5 μs (243 allocations, 1.34 MiB)

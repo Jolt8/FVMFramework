@@ -1,7 +1,5 @@
 
 function run_and_check_units(du0_vec_units, u0_vec_units, geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
-    global R_gas = 8.314u"J/(mol*K)"
-
     du_unitful_cache_vec = upreferred.(du_unitful_cache_vec)
     du_unitful_cache_vec .*= 0.0
     du_unitful_cache_vec ./= 1.0u"s"

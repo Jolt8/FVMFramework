@@ -56,6 +56,13 @@ export create_axes
 include("named_tuple_interface/inline_views.jl")
 export create_views_inline
 
+# ----- ComponentArray Addons -----
+include("component_arrays_addons/virtual_component_array.jl")
+export FaceVectorView, VirtualAxis, VirtualFVMArray, virtual_merge_axes
+
+include("component_arrays_addons/foreach_field_componentarray_looping.jl")
+export foreach_field_at!
+
 # ----- Physics ----
 #   ---- Physics Types ----
 include("physics_types/abstract_physics_types.jl")
@@ -104,7 +111,7 @@ export get_cell_set_total_volume, get_facet_set_total_area, get_facet_set_cells_
 include("setup/sim_config_base.jl")
 export create_fvm_config, RegionSetupInfo, PatchSetupInfo, ControllerSetupInfo, SimulationConfigInfo
 
-include("setup/sim_config_merge_handling.jl")
+include("setup/sim_config_ca_merge_handling.jl")
 export merge_region_properties, merge_region_caches
 
 include("setup/sim_config_regions.jl")
