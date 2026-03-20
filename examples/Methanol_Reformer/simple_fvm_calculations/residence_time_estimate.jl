@@ -265,10 +265,6 @@ approximate_kf_A_based_on_residence_time(10.0)
 
 find_zero(scaling_factor -> approximate_kf_A_based_on_residence_time(scaling_factor) - desired_conversion, 1.0)
 
-hi = 1
-
-#=
-
 u_named_0 = create_views_inline(sol.u[1], system.u_proto_axes)
 u_named_end = create_views_inline(sol.u[end], system.u_proto_axes)
 
