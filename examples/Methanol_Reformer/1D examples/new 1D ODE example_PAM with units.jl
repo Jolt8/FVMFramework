@@ -3,6 +3,7 @@ using Unitful
 using OrdinaryDiffEq
 using Ferrite
 using SparseConnectivityTracer
+using ComponentArrays
 import ADTypes
 
 total_pipe_length = 16.5u"cm"
@@ -22,14 +23,14 @@ getcellset(grid, "inlet")
 addcellset!(grid, "vaporization_area", xyz -> xyz[1] >= (1 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (20 * (stripped_pipe_length / total_pipe_segments)))
 getcellset(grid, "vaporization_area")
 
-addcellset!(grid, "reforming_area", xyz -> xyz[1] >= (20 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (99 * (stripped_pipe_length / total_pipe_segments)))
+addcellset!(grid, "reforming_area", xyz -> xyz[1] >= (19 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (99 * (stripped_pipe_length / total_pipe_segments)))
 getcellset(grid, "reforming_area")
 
 addcellset!(grid, "outlet", xyz -> xyz[1] >= (99 * (stripped_pipe_length / total_pipe_segments)))
 getcellset(grid, "outlet")
 
 n_cells = total_pipe_segments
-u_proto = (
+u_proto = ComponentVector(
     mass_fractions = (
         methanol = zeros(n_cells)u"kg/kg",
         water = zeros(n_cells)u"kg/kg",
@@ -44,10 +45,10 @@ u_proto = (
 
 config = create_fvm_config(grid, u_proto)
 
-van_t_hoff_A = (CH3O = 1.7e-6u"s^-1", HCOO = 4.74e-13u"s^-1", OH = 3.32e-14u"s^-1")
-van_t_hoff_dH = (CH3O = -46800.0u"J/mol", HCOO = -115000.0u"J/mol", OH = -110000.0u"J/mol")
+van_t_hoff_A = ComponentVector(CH3O = 1.7e-6u"s^-1", HCOO = 4.74e-13u"s^-1", OH = 3.32e-14u"s^-1")
+van_t_hoff_dH = ComponentVector(CH3O = -46800.0u"J/mol", HCOO = -115000.0u"J/mol", OH = -110000.0u"J/mol")
 
-MSR_rxn = (
+MSR_rxn = ComponentVector(
     heat_of_reaction = 49500.0u"J/mol", 
     ref_delta_G = -3800.0u"J/mol", 
     ref_temp = 298.15u"K", 
@@ -60,7 +61,7 @@ MSR_rxn = (
     van_t_hoff_dH = van_t_hoff_dH
 )
 
-MD_rxn = (
+MD_rxn = ComponentVector(
     heat_of_reaction = 90200.0u"J/mol", 
     ref_delta_G = 24800.0u"J/mol", 
     ref_temp = 298.15u"K", 
@@ -73,7 +74,7 @@ MD_rxn = (
     van_t_hoff_dH = van_t_hoff_dH
 )
 
-WGS_rxn = (
+WGS_rxn = ComponentVector(
     heat_of_reaction = -41100.0u"J/mol", 
     ref_delta_G = -28600.0u"J/mol", 
     ref_temp = 298.15u"K", 
@@ -87,46 +88,29 @@ WGS_rxn = (
 )
 
 #since each mass fraction is modified, they have to be vectors
-initial_mass_fractions = (
-    methanol = [1.0u"kg/kg"],
-    water = [1.3u"kg/kg"],
-    carbon_monoxide = [0.0001u"kg/kg"],
-    hydrogen = [0.02u"kg/kg"],
-    carbon_dioxide = [0.0001u"kg/kg"],
-    air = [0.0001u"kg/kg"]
+initial_mass_fractions = ComponentVector(
+    methanol = 1.0u"kg/kg",
+    water = 1.3u"kg/kg",
+    carbon_monoxide = 0.0001u"kg/kg",
+    hydrogen = 0.02u"kg/kg",
+    carbon_dioxide = 0.0001u"kg/kg",
+    air = 0.0001u"kg/kg"
 )
 
-empty_mass_fractions = (
-    methanol = [1e-20u"kg/kg"],
-    water = [1e-20u"kg/kg"],
-    carbon_monoxide = [1e-20u"kg/kg"],
-    hydrogen = [1e-6u"kg/kg"],
-    carbon_dioxide = [1e-20u"kg/kg"],
-    air = [1.0u"kg/kg"]
+empty_mass_fractions = ComponentVector(
+    methanol = 1e-20u"kg/kg",
+    water = 1e-20u"kg/kg",
+    carbon_monoxide = 1e-20u"kg/kg",
+    hydrogen = 1e-6u"kg/kg",
+    carbon_dioxide = 1e-20u"kg/kg",
+    air = 1.0u"kg/kg"
 )
 
-initial_total_mass_fractions = 0.0u"kg/kg"
-empty_total_mass_fractions = 0.0u"kg/kg"
+initial_total_mass_fractions = sum(initial_mass_fractions)
+empty_total_mass_fractions = sum(empty_mass_fractions)
 
-for (species_name, mass_fraction) in pairs(initial_mass_fractions)
-    initial_total_mass_fractions += initial_mass_fractions[species_name][1]
-end
-
-for (species_name, mass_fraction) in pairs(empty_mass_fractions)
-    empty_total_mass_fractions += empty_mass_fractions[species_name][1]
-end
-
-for (species_name, mass_fraction) in pairs(initial_mass_fractions)
-    initial_mass_fractions[species_name][1] /= initial_total_mass_fractions
-end
-
-for (species_name, mass_fraction) in pairs(empty_mass_fractions)
-    empty_mass_fractions[species_name][1] /= empty_total_mass_fractions
-end
-
-initial_mass_fractions = NamedTuple{keys(initial_mass_fractions)}(first.(values(initial_mass_fractions)))
-empty_mass_fractions = NamedTuple{keys(empty_mass_fractions)}(first.(values(empty_mass_fractions)))
-#this is not ideal, but we can't use scalars inside the initial mass_fractions because the values of NamedTuples can't be modified 
+initial_mass_fractions ./= initial_total_mass_fractions
+empty_mass_fractions ./= empty_total_mass_fractions
 
 total_pipe_length = 16.5u"cm"
 n_segments = length(grid.cells)
@@ -147,7 +131,7 @@ pipe_k = 237.0u"W/(m*K)"
 
 approximate_residence_time = total_pipe_length / velocity |> u"s"   
 
-reforming_area_properties = (
+reforming_area_properties = ComponentVector(
     k = 237.0u"W/(m*K)", 
     cp = 4.184u"J/(kg*K)",
     mu = 1e-5u"Pa*s",
@@ -216,7 +200,7 @@ common_cache_syms_and_units = (
 add_region!(
     config, "inlet";
     type = Fluid(),
-    initial_conditions = (
+    initial_conditions = ComponentVector(
         mass_fractions = initial_mass_fractions,
         pressure = 1.0u"atm",
         temp = 21.0u"°C",
@@ -255,7 +239,7 @@ add_region!(
 add_region!(
     config, "vaporization_area";
     type = Fluid(),
-    initial_conditions = (
+    initial_conditions = ComponentVector(
         mass_fractions = empty_mass_fractions,
         pressure = 1.0u"atm",
         temp = 21.0u"°C",
@@ -287,7 +271,7 @@ add_region!(
 add_region!(
     config, "reforming_area";
     type = Fluid(),
-    initial_conditions = (
+    initial_conditions = ComponentVector(
         mass_fractions = empty_mass_fractions,
         pressure = 1.0u"atm",
         temp = 21.0u"°C",
@@ -323,7 +307,7 @@ add_region!(
 add_region!(
     config, "outlet";
     type = Fluid(),
-    initial_conditions = (
+    initial_conditions = ComponentVector(
         mass_fractions = empty_mass_fractions,
         pressure = 1.0u"atm",
         temp = 21.0u"°C",
@@ -398,7 +382,7 @@ reaction_names = keys(config.regions[1].properties.reactions.reforming_reactions
 species_names = keys(config.regions[1].properties.species_ids)
  
 #species caches are for things like mass_face, which has an entry for every face of every cell rather than entries for each cell
-special_caches = (
+special_caches = ComponentVector(
     mass_face = fill(
         zeros(n_faces)u"kg", 
         n_cells
@@ -422,9 +406,15 @@ special_caches = (
             zeros(n_cells)u"kg", 
             length(species_names)
         )
-    ),
+    ), #I'm starting to really enjoy these NamedTuple constructors
 )
 
+special_caches.species_mass_flows
+
+ComponentVector(special_caches)
+
+
+typeof(reforming_area_properties.reactions.reforming_reactions.WGS_rxn)
 #you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful named tuples
 du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches, check_units = false);
 
@@ -442,7 +432,7 @@ f_closure_implicit = (du, u, p, t) -> pipe_f!(
     system.du_proto_axes, system.u_proto_axes,
     system.du_cache_axes, system.u_cache_axes
 )
-
+#=
 p_guess = 0.0
 #=
 prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 5.0), p_guess)
