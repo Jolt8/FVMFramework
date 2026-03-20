@@ -33,8 +33,12 @@ end
 
 @inline _resolve(data, idx::Int) = view(data, idx:idx)
 @inline _resolve(data, idx::UnitRange{Int}) = view(data, idx)
-@inline _resolve(data, idx::ComponentArrays.ComponentIndex) = ComponentVector(view(data, idx.idx), (idx.ax,))
-@inline _resolve(data, ax::ComponentArrays.AbstractAxis) = ComponentVector(data, (ax,))
+@inline _resolve(data, idx::ComponentArrays.ComponentIndex) = _apply_axis(view(data, idx.idx), idx.ax)
+@inline _resolve(data, ax::ComponentArrays.AbstractAxis) = ComponentArray(data, (ax,))
+
+@inline _apply_axis(data, ax::ComponentArrays.AbstractAxis) = ComponentArray(data, (ax,))
+@inline _apply_axis(data, ax::ComponentArrays.ShapedAxis) = reshape(data, size(ax))
+@inline _apply_axis(data, ax::ComponentArrays.ViewAxis) = _apply_axis(data, ax.ax)
 
 @inline _resolve(data, ax::Tuple{Int, Int}) = FaceVectorView(data, ax[2], ax[1])
 @inline _resolve(data, ax::Tuple{Int}) = view(data, ax[1]:ax[1])
