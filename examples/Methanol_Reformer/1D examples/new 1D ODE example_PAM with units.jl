@@ -221,9 +221,8 @@ add_region!(
         #du.mass_face[cell_id][5] += u.pipe_mass_flow[cell_id]
         du.mass[cell_id] += u.pipe_mass_flow[cell_id]
 
-        map(keys(u.species_mass_flows)) do species_name
-            #du.mass_fractions[species_name][cell_id] += u.pipe_mass_flow[cell_id] * initial_mass_fractions[species_name][1]
-            du.species_mass_flows[species_name][cell_id] *= 0.0
+        foreach_field_at!(du.species_mass_flows) do species, species_mass_flows
+            species_mass_flows[species[cell_id]] *= 0.0
         end
         
         du.heat[cell_id] *= 0.0
@@ -256,9 +255,9 @@ add_region!(
 
         #internal physics
         #prandtl_number!(du, u, cell_id, vol)
-        UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
-        surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
-        du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
+        #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
+        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
+        #du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         sum_mass_flux_face_to_cell!(du, u, cell_id)
 
@@ -292,9 +291,9 @@ add_region!(
         #println(du.mass_fractions.methanol[cell_id])
 
         #prandtl_number!(du, u, cell_id, vol)
-        UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
-        surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
-        du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
+        #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
+        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
+        #du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         sum_mass_flux_face_to_cell!(du, u, cell_id)
 
@@ -326,14 +325,13 @@ add_region!(
         #du.mass_face[cell_id][5] -= u.pipe_mass_flow[cell_id]
         du.mass[cell_id] -= u.pipe_mass_flow[cell_id]
        
-        map(keys(u.species_mass_flows)) do species_name
-            #du.mass_fractions[species_name][cell_id] += u.pipe_mass_flow[cell_id] * initial_mass_fractions[species_name][1]
-            du.species_mass_flows[species_name][cell_id] *= 0.0
+        foreach_field_at!(u.species_mass_flows) do species, species_mass_flows
+            species_mass_flows[species[cell_id]] *= 0.0
         end
 
-        UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
-        surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
-        du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
+        #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
+        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
+        #du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         #ergun_pressure_drop!(du, u, cell_id, vol)
 
@@ -387,23 +385,14 @@ special_caches = ComponentArray(
     #[zeros(n_faces)u"kg" for _ in 1:n_cells],
     net_rates = (
         reforming_reactions = NamedTuple{reaction_names}(
-            fill(
-                0.0u"mol/s", 
-                length(reaction_names)
-            )
+            Tuple(zeros(n_cells)u"mol/s" for _ in 1:length(reaction_names))
         ), #don't forget the comma!
     ), 
     molar_concentrations = NamedTuple{species_names}(
-        fill(
-            zeros(n_cells)u"mol/m^3", 
-            length(species_names)
-        )
+        Tuple(zeros(n_cells)u"mol/m^3" for _ in 1:length(species_names))
     ), #I'm starting to really enjoy these NamedTuple constructors
     species_mass_flows = NamedTuple{species_names}(
-        fill(
-            zeros(n_cells)u"kg", 
-            length(species_names)
-        )
+        Tuple(zeros(n_cells)u"kg" for _ in 1:length(species_names))
     ), #I'm starting to really enjoy these NamedTuple constructors
 )
 
@@ -450,11 +439,29 @@ sol_u_named_end.mass_fractions.hydrogen
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 #not sure if pure TracerSparsityDetector is faster
 
+using PreallocationTools
+
 cache_vec = get_tmp(system.du_diff_cache_vec, 1.0)
 du = VirtualFVMArray((du0_vec, get_tmp(system.du_diff_cache_vec, 1.0)), system.du_virtual_axes)
 
 u = VirtualFVMArray((u0_vec, get_tmp(system.u_diff_cache_vec, 1.0), system.merged_properties), system.u_virtual_axes)
 u.pipe_mass_flow[:]
+u.pressure[:]
+u.cp[:]
+u.diffusion_coefficients
+u.rho[:]
+
+function test_speed(u)
+    for cell_id in 1:100
+        foreach_field_at!(u.mass_fractions, u.molecular_weights, u.molar_concentrations) do species, mass_fractions, molecular_weights, molar_concentrations
+            molar_concentrations[species[cell_id]] = (u.rho[cell_id] * mass_fractions[species[cell_id]]) / molecular_weights[species[cell_id]]
+        end
+    end
+end
+
+@btime test_speed($u) #1200 allocations, uh oh...
+
+
 
 jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0_vec, u0_vec, detector
@@ -471,8 +478,11 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
+#using NonlinearSolve
+
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 @time sol = solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
+VSCodeServer.@profview solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
 
 record_sol = true
 
@@ -495,8 +505,8 @@ end
 
 hi = 1
 
-explicit_prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1.0), p_guess)
-@time sol = solve(explicit_prob, Tsit5())
+explicit_prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 3e-5), p_guess)
+@time sol = solve(explicit_prob, Tsit5(), callback = approximate_time_to_finish_cb)
 
 #=
 function conversion_from_residence_time(tMax)

@@ -73,8 +73,8 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         #println("DEN: $(DEN)")
         #println("")
 
-        map(keys(u.reactions.reforming_reactions)) do reforming_reaction
-            u.net_rates.reforming_reactions[reforming_reaction][1] = 0.0
+        foreach_field_at!(u.net_rates.reforming_reactions) do reaction_name, net_rates
+            net_rates[reaction_name[cell_id]] = 0.0
         end
 
         #MSR
@@ -83,7 +83,7 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
 
         driving_force = 1.0 - ((P_CO2 * P_H2^3) / (K_eq_MSR * P_CH3OH * P_H2O))
 
-        u.net_rates.reforming_reactions.MSR_rxn[1] = (k_MSR * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2)
+        u.net_rates.reforming_reactions.MSR_rxn[cell_id] = (k_MSR * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2)
         
         #=
         println("temp: $(u.temp[cell_id])")
@@ -104,7 +104,7 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         K_eq_MD = K_gibbs_free(u, cell_id, u.reactions.reforming_reactions.MD_rxn)
         driving_force = 1.0 - ((P_CO * P_H2^2) / (K_eq_MD * P_CH3OH))
 
-        u.net_rates.reforming_reactions.MD_rxn[1] = (k_MD * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2)
+        u.net_rates.reforming_reactions.MD_rxn[cell_id] = (k_MD * K_CH3O * (P_CH3OH / sqrt(P_H2)) * driving_force) / (DEN^2)
 
         #=
         println("k_MD: $(k_MD)")
@@ -119,7 +119,7 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         K_eq_WGS = K_gibbs_free(u, cell_id, u.reactions.reforming_reactions.WGS_rxn)
         driving_force = 1.0 - ((P_CO2 * P_H2) / (K_eq_WGS * P_CO * P_H2O))
 
-        u.net_rates.reforming_reactions.WGS_rxn[1] = (k_WGS * K_OH * ((P_CO * P_H2O) / sqrt(P_H2)) * driving_force) / (DEN^2)
+        u.net_rates.reforming_reactions.WGS_rxn[cell_id] = (k_WGS * K_OH * ((P_CO * P_H2O) / sqrt(P_H2)) * driving_force) / (DEN^2)
 
         #=
         println("k_WGS: $(k_WGS)")
@@ -129,23 +129,30 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         println("")
         =#
 
-        map(keys(u.molar_concentrations)) do species_name
-            du.molar_concentrations[species_name][cell_id] = 0.0
+        u.molar_concentrations .= 0.0
+
+        #MSR_rxn
+        foreach_field_at!(u.reactions.reforming_reactions.MSR_rxn.stoich_coeffs, du.molar_concentrations) do species_name, stoich_coeffs, molar_concentrations
+            molar_concentrations[species_name[cell_id]] += u.net_rates.reforming_reactions.MSR_rxn[cell_id] * stoich_coeffs[species_name[cell_id]] * u.reactions_kg_cat.reforming_reactions.MSR_rxn[cell_id]
         end
 
-        map(keys(u.reactions.reforming_reactions)) do reforming_reaction
-            map(keys(u.reactions.reforming_reactions[reforming_reaction].stoich_coeffs)) do species_name
-                du.molar_concentrations[species_name][cell_id] += u.net_rates.reforming_reactions[reforming_reaction][1] * u.reactions.reforming_reactions[reforming_reaction].stoich_coeffs[species_name][cell_id] * u.reactions_kg_cat.reforming_reactions[reforming_reaction][cell_id]
-            end
+        #MD_rxn
+        foreach_field_at!(u.reactions.reforming_reactions.MD_rxn.stoich_coeffs, du.molar_concentrations) do species_name, stoich_coeffs, molar_concentrations
+            molar_concentrations[species_name[cell_id]] += u.net_rates.reforming_reactions.MD_rxn[cell_id] * stoich_coeffs[species_name[cell_id]] * u.reactions_kg_cat.reforming_reactions.MD_rxn[cell_id]
         end
 
-        map(keys(u.mass_fractions)) do species_name
-            du.mass_fractions[species_name][cell_id] += (du.molar_concentrations[species_name][cell_id] * u.molecular_weights[species_name][cell_id] / u.rho[cell_id])
+        #WGS_rxn
+        foreach_field_at!(u.reactions.reforming_reactions.WGS_rxn.stoich_coeffs, du.molar_concentrations) do species_name, stoich_coeffs, molar_concentrations
+            molar_concentrations[species_name[cell_id]] += u.net_rates.reforming_reactions.WGS_rxn[cell_id] * stoich_coeffs[species_name[cell_id]] * u.reactions_kg_cat.reforming_reactions.WGS_rxn[cell_id]
+        end
+
+        foreach_field_at!(u.mass_fractions, du.molar_concentrations, u.species_molecular_weights) do species_name, mass_fractions, molar_concentrations, molecular_weights
+            mass_fractions[species_name[cell_id]] += (molar_concentrations[species_name[cell_id]] * molecular_weights[species_name[cell_id]] / u.rho[cell_id])
             # rate (mol/(m3*s)) * MW (g/mol) / rho (g/m3) = unitless/s
         end
 
-        map(keys(u.reactions.reforming_reactions)) do reforming_reaction
-            du.heat[cell_id] += u.net_rates.reforming_reactions[reforming_reaction][1] * (-u.reactions.reforming_reactions[reforming_reaction].heat_of_reaction[cell_id]) * vol 
+        foreach_field_at!(u.reactions.reforming_reactions.net_rates, u.reaction.reforming_reactions.heat_of_reaction) do reforming_reaction, net_rates, heat_of_reactions
+            du.heat[cell_id] += net_rates[reforming_reaction[cell_id]] * (-heat_of_reactions[reforming_reaction[cell_id]]) * vol 
             # rate (mol/(m3*s)) * H (J/mol) * vol (m3) = J/s = Watts
         end
     end

@@ -19,38 +19,32 @@ end
 function mw_avg!(u, cell_id)
     u.mw_avg[cell_id] *= 0.0
 
-    map(keys(u.mass_fractions)) do species_name
-        #println("species_name: $(species_name)")
-        #println("u.mass_fractions[species_name][cell_id] = $(u.mass_fractions[species_name][cell_id])")
-        #println("u.molecular_weights[species_name][cell_id] = $(u.molecular_weights[species_name][cell_id])")
-        u.mw_avg[cell_id] += u.mass_fractions[species_name][cell_id] * u.molecular_weights[species_name][cell_id]
+    foreach_field_at!(u.mass_fractions, u.molecular_weights) do species, mass_fractions, molecular_weights
+        u.mw_avg[cell_id] += mass_fractions[species[cell_id]] * molecular_weights[species[cell_id]]
     end
 end
 
 function rho_ideal!(u, cell_id)
-    #=println(u.pressure[cell_id])
-    println(u.mw_avg[cell_id])
-    println(u.R_gas[cell_id])
-    println(u.temp[cell_id])=#
     u.rho[cell_id] = (u.pressure[cell_id] * u.mw_avg[cell_id]) / (u.R_gas[cell_id] * u.temp[cell_id])
 end
 
 function molar_concentrations!(u, cell_id)
-    map(keys(u.mass_fractions)) do species_name
-        u.molar_concentrations[species_name][cell_id] = (u.rho[cell_id] * u.mass_fractions[species_name][cell_id]) / u.molecular_weights[species_name][cell_id]
+    foreach_field_at!(u.mass_fractions, u.molecular_weights, u.molar_concentrations) do species, mass_fractions, molecular_weights, molar_concentrations
+        molar_concentrations[species[cell_id]] = (u.rho[cell_id] * mass_fractions[species[cell_id]]) / molecular_weights[species[cell_id]]
     end
 end
 
 function molar_fractions!(u, cell_id)
-    map(keys(u.mass_fractions)) do species_name
-        u.molar_fractions[species_name][cell_id] = u.mass_fractions[species_name][cell_id] / u.molecular_weights[species_name][cell_id]
+    foreach_field_at!(u.mass_fractions, u.molecular_weights, u.molar_fractions) do species, mass_fractions, molecular_weights, molar_fractions
+        molar_fractions[species[cell_id]] = mass_fractions[species[cell_id]] / molecular_weights[species[cell_id]]
     end
 end
 
 #honestly, this could probably be removed and derrived only in functions that actually need it
 function cp_avg!(u, cell_id)
-    map(keys(u.mass_fractions)) do species_name
-        u.cp_avg[cell_id] += u.mass_fractions[species_name][cell_id] * u.species_cps[species_name][cell_id]
+    u.cp_avg[cell_id] *= 0.0
+    foreach_field_at!(u.mass_fractions, u.species_cps, u.cp_avg) do species, mass_fractions, species_cps, cp_avg
+        cp_avg[species[cell_id]] += mass_fractions[species[cell_id]] * species_cps[species[cell_id]]
     end
 end
 #=
