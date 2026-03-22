@@ -57,8 +57,12 @@ end
 end
 
 @inline Base.getindex(A::VirtualFVMArray, s::Symbol) = getproperty(A, s)
+@inline Base.getindex(A::VirtualFVMArray, ax::VirtualAxis) = _virtual_resolve(getfield(A, :data), ax)
+@inline Base.getindex(A::VirtualFVMArray, ax::NamedTuple) = _virtual_resolve(getfield(A, :data), ax)
 
 @inline Base.setindex!(A::VirtualFVMArray, v, s::Symbol) = (getproperty(A, s) .= v)
+@inline Base.setindex!(A::VirtualFVMArray, v, ax::VirtualAxis) = (Base.getindex(A, ax) .= v)
+@inline Base.setindex!(A::VirtualFVMArray, v, ax::NamedTuple) = (Base.getindex(A, ax) .= v)
 
 @inline Base.keys(A::VirtualFVMArray) = keys(getfield(A, :axes))
 
@@ -88,3 +92,39 @@ _wrap_virtual(ax, src::Int) = VirtualAxis{src, typeof(ax)}(ax)
     return getproperty(A, s)
 end
 
+
+function _show_axes(io::IO, ax::NamedTuple)
+    for name in keys(ax)
+        val = ax[name]
+        if val isa NamedTuple
+            println(io, name, " (group):")
+            _show_axes(io, val)
+        elseif val isa UnitRange
+            println(io, name, " → ", length(val), " cells (indices ", val, ")")
+        elseif val isa Tuple{Int,Int}
+            n_cells = 0  # can't know without data length, just show the tuple
+            println(io, name, " → face-indexed (start=", val[1], ", n_faces=", val[2], ")")
+        elseif val isa Tuple{Int}
+            println(io, name, " → scalar (index ", val[1], ")")
+        else
+            println(io, name, " → ", val)
+        end
+    end
+end
+
+function Base.show(io::IO, A::VirtualFVMArray)
+    print(io, "VirtualFVMArray(")
+    ax = getfield(A, :axes)
+    #println(keys(ax))
+    #println(keys(A))
+    #(:mass_fractions, :pressure, :temp, :molar_concentrations, :mw_avg, :species_mass_flows, :net_rates, :Pr, :rho, :heat, :mass_face, :mass)
+    for name in keys(ax)
+        println(io, name, " = ", getproperty(A, name)[:])
+        val = ax[name]
+        if val isa VirtualAxis
+            #println(io, _virtual_resolve(getfield(A, :data), val))
+        else
+            #println(io, val)
+        end
+    end
+end
