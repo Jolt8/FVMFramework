@@ -1,4 +1,3 @@
-
 struct FaceVectorView{V <: AbstractVector} <: AbstractVector{SubArray}
     data::V
     n_faces::Int
@@ -20,6 +19,21 @@ end
     return v
 end
 
+@inline function Base.getindex(A::FaceVectorView, i::Int, j::Int)
+    @boundscheck checkbounds(A, i)
+    @boundscheck 1 <= j <= A.n_faces || throw(BoundsError(A, (i, j)))
+    idx = A.start_idx + (i - 1) * A.n_faces + (j - 1)
+    return @inbounds A.data[idx]
+end
+
+@inline function Base.setindex!(A::FaceVectorView, v, i::Int, j::Int)
+    @boundscheck checkbounds(A, i)
+    @boundscheck 1 <= j <= A.n_faces || throw(BoundsError(A, (i, j)))
+    idx = A.start_idx + (i - 1) * A.n_faces + (j - 1)
+    @inbounds A.data[idx] = v
+    return v
+end
+
 Base.IndexStyle(::Type{<:FaceVectorView}) = IndexLinear()
 
 struct VirtualAxis{Src, Ax}
@@ -31,6 +45,12 @@ struct VirtualFVMArray{D <: Tuple, A <: NamedTuple}
     axes::A
 end
 
+struct VirtualIndex{Src, I}
+    idx::I
+end
+
+@inline Base.getindex(vax::VirtualAxis{Src}, i) where {Src} = VirtualIndex{Src, typeof(getindex(vax.ax, i))}(getindex(vax.ax, i))
+
 @inline _resolve(data, idx::Int) = view(data, idx:idx)
 @inline _resolve(data, idx::UnitRange{Int}) = view(data, idx)
 @inline _resolve(data, idx::ComponentArrays.ComponentIndex) = _apply_axis(view(data, idx.idx), idx.ax)
@@ -39,6 +59,7 @@ end
 @inline _apply_axis(data, ax::ComponentArrays.AbstractAxis) = ComponentArray(data, (ax,))
 @inline _apply_axis(data, ax::ComponentArrays.ShapedAxis) = reshape(data, size(ax))
 @inline _apply_axis(data, ax::ComponentArrays.ViewAxis) = _apply_axis(data, ax.ax)
+@inline _apply_axis(data, ax::ComponentArrays.PartitionedAxis{N}) where {N} = FaceVectorView(data, N, 1)
 
 @inline _resolve(data, ax::Tuple{Int, Int}) = FaceVectorView(data, ax[2], ax[1])
 @inline _resolve(data, ax::Tuple{Int}) = view(data, ax[1]:ax[1])
@@ -59,10 +80,12 @@ end
 @inline Base.getindex(A::VirtualFVMArray, s::Symbol) = getproperty(A, s)
 @inline Base.getindex(A::VirtualFVMArray, ax::VirtualAxis) = _virtual_resolve(getfield(A, :data), ax)
 @inline Base.getindex(A::VirtualFVMArray, ax::NamedTuple) = _virtual_resolve(getfield(A, :data), ax)
+@inline Base.getindex(A::VirtualFVMArray, vidx::VirtualIndex{Src}) where {Src} = getfield(A, :data)[Src][vidx.idx]
 
 @inline Base.setindex!(A::VirtualFVMArray, v, s::Symbol) = (getproperty(A, s) .= v)
 @inline Base.setindex!(A::VirtualFVMArray, v, ax::VirtualAxis) = (Base.getindex(A, ax) .= v)
 @inline Base.setindex!(A::VirtualFVMArray, v, ax::NamedTuple) = (Base.getindex(A, ax) .= v)
+@inline Base.setindex!(A::VirtualFVMArray, v, vidx::VirtualIndex{Src}) where {Src} = (getfield(A, :data)[Src][vidx.idx] = v)
 
 @inline Base.keys(A::VirtualFVMArray) = keys(getfield(A, :axes))
 
