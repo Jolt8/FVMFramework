@@ -18,14 +18,16 @@ end
 function _drill_down_and_fill_properties!(merged_properties, properties, cells)
     for property_name in propertynames(properties)
         if merged_properties[property_name] isa ComponentArray
-            _drill_down_and_fill_properties!(merged_properties[property_name], properties[property_name], cells)
+            _drill_down_and_fill_properties!(getproperty(merged_properties, property_name), getproperty(properties, property_name), cells)
         else
             if merged_properties[property_name] isa AbstractArray || merged_properties[property_name] isa SubArray
                 for cell_id in cells
-                    merged_properties[property_name][cell_id] = properties[property_name]
+                    view(merged_properties, property_name)[cell_id] = properties[property_name]
                 end
             elseif merged_properties[property_name] isa Number
                 merged_properties[property_name] = properties[property_name]
+            else
+                error("The property $property_name was not handled")
             end
         end
     end
@@ -34,14 +36,16 @@ end
 function _drill_down_and_fill_patch_properties!(merged_properties, properties, cells)
     for property_name in propertynames(properties)
         if merged_properties[property_name] isa ComponentArray
-            _drill_down_and_fill_patch_properties!(merged_properties[property_name], properties[property_name], cells)
+            _drill_down_and_fill_patch_properties!(getproperty(merged_properties, property_name), getproperty(properties, property_name), cells)
         else
             if merged_properties[property_name] isa AbstractArray || merged_properties[property_name] isa SubArray
                 for cell_id in cells
-                    merged_properties[property_name][cell_id] = properties[property_name]
+                    view(merged_properties, property_name)[cell_id] = properties[property_name]
                 end
             elseif merged_properties[property_name] isa Number
                 merged_properties[property_name] = properties[property_name]
+            else
+                error("The property $property_name was not handled")
             end
         end
     end
@@ -91,17 +95,17 @@ function _drill_down_and_fill_caches!(merged_caches, region_cache_syms_and_units
         elseif merged_caches[property_name] isa ComponentArray
             #recursively drill down both caches and properties if possible
             if hasproperty(merged_properties, property_name)
-                _drill_down_and_fill_caches!(merged_caches[property_name], property_unit, special_caches, merged_properties[property_name])
+                _drill_down_and_fill_caches!(getproperty(merged_caches, property_name), property_unit, special_caches, getproperty(merged_properties, property_name))
             else
                 #if properties are missing for this group, still drill down for units but with empty properties
-                _drill_down_and_fill_caches!(merged_caches[property_name], property_unit, special_caches, (_ = nothing,))
+                _drill_down_and_fill_caches!(getproperty(merged_caches, property_name), property_unit, special_caches, (_ = nothing,))
             end
         elseif merged_caches[property_name] isa AbstractArray || merged_caches[property_name] isa SubArray
             # since we use the properties as the initial value for the cache, we might not even need properties and could just preemptively merge them
             if hasproperty(merged_properties, property_name)
-                merged_caches[property_name] .= merged_properties[property_name]
+                view(merged_caches, property_name) .= merged_properties[property_name]
             else
-                merged_caches[property_name] .= 0.0 .* upreferred(property_unit)
+                view(merged_caches, property_name) .= 0.0 .* upreferred(property_unit)
             end
         else
             error("The cache $property_name was not handled")
