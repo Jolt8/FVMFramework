@@ -60,8 +60,8 @@ export create_views_inline
 include("component_arrays_addons/virtual_component_array.jl")
 export FaceVectorView, VirtualAxis, VirtualFVMArray, virtual_merge_axes
 
-include("component_arrays_addons/foreach_field_componentarray_looping.jl")
-export foreach_field_at!
+include("component_arrays_addons/for_fields!_componentarray_looping.jl")
+export for_fields!, foreach_field_at!
 
 # ----- Physics ----
 #   ---- Physics Types ----
