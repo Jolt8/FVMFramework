@@ -1,3 +1,8 @@
+
+@inline function _resolve_unified_val(A::VirtualFVMArray, ::Val{s}) where {s}
+    return getproperty(A, s)
+end
+
 @generated function foreach_field_at!(f, cell_id::Int, groups::Vararg{Any, N}) where {N}
     G1 = groups[1]
     local properties
@@ -28,7 +33,7 @@
         $(exprs...)
         nothing
     end
-    end
+end
 
 @generated function foreach_field_at!(f, groups::Vararg{Any, N}) where {N}
     G1 = groups[1]
