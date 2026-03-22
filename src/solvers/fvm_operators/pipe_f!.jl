@@ -45,9 +45,6 @@ function pipe_f!(
         )
     end
 
-    @show du.temp[:]
-    @show du.pressure[:]
-
     for patch in patch_groups
         solve_patch_group!(
             du, u,
@@ -56,10 +53,6 @@ function pipe_f!(
             cell_volumes
         )
     end
-
-    @show du.temp[:]
-    @show du.pressure[:]
-    
     
     for reg in region_groups
         solve_region_group!(
@@ -68,7 +61,4 @@ function pipe_f!(
             cell_volumes
         )
     end
-    
-    @show du.temp[:]
-    @show du.pressure[:]
 end
