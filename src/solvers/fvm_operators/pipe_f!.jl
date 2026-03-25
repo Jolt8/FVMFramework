@@ -8,19 +8,10 @@ function pipe_f!(
     connection_groups, controller_groups, region_groups, patch_groups,
 
     du_virtual_axes, u_virtual_axes,
-    du_diff_cache_vec, u_diff_cache_vec,
+    du_diff_cache, u_diff_cache,
     properties_vec,
-)
-    
-    du_vec .= 0.0
-    
-    if (first(u_vec) + first(p)) isa SparseConnectivityTracer.Dual{Float64}
-        u = VirtualFVMArray((u_vec, (get_tmp(u_diff_cache_vec, first(u_vec) + first(p)) .= 0.0), properties_vec), u_virtual_axes)
-        du = VirtualFVMArray((du_vec, (get_tmp(du_diff_cache_vec, first(u_vec) + first(p)) .= 0.0)), du_virtual_axes)
-    else
-        u = VirtualFVMArray((u_vec, get_tmp(u_diff_cache_vec, first(u_vec) + first(p)), properties_vec), u_virtual_axes)
-        du = VirtualFVMArray((du_vec, get_tmp(du_diff_cache_vec, first(u_vec) + first(p))), du_virtual_axes)
-    end
+)   
+    du, u = unpack_fvm_state(du_vec, u_vec, p, t, du_virtual_axes, u_virtual_axes, du_diff_cache, u_diff_cache, properties_vec)
 
     #1st cell neighbors: 
         #- (1, [(2, 3)])

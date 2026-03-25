@@ -12,12 +12,12 @@ function methylene_blue_diffuion_parameter_fitting_f!(
     
     properties,
 
-    du_diff_cache_vec, u_diff_cache_vec,
+    du_diff_cache, u_diff_cache,
     du_proto_axes, u_proto_axes,
     du_cache_axes, u_cache_axes
 )
-    du_cache_vec = get_tmp(du_diff_cache_vec, first(u_vec) + first(p))
-    u_cache_vec = get_tmp(u_diff_cache_vec, first(u_vec) + first(p))
+    du_cache_vec = get_tmp(du_diff_cache, first(u_vec) + first(p))
+    u_cache_vec = get_tmp(u_diff_cache, first(u_vec) + first(p))
 
     #println(typeof(du_cache_vec))
 

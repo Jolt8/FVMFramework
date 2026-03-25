@@ -9,12 +9,12 @@ function methanol_reformer_f_test!(
     
     properties,
 
-    du_diff_cache_vec, u_diff_cache_vec,
+    du_diff_cache, u_diff_cache,
     du_proto_axes, u_proto_axes,
     du_cache_axes, u_cache_axes
 )
-    du_cache_vec = get_tmp(du_diff_cache_vec, u_vec)
-    u_cache_vec = get_tmp(u_diff_cache_vec, u_vec)
+    du_cache_vec = get_tmp(du_diff_cache, u_vec)
+    u_cache_vec = get_tmp(u_diff_cache, u_vec)
     
     #do you know what is fucking crazy?
     #the only reason this worked in the past was because I zeroed out the caches
