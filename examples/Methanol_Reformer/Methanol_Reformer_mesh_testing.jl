@@ -526,9 +526,9 @@ f_closure_implicit = (du, u, p, t) -> methanol_reformer_f_test!(
     geo.unconnected_cell_face_map, geo.cell_face_areas, geo.cell_face_normals,
 
     system.connection_groups, system.controller_groups, system.region_groups, 
-    system.merged_properties,
+    system.properties_vec,
 
-    system.du_diff_cache_vec, system.u_diff_cache_vec,
+    system.du_diff_cache, system.u_diff_cache,
     system.du_proto_axes, system.u_proto_axes,
     system.du_cache_axes, system.u_cache_axes
 )
