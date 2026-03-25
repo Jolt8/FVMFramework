@@ -420,7 +420,7 @@ f_closure_implicit = (du, u, p, t) -> pipe_f!(
     system.connection_groups, system.controller_groups, system.region_groups, system.patch_groups,
     system.merged_properties,
 
-    system.du_diff_cache_vec, system.u_diff_cache_vec,
+    system.du_diff_cache, system.u_diff_cache_vec,
     system.du_proto_axes, system.u_proto_axes,
     system.du_cache_axes, system.u_cache_axes
 )
