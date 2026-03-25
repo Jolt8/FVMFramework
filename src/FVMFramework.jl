@@ -143,6 +143,17 @@ export iluzero, algebraicmultigrid
 include("solvers/callbacks/progress_callbacks.jl")
 export show_t_progress, approximate_time_to_finish_cb
 
+#   ---- Common Operator Methods ----
+include("solvers/common_operator_methods/unpack_fvm_state.jl")
+export unpack_fvm_state
+
+include("solvers/common_operator_methods/shared_group_functions.jl")
+export solve_connection_group!, solve_controller_group!, solve_region_group!, solve_patch_group!
+
+include("solvers/common_operator_methods/further_simplified_group_functions.jl")
+export solve_connection_groups!, solve_controller_groups!, solve_region_groups!, solve_patch_groups!
+export default_order_solve_all_groups!
+
 #   ---- FVM Operators ----
 include("solvers/fvm_operators/methanol_reformer_op_different_connections.jl")
 export methanol_reformer_f_test!
@@ -159,8 +170,8 @@ export heat_transfer_f_test!
 include("solvers/fvm_operators/pipe_f!.jl")
 export pipe_f!
 
-include("solvers/shared_group_functions/shared_group_functions.jl")
-export solve_connection_group!, solve_controller_group!, solve_region_group!, solve_patch_group!
+include("solvers/fvm_operators/generic_operator.jl")
+export fvm_operator!
 
 #   ---- Solver Debugging ----
 include("solvers/solver_debugging.jl")

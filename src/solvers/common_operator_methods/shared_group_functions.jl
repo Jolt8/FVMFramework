@@ -4,7 +4,7 @@ function solve_connection_group!(
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
 ) where {F}
 
-    @batch for (idx_a, neighbor_list) in cell_neighbors
+    for (idx_a, neighbor_list) in cell_neighbors
         for (idx_b, face_idx) in neighbor_list
             flux!(
                 du, u,
@@ -33,7 +33,7 @@ function solve_region_group!(
     internal_physics!::F, region_cells,
     cell_volumes
 ) where {F}
-    @batch for cell_id in region_cells
+    for cell_id in region_cells
         internal_physics!(
             du, u, cell_id,
             cell_volumes[cell_id]
@@ -46,8 +46,7 @@ function solve_patch_group!(
     patch_physics!::F, cell_neighbors,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
-) where {F}
-    #=@batch=# 
+) where {F} 
     for (idx_a, neighbor_list) in cell_neighbors
         for (idx_b, face_idx) in neighbor_list
             patch_physics!(
