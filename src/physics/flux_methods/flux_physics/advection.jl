@@ -3,7 +3,7 @@ function all_species_advection!(
     idx_a, idx_b, face_idx,
     area, norm, dist
 )
-    foreach_field_at!(u.mass_fractions, du.species_mass_flows) do species, mass_fractions, species_mass_flows
+    for_fields!(u.mass_fractions, du.species_mass_flows) do species, mass_fractions, species_mass_flows
         upwinded_mass_fraction = upwind(du, u, idx_a, idx_b, face_idx, mass_fractions[species[idx_a]], mass_fractions[species[idx_b]])
         species_mass_flows[species[idx_a]] += (du.mass_face[idx_a, face_idx] * upwinded_mass_fraction)
     end
