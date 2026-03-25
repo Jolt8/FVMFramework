@@ -1,4 +1,3 @@
-using FVMFramework
 using Unitful
 using OrdinaryDiffEq
 using Ferrite
@@ -6,8 +5,10 @@ using SparseConnectivityTracer
 using ComponentArrays
 import ADTypes
 
+using FVMFramework
+
 total_pipe_length = 16.5u"cm"
-stripped_pipe_length = ustrip(total_pipe_length)
+stripped_pipe_length = ustrip(total_pipe_length |> u"m")
 pipe_width = ustrip(0.5u"cm" |> u"m")
 
 grid_dimensions = (100, 1, 1)
@@ -20,7 +21,7 @@ total_pipe_segments = 100
 addcellset!(grid, "inlet", xyz -> xyz[1] <= (1 * (stripped_pipe_length / total_pipe_segments)))
 getcellset(grid, "inlet")
 
-addcellset!(grid, "vaporization_area", xyz -> xyz[1] >= (1 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (20 * (stripped_pipe_length / total_pipe_segments)))
+addcellset!(grid, "vaporization_area", xyz -> xyz[1] >= (1 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (19 * (stripped_pipe_length / total_pipe_segments)))
 getcellset(grid, "vaporization_area")
 
 addcellset!(grid, "reforming_area", xyz -> xyz[1] >= (19 * (stripped_pipe_length / total_pipe_segments)) && xyz[1] <= (99 * (stripped_pipe_length / total_pipe_segments)))
@@ -52,7 +53,7 @@ MSR_rxn = ComponentVector(
     heat_of_reaction = 49500.0u"J/mol", 
     ref_delta_G = -3800.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 1.59e9u"s^-1", #sources online point to values around 1.25e7 mol / (kg * s * bar)
+    kf_A = 1.59e7u"s^-1", #sources online point to values around 1.25e7 mol / (kg * s * bar)
     kf_Ea = 103000.0u"J/mol",
     reactant_stoich_coeffs = (methanol = 1, water = 1),
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 3), 
@@ -65,7 +66,7 @@ MD_rxn = ComponentVector(
     heat_of_reaction = 90200.0u"J/mol", 
     ref_delta_G = 24800.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 1.46e13u"s^-1", #sources online point to values around 1.15e11 mol / (kg * s * bar)
+    kf_A = 1.46e11u"s^-1", #sources online point to values around 1.15e11 mol / (kg * s * bar)
     kf_Ea = 170000.0u"J/mol",
     reactant_stoich_coeffs = (methanol = 1,), 
     product_stoich_coeffs = (carbon_monoxide = 1, hydrogen = 2), 
@@ -78,7 +79,7 @@ WGS_rxn = ComponentVector(
     heat_of_reaction = -41100.0u"J/mol", 
     ref_delta_G = -28600.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 4.63e9u"s^-1", #sources online point to values around 3.65e7 mol / (kg * s * bar)
+    kf_A = 4.63e7u"s^-1", #sources online point to values around 3.65e7 mol / (kg * s * bar)
     kf_Ea = 87500.0u"J/mol",
     reactant_stoich_coeffs = (carbon_monoxide = 1, water = 1), 
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 1), 
@@ -132,8 +133,8 @@ pipe_k = 237.0u"W/(m*K)"
 approximate_residence_time = total_pipe_length / velocity |> u"s"   
 
 reforming_area_properties = ComponentVector(
-    k = 237.0u"W/(m*K)", 
-    cp = 4.184u"J/(kg*K)",
+    k = 0.025u"W/(m*K)", 
+    cp = 4184u"J/(kg*K)",
     mu = 1e-5u"Pa*s",
     rho = 791.0u"kg/m^3",
     viscosity = 1e-5u"Pa*s",
@@ -182,8 +183,8 @@ struct Inlet <: AbstractPhysics end
 struct Fluid <: AbstractPhysics end
 struct Outlet <: AbstractPhysics end
 
-include(joinpath(@__DIR__, "1D physics", "ergun_pressure_drop.jl"))
-include(joinpath(@__DIR__, "1D physics", "empirical_hx_correlations.jl"))
+Revise.include(joinpath(@__DIR__, "1D physics", "ergun_pressure_drop.jl"))
+Revise.include(joinpath(@__DIR__, "1D physics", "empirical_hx_correlations.jl"))
 
 common_cache_syms_and_units = (
     heat = u"J",
@@ -218,20 +219,30 @@ add_region!(
         #internal physics
         #ergun_pressure_drop!(du, u, cell_id, vol)
 
-        #du.mass_face[cell_id][5] += u.pipe_mass_flow[cell_id]
-        du.mass[cell_id] += u.pipe_mass_flow[cell_id]
+        du.mass_face[cell_id, 5] += u.pipe_mass_flow[cell_id]
 
-        foreach_field_at!(du.species_mass_flows) do species, species_mass_flows
-            species_mass_flows[species[cell_id]] *= 0.0
-        end
+        #for_fields!(u.mass_fractions, du.species_mass_flows) do species, u_mass_fractions, du_species_mass_flows
+        #    du_species_mass_flows[species[cell_id]] += u.pipe_mass_flow[cell_id] * u_mass_fractions[species[cell_id]]
+        #end
+        #this would be for a Neumann BC for mass fractions
+
+        #du.heat[cell_id] += u.pipe_mass_flow[cell_id] * u.cp[cell_id] * u.temp[cell_id] 
+        #this would be for a Neumann BC for temperature
+        #we're just going to use a Dirichlet BC for temperature and mass fractions here
         
         du.heat[cell_id] *= 0.0
+        #we're just going to use a Dirichlet BC for temperature and mass fractions here
 
         sum_mass_flux_face_to_cell!(du, u, cell_id)
 
         cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
         cap_mass_flux_to_pressure_change!(du, u, cell_id, vol)
         cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
+
+        for_fields!(du.mass_fractions) do species, du_mass_fractions
+            du_mass_fractions[species[cell_id]] *= 0.0
+        end
+        #we're just going to use a Dirichlet BC for temperature and mass fractions here
     end
 )
 
@@ -254,10 +265,9 @@ add_region!(
         molar_concentrations!(u, cell_id)
 
         #internal physics
-        #prandtl_number!(du, u, cell_id, vol)
-        #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
-        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
-        #du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
+        UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
+        surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
+        du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         sum_mass_flux_face_to_cell!(du, u, cell_id)
 
@@ -280,26 +290,46 @@ add_region!(
     cache_syms_and_units = common_cache_syms_and_units,
     region_function =
     function reforming_area!(du, u, cell_id, vol)
+        #=
+        if cell_id == 20
+            println("before")
+            @show u.temp[cell_id]
+            @show u.pressure[cell_id]
+            @show u.mass_fractions[cell_id]
+        end
+        =#
         #property updating/retrieval
         mw_avg!(u, cell_id)
         rho_ideal!(u, cell_id)
         molar_concentrations!(u, cell_id)
 
         #internal physics
-        #println(du.mass_fractions.methanol[cell_id])
         PAM_reforming_react_cell!(du, u, cell_id, vol)
-        #println(du.mass_fractions.methanol[cell_id])
 
-        #prandtl_number!(du, u, cell_id, vol)
-        #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
-        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
-        #du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
+        UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
+        surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
+        du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         sum_mass_flux_face_to_cell!(du, u, cell_id)
 
         cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
         cap_mass_flux_to_pressure_change!(du, u, cell_id, vol)
         cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
+
+        #=
+        if cell_id == 20
+            println("after")
+            @show du.heat[cell_id]
+            @show du.temp[cell_id]
+            @show du.mass[cell_id]
+            @show du.mass_face[cell_id, :]
+            @show du.pressure[cell_id]
+            @show du.mass_fractions[cell_id]
+            @show u.temp[cell_id]
+            @show u.pressure[cell_id]
+            @show u.mass_fractions[cell_id]
+        end
+        =#
     end
 )
 
@@ -322,16 +352,20 @@ add_region!(
         molar_concentrations!(u, cell_id)
 
         #internal physics
-        #du.mass_face[cell_id][5] -= u.pipe_mass_flow[cell_id]
-        du.mass[cell_id] -= u.pipe_mass_flow[cell_id]
-       
-        foreach_field_at!(u.species_mass_flows) do species, species_mass_flows
-            species_mass_flows[species[cell_id]] *= 0.0
-        end
+        du.mass_face[cell_id, 3] -= u.pipe_mass_flow[cell_id]
+        #this is simulating the mass flow out of the system
 
-        #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
-        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
-        #du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
+        for_fields!(u.mass_fractions, du.species_mass_flows) do species, u_mass_fractions, du_species_mass_flows
+            du_species_mass_flows[species[cell_id]] -= u.pipe_mass_flow[cell_id] * u_mass_fractions[species[cell_id]]
+        end
+        #this is to prevent the concentration of all species from building up at the outlet
+
+        du.heat[cell_id] -= u.pipe_mass_flow[cell_id] * u.cp[cell_id] * u.temp[cell_id] 
+        #this is to prevent the temperature from building up at the outlet
+
+        UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
+        surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
+        du.heat[cell_id] += UA * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         #ergun_pressure_drop!(du, u, cell_id, vol)
 
@@ -397,7 +431,7 @@ special_caches = ComponentArray(
 )
 
 #you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful ComponentVectors
-du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, special_caches, check_units = false);
+du0_vec, u0_vec, state_axes, geo, system = finish_fvm_config(config, connection_map_function, special_caches, check_units = false);
 
 f_closure_implicit = (du, u, p, t) -> pipe_f!(
     du, u, p, t, 
@@ -409,8 +443,8 @@ f_closure_implicit = (du, u, p, t) -> pipe_f!(
     system.connection_groups, system.controller_groups, system.region_groups, system.patch_groups,
 
     system.du_virtual_axes, system.u_virtual_axes,
-    system.du_diff_cache_vec, system.u_diff_cache_vec,
-    system.merged_properties
+    system.du_diff_cache, system.u_diff_cache,
+    system.properties_vec
 )
 
 p_guess = 0.0
@@ -439,30 +473,6 @@ sol_u_named_end.mass_fractions.hydrogen
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 #not sure if pure TracerSparsityDetector is faster
 
-using PreallocationTools
-
-cache_vec = get_tmp(system.du_diff_cache_vec, 1.0)
-du = VirtualFVMArray((du0_vec, get_tmp(system.du_diff_cache_vec, 1.0)), system.du_virtual_axes)
-
-u = VirtualFVMArray((u0_vec, get_tmp(system.u_diff_cache_vec, 1.0), system.merged_properties), system.u_virtual_axes)
-u.pipe_mass_flow[:]
-u.pressure[:]
-u.cp[:]
-u.diffusion_coefficients
-u.rho[:]
-
-function test_speed(u)
-    for cell_id in 1:100
-        foreach_field_at!(u.mass_fractions, u.molecular_weights, u.molar_concentrations) do species, mass_fractions, molecular_weights, molar_concentrations
-            molar_concentrations[species[cell_id]] = (u.rho[cell_id] * mass_fractions[species[cell_id]]) / molecular_weights[species[cell_id]]
-        end
-    end
-end
-
-@btime test_speed($u) #1200 allocations, uh oh...
-
-
-
 jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0_vec, u0_vec, detector
 )
@@ -478,35 +488,29 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
-#using NonlinearSolve
-
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 @time sol = solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
-VSCodeServer.@profview solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
+#VSCodeServer.@profview solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
+
+u_named = [ComponentVector(sol.u[i], state_axes) for i in 1:length(sol.u)]
 
 record_sol = true
 
 sim_file = @__FILE__
+#u_named[end].mass_fractions.methanol[1]
 
-u_named = [create_views_inline(sol.u[i], system.u_proto_axes) for i in eachindex(sol.u)]
-
-u_named[1].mass_fractions.methanol[1]
+u_named[end].mass_fractions.methanol[1]
 u_named[end].mass_fractions.methanol[99]
 
-inlet_cell_id = 1
-outlet_cell_id = 99
-
-conversion = ((u_named[1].mass_fractions.methanol[inlet_cell_id] - u_named[end].mass_fractions.methanol[outlet_cell_id]) / u_named[1].mass_fractions.methanol[inlet_cell_id]
+conversion = ((u_named[end].mass_fractions.methanol[1] - u_named[end].mass_fractions.methanol[99]) / u_named[end].mass_fractions.methanol[1]
 )
 
 if record_sol == true
     sol_to_vtk(sol, u_named, grid, sim_file)
 end
 
-hi = 1
-
-explicit_prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 3e-5), p_guess)
-@time sol = solve(explicit_prob, Tsit5(), callback = approximate_time_to_finish_cb)
+explicit_prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1e-2), p_guess)
+@btime sol = solve(explicit_prob, AutoTsit5(FBDF()))#, callback = approximate_time_to_finish_cb)
 
 #=
 function conversion_from_residence_time(tMax)
