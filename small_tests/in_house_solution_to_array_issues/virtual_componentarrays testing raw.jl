@@ -82,6 +82,8 @@ cell_volumes = ones(n_cells)
 virtual_du_axes = virtual_merge_axes((du_proto, du_cache_proto))
 virtual_u_axes = virtual_merge_axes((u_proto, u_cache_proto, p_proto, properties_proto))
 
+using LoopVectorization
+
 function ode_for_testing_f!(
     du_vec, u_vec, p_vec, t,
     v_du_axes, v_u_axes,
@@ -91,17 +93,8 @@ function ode_for_testing_f!(
 )
     du_vec .= 0.0
 
-    # Resolve merged views into VirtualFVMArrays
-    if (first(u_vec) + first(p_vec)) isa SparseConnectivityTracer.Dual{Float64}
-        u = VirtualFVMArray((u_vec, (get_tmp(u_diff_cache, first(u_vec) + first(p_vec)) .= 0.0), p_vec, props_vec), v_u_axes)
-        du = VirtualFVMArray((du_vec, (get_tmp(du_diff_cache, first(u_vec) + first(p_vec)) .= 0.0)), v_du_axes)
-    else
-        u = VirtualFVMArray((u_vec, get_tmp(u_diff_cache, first(u_vec) + first(p_vec)), p_vec, props_vec), v_u_axes)
-        du = VirtualFVMArray((du_vec, (get_tmp(du_diff_cache, first(u_vec) + first(p_vec)) .= 0.0)), v_du_axes)
-    end
-
-    @batch for cell_id in eachindex(cell_vols)
-        du.mass_fractions.methylene_blue[cell_id] += 1.0 
+    @tturbo for cell_id in eachindex(cell_vols)
+        du_vec[cell_id] += 1.0 
     end
     return 
 end
@@ -147,11 +140,11 @@ save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
 @btime sol = solve(implicit_prob, FBDF())
-#841.673 ms (260641 allocations: 863.35 MiB)
-#1.127 s (394500 allocations: 870.32 MiB) (multithreaded)
+#819.045 ms (255688 allocations: 863.02 MiB)
+#1.104 s (400281 allocations: 870.58 MiB) (multithreaded)
 
 u_vec .= 0.0
 explicit_prob = ODEProblem(f_closure, u_vec, tspan, p_vec)
 @btime sol = solve(explicit_prob, Tsit5())
-#100.165 ms (16969 allocations: 133.64 MiB)
-#188.972 ms (85437 allocations: 137.20 MiB) (multithreaded)
+#77.192 ms (8602 allocations: 133.20 MiB)
+#363.229 ms (146815 allocations: 140.42 MiB) (multithreaded)

@@ -7,7 +7,7 @@ import ADTypes
 using OrdinaryDiffEq
 using FVMFramework
 
-n_cells = 1000
+n_cells = 100000
 n_faces = 6
 reaction_names = (:WGS_rxn, :MD_rxn)
 N = 2
@@ -119,7 +119,7 @@ function ode_for_testing_f!(
 
     u.rho .= (u_cache_nt.rho .+ properties.rho)
 
-    @batch for cell_id in 1:length(cell_volumes)
+    for cell_id in eachindex(cell_volumes)
         # Direct dot syntax
         du.mass_fractions.methylene_blue[cell_id] += 1.0 
         
@@ -128,16 +128,16 @@ function ode_for_testing_f!(
         #    du.mass_fractions[species_name][cell_id] += 1.0
         #end
 
-        du.mass_fractions.methylene_blue[cell_id] += 1.0
-        du.mass_fractions.water[cell_id] += 1.0
-        du.mass_fractions.methylene_blue[cell_id] += 1.0
-        du.mass_fractions.water[cell_id] += 1.0
+        #du.mass_fractions.methylene_blue[cell_id] += 1.0
+        #du.mass_fractions.water[cell_id] += 1.0
+        #du.mass_fractions.methylene_blue[cell_id] += 1.0
+        #du.mass_fractions.water[cell_id] += 1.0
         
         #map(keys(du.reforming_reactions.net_rates.reforming_reactions)) do reaction_name
         #    du.reforming_reactions.net_rates.reforming_reactions.WGS_[1] += 1.0
         #end
 
-        du.mass[cell_id] += du.rho[cell_id] * u.viscosity[cell_id]
+        #du.mass[cell_id] += du.rho[cell_id] * u.viscosity[cell_id]
     end
 end
 
@@ -151,6 +151,7 @@ println("Benchmarking ode_for_testing_f! with 'Best' Looping Style...")
     $properties_proto,
     $cell_volumes
 )
+#1.134 ms (6 allocations, 1.53 MiB)
 
 f_closure = (du, u, p, t) -> ode_for_testing_f!(
     du, u, p, t,
@@ -182,9 +183,9 @@ save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 @btime sol = solve(implicit_prob, FBDF())
-#4.329 ms (1556 allocations: 9.62 MiB)
+#846.439 ms (505760 allocations, 903.6 MiB)
 
 u_vec .= 0.0
 explicit_prob = ODEProblem(f_closure, u_vec, tspan, p_vec)
 @btime sol = solve(explicit_prob, Tsit5())
-#67.660 ms (243 allocations: 132.76 MiB)
+#131.480 ms (41128 allocations: 185.25 MiB)
