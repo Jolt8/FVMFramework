@@ -1,15 +1,15 @@
 
-function run_and_check_units(du0_vec_units, u0_vec_units, geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
+function run_and_check_units(du0_vec_units, u0_vec_units, geo, system, du_unitful_cache_vec, u_unitful_cache_vec, properties_vec_units, p_vec_units)
     du_unitful_cache_vec = upreferred.(du_unitful_cache_vec)
     du_unitful_cache_vec .*= 0.0
-    du_unitful_cache_vec ./= 1.0u"s"
+    du_unitful_cache_vec = du_unitful_cache_vec ./ 1.0u"s"
     u_unitful_cache_vec = upreferred.(u_unitful_cache_vec)
     u_unitful_cache_vec .*= 0.0
 
     du0_vec_units .*= 0.0
-    du0_vec_units ./= 1.0u"s"
+    du0_vec_units = du0_vec_units ./ 1.0u"s"
 
-    u = VirtualFVMArray((u0_vec_units, u_unitful_cache_vec, system.merged_properties), system.u_virtual_axes)
+    u = VirtualFVMArray((u0_vec_units, u_unitful_cache_vec, properties_vec_units), system.u_virtual_axes)
     du = VirtualFVMArray((du0_vec_units, du_unitful_cache_vec), system.du_virtual_axes)
 
     #applying units 
