@@ -5,70 +5,22 @@ function heat_transfer_f_test!(
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     unconnected_cell_face_map, cell_face_areas, cell_face_normals,
 
-    connection_groups, controller_groups, region_groups, patch_groups, 
-    
-    properties,
+    connection_groups, controller_groups, region_groups, patch_groups,
 
-    du_diff_cache_vec, u_diff_cache_vec,
-    du_proto_axes, u_proto_axes,
-    du_cache_axes, u_cache_axes
-    )
-    du_cache_vec = get_tmp(du_diff_cache_vec, u_vec)
-    u_cache_vec = get_tmp(u_diff_cache_vec, u_vec)
-
-    #do you know what is fucking crazy?
-    #the only reason this worked in the past was because I zeroed out the caches
-    #otherwise, it just returns #undef for everything
-    du_cache_vec .= 0.0
-    u_cache_vec .= 0.0
-
-    #V1 
-        # 93.499 ms, 573 allocations, 49.92 MiB (10000 cells)
-        # 9.227 ms, 573 allocations, 5.01 MiB (1000 cells)
-    # requires: du_vec .= Vector(du.temp)
-    #=
-    du_cache_nt = (; NamedTuple(ComponentArray(du_cache_vec, du_cache_axes))...)
-    u_cache_nt = (; NamedTuple(ComponentArray(u_cache_vec, u_cache_axes))...)
+    du_virtual_axes, u_virtual_axes,
+    du_diff_cache, u_diff_cache,
+    properties_vec,
+)
     
     du_vec .= 0.0
-    du_nt = (; NamedTuple(ComponentArray(du_vec, du_proto_axes))...)
-    u_nt = (; NamedTuple(ComponentArray(u_vec, u_proto_axes))...)
-    =#
-
-    # V2 
-        # 103.895 ms, 1278 allocations, 15.62 MiB (10000 cells)
-        # 11.616 ms, 1278 allocations, 1.61 MiB (1000 cells)
-    # does not require: du_vec .= Vector(du.temp)
-    #=
-    du_cache_ca = ComponentArray(du_cache_vec, du_cache_axes)
-    du_cache_nt = NamedTuple{propertynames(du_cache_ca)}(Tuple(getproperty(du_cache_ca, p) for p in propertynames(du_cache_ca)))
-
-    u_cache_ca = ComponentArray(u_cache_vec, u_cache_axes)
-    u_cache_nt = NamedTuple{propertynames(u_cache_ca)}(Tuple(getproperty(u_cache_ca, p) for p in propertynames(u_cache_ca)))
     
-    du_vec .= 0.0
-    du_ca = ComponentArray(du_vec, du_proto_axes)
-    du_nt = NamedTuple{propertynames(du_ca)}(Tuple(getproperty(du_ca, p) for p in propertynames(du_ca)))
-    
-    u_ca = ComponentArray(u_vec, u_proto_axes)
-    u_nt = NamedTuple{propertynames(u_ca)}(Tuple(getproperty(u_ca, p) for p in propertynames(u_ca)))
-    =#
-
-    #V3 (Raw) 
-        # 84.729 ms, 348 allocations, 15.58 MiB (10000 cells)
-        # 7.330 ms, 348 allocations, 1.57 MiB (1000 cells)
-    # does not require: du_vec .= Vector(du.temp)
-    #
-    du_cache_nt = (heat = du_cache_vec,)
-    u_cache_nt = (heat = u_cache_vec,)
-    
-    du_vec .= 0.0
-    du_nt = (temp = du_vec,)
-    u_nt = (temp = u_vec,)
-    #
-
-    du = (; du_nt..., du_cache_nt...)
-    u = (; u_nt..., u_cache_nt..., properties...)
+    if (first(u_vec) + first(p)) isa SparseConnectivityTracer.Dual{Float64}
+        u = VirtualFVMArray((u_vec, (get_tmp(u_diff_cache, first(u_vec) + first(p)) .= 0.0), properties_vec), u_virtual_axes)
+        du = VirtualFVMArray((du_vec, (get_tmp(du_diff_cache, first(u_vec) + first(p)) .= 0.0)), du_virtual_axes)
+    else
+        u = VirtualFVMArray((u_vec, get_tmp(u_diff_cache, first(u_vec) + first(p)), properties_vec), u_virtual_axes)
+        du = VirtualFVMArray((du_vec, (get_tmp(du_diff_cache, first(u_vec) + first(p)) .= 0.0)), du_virtual_axes)
+    end
     
     #Connection Loops
     for conn in connection_groups
@@ -79,15 +31,21 @@ function heat_transfer_f_test!(
         )
     end
 
-    #=
-    #Controller Loops
     for cont in controller_groups
         solve_controller_group!(
             du, u, cont.id, cont.controller, cont.controller_function!, cont.monitored_cells, cont.affected_cells,
             cell_volumes
         )
     end
-    =#
+
+    for patch in patch_groups
+        solve_patch_group!(
+            du, u,
+            patch.patch_function!, patch.cell_neighbors,
+            cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+            cell_volumes
+        )
+    end
 
     #Internal Physics, Sources, Boundary Conditions, and Capacities Loops 
     for reg in region_groups
@@ -97,10 +55,6 @@ function heat_transfer_f_test!(
             cell_volumes
         )
     end
-
-    u.heat[1] += u.temp[1]
-
-    #du_vec .= Vector(du.temp)
 
     #for reg in region_groups
     #    debug_region!(du, u, reg)
