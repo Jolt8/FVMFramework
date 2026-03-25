@@ -16,18 +16,30 @@ function Nu_packed_bed_Gnielinski!(du, u, cell_id, Re, Pr)
 end
 
 function overall_heat_transfer_coefficient(du, u, cell_id, vol)
-    #println("u.rho[cell_id] = $(u.rho[cell_id])")
-    #println("u.velocity[cell_id] = $(u.velocity[cell_id])")
-    #println("u.pipe_hydraulic_diameter[cell_id] = $(u.pipe_hydraulic_diameter[cell_id])")
-    #println("u.viscosity[cell_id] = $(u.viscosity[cell_id])")
-    #println("u.cp[cell_id] = $(u.cp[cell_id])")
-    #println("u.k[cell_id] = $(u.k[cell_id])")
-    #println(u.rho[cell_id] |> u"kg/m^3")
-    #println(u.velocity[cell_id] |> u"m/s")
-    #println(u.pipe_hydraulic_diameter[cell_id] |> u"m")
-    #println(u.viscosity[cell_id] |> u"Pa*s")
+    #@show u.rho[cell_id]
+    #@show u.velocity[cell_id]
+    #@show u.catalyst_particle_diameter[cell_id]
+    #@show u.viscosity[cell_id]
+    #@show u.cp[cell_id]
+    #@show u.k[cell_id]
+    
     Re = (u.rho[cell_id] * u.velocity[cell_id] * u.catalyst_particle_diameter[cell_id]) / (u.viscosity[cell_id])
     Pr = (u.viscosity[cell_id] * u.cp[cell_id]) / (u.k[cell_id])
+
+    #@show Re
+    #@show Pr
+
+
+    if Re <= 0 || Pr <= 0
+        @show u.rho[cell_id]
+        @show u.velocity[cell_id]
+        @show u.catalyst_particle_diameter[cell_id]
+        @show u.viscosity[cell_id]
+        @show u.cp[cell_id]
+        @show u.k[cell_id]
+        @show Re
+        @show Pr
+    end
 
     pipe_nusselt_number = Nu_packed_bed_Gnielinski!(du, u, cell_id, Re, Pr)
 
@@ -44,7 +56,3 @@ function overall_heat_transfer_coefficient(du, u, cell_id, vol)
 
     return overall_heat_transfer_coefficient
 end
-
-
-
-println(log((1.0u"m" / 2) / (0.98u"m" / 2)) / (2 * pi * 40u"W/(m*K)" * 1u"m"))
