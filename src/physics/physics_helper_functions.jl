@@ -19,23 +19,47 @@ end
 function mw_avg!(u, cell_id)
     u.mw_avg[cell_id] *= 0.0
 
-    foreach_field_at!(u.mass_fractions, u.molecular_weights) do species, mass_fractions, molecular_weights
+    #@show u.mass_fractions[cell_id]
+    #@show u.molecular_weights[cell_id]
+
+    for_fields!(u.mass_fractions, u.molecular_weights) do species, mass_fractions, molecular_weights
         u.mw_avg[cell_id] += mass_fractions[species[cell_id]] * molecular_weights[species[cell_id]]
     end
 end
 
 function rho_ideal!(u, cell_id)
+    #@show u.pressure[cell_id]
+    #@show u.mw_avg[cell_id]
+    #@show u.R_gas[cell_id]
+    #@show u.temp[cell_id]
     u.rho[cell_id] = (u.pressure[cell_id] * u.mw_avg[cell_id]) / (u.R_gas[cell_id] * u.temp[cell_id])
+
+    if u.rho[cell_id] < 0
+        @show cell_id
+        @show u.rho[cell_id]
+        @show u.pressure[cell_id]
+        @show u.mw_avg[cell_id]
+        @show u.R_gas[cell_id]
+        @show u.temp[cell_id]
+    end
+    #=if u.pressure[cell_id] < 50000 || u.pressure[cell_id] > 150000
+        @show u.pressure[cell_id]
+        @show cell_id
+        @show u.mass_fractions[cell_id]
+        @show u.mw_avg[cell_id]
+        @show u.R_gas[cell_id]
+        @show u.temp[cell_id]
+    end=#
 end
 
 function molar_concentrations!(u, cell_id)
-    foreach_field_at!(u.mass_fractions, u.molecular_weights, u.molar_concentrations) do species, mass_fractions, molecular_weights, molar_concentrations
+    for_fields!(u.mass_fractions, u.molecular_weights, u.molar_concentrations) do species, mass_fractions, molecular_weights, molar_concentrations
         molar_concentrations[species[cell_id]] = (u.rho[cell_id] * mass_fractions[species[cell_id]]) / molecular_weights[species[cell_id]]
     end
 end
 
 function molar_fractions!(u, cell_id)
-    foreach_field_at!(u.mass_fractions, u.molecular_weights, u.molar_fractions) do species, mass_fractions, molecular_weights, molar_fractions
+    for_fields!(u.mass_fractions, u.molecular_weights, u.molar_fractions) do species, mass_fractions, molecular_weights, molar_fractions
         molar_fractions[species[cell_id]] = mass_fractions[species[cell_id]] / molecular_weights[species[cell_id]]
     end
 end
@@ -43,8 +67,8 @@ end
 #honestly, this could probably be removed and derrived only in functions that actually need it
 function cp_avg!(u, cell_id)
     u.cp_avg[cell_id] *= 0.0
-    foreach_field_at!(u.mass_fractions, u.species_cps, u.cp_avg) do species, mass_fractions, species_cps, cp_avg
-        cp_avg[species[cell_id]] += mass_fractions[species[cell_id]] * species_cps[species[cell_id]]
+    for_fields!(u.mass_fractions, u.species_cps) do species, mass_fractions, species_cps
+        u.cp_avg[species[cell_id]] += mass_fractions[species[cell_id]] * species_cps[species[cell_id]]
     end
 end
 #=
