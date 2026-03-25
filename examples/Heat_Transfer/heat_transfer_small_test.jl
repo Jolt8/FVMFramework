@@ -29,8 +29,8 @@ addcellset!(grid, "copper", x -> x[1] <= (left[1] + (right[1] / 2) + cell_half_d
 addcellset!(grid, "steel", x -> x[1] >= left[1] + (right[1] / 2))
 
 n_cells = length(grid.cells)
-u_proto = (
-    temp = zeros(n_cells),
+u_proto = ComponentVector(
+    temp = zeros(n_cells)u"K",
 )
 
 config = create_fvm_config(grid, u_proto)
@@ -42,16 +42,16 @@ struct Solid <: AbstractPhysics end
 add_region!(
     config, "copper";
     type = Solid(),
-    initial_conditions = (
-        temp = ustrip(270.0u"°C" |> u"K"),
+    initial_conditions = ComponentVector(
+        temp = 270.0u"°C",
     ),
-    properties = (
-        k = 237.0, # k (W/(m*K))
-        rho = 2700.0, # rho (kg/m^3)
-        cp = 921.0, # cp (J/(kg*K))
+    properties = ComponentVector(
+        k = 237.0u"W/(m*K)", 
+        rho = 2700.0u"kg/m^3",
+        cp = 921.0u"J/(kg*K)",
     ),
-    state_syms = [:temp],
-    cache_syms = [:heat],
+    optimized_syms = (),
+    cache_syms_and_units = (heat = u"J",),
     region_function =
     function heat_transfer!(du, u, cell_id, vol)
         #property updating/retrieval
@@ -72,16 +72,16 @@ add_region!(
 add_region!(
     config, "steel";
     type = Solid(),
-    initial_conditions = (
-        temp = ustrip(350.0u"°C" |> u"K"), #I really dislike that NamedTuples default to vectors if you don't put , at the end for a single field NamedTuples
+    initial_conditions = ComponentVector(
+        temp = 350.0u"°C",
     ),
-    properties = (
-        k = 123.0, # k (W/(m*K))
-        rho = 7800.0, # rho (kg/m^3)
-        cp = 450.0, # cp (J/(kg*K))
+    properties = ComponentVector(
+        k = 123.0u"W/(m*K)",
+        rho = 7800.0u"kg/m^3",
+        cp = 450.0u"J/(kg*K)",
     ),
-    state_syms = [:temp],
-    cache_syms = [:heat],
+    cache_syms_and_units = (heat = u"J",),
+    optimized_syms = (),
     region_function=
     function heat_transfer!(du, u, cell_id, vol)
         #property updating/retrieval
@@ -107,7 +107,7 @@ function solid_solid_flux!(
 
     #hmm, perhaps these physics functions need to be more strictly typed
     #Checking profview, I'm getting some runtime dispatch and GC here, I don't know why 
-    diffusion_temp_exchange!(
+    temp_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]
@@ -120,7 +120,7 @@ end
 
 species_caches = ()
 
-du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, species_caches)
+du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, species_caches, check_units = false);
 
 f_closure_implicit = (du, u, p, t) -> heat_transfer_f_test!(
     du, u, p, t, 
@@ -129,32 +129,34 @@ f_closure_implicit = (du, u, p, t) -> heat_transfer_f_test!(
     geo.cell_neighbor_areas, geo.cell_neighbor_normals, geo.cell_neighbor_distances,
     geo.unconnected_cell_face_map, geo.cell_face_areas, geo.cell_face_normals,
 
-    system.connection_groups, system.controller_groups, system.region_groups, 
-    system.merged_properties,
+    system.connection_groups, system.controller_groups, system.region_groups, system.patch_groups,
 
-    system.du_diff_cache_vec, system.u_diff_cache_vec,
-    system.du_proto_axes, system.u_proto_axes,
-    system.du_cache_axes, system.u_cache_axes
+    system.du_virtual_axes, system.u_virtual_axes,
+    system.du_diff_cache, system.u_diff_cache,
+    system.merged_properties
 )
 
 p_guess = 0.0
 
 test_prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1000.0), p_guess)
-@time sol = solve(test_prob, Tsit5(), tspan=(0.0, 10.0), callback=approximate_time_to_finish_cb)
+@btime sol = solve(test_prob, Tsit5(), tspan = (0.0, 10.0))
+
+# 800.793 ms (1552 allocations: 55.95 MiB) (multithreaded)
+# 769.695 ms (1552 allocations: 55.95 MiB) (non-multithreaded)
 
 sol.u[1] == sol.u[end]
 
 #using BenchmarkTools
 #@btime sol = solve(test_prob, Tsit5(), tspan = (0.0, 10.0))
 
-VSCodeServer.@profview sol = solve(test_prob, Tsit5(), tspan=(0.0, 10.0), callback=approximate_time_to_finish_cb)
+#VSCodeServer.@profview sol = solve(test_prob, Tsit5(), tspan=(0.0, 100.0), callback=approximate_time_to_finish_cb)
 
 sol_u_named_0 = ComponentVector(sol.u[1], system.u_proto_axes)
 
 sol_u_named_end = ComponentVector(sol.u[end], system.u_proto_axes)
 
 t0 = 0.0
-tMax = 10000.0
+tMax = 1000.0
 tspan = (t0, tMax)
 
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
@@ -164,15 +166,21 @@ jac_sparsity = ADTypes.jacobian_sparsity(
     (du, u) -> f_closure_implicit(du, u, p_guess, 0.0), du0_vec, u0_vec, detector
 )
 
-ode_func = ODEFunction(f_closure_implicit, jac_prototype=float.(jac_sparsity))
+ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 
 desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
-@time sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback = approximate_time_to_finish_cb)
-#VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve=KrylovJL_GMRES(), precs=iluzero, concrete_jac=true), callback = approximate_time_to_finish_cb)
+@btime sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
+#728.605 ms (341178 allocations: 1.08 GiB) (non-multithreaded)
+#787.708 ms (202070 allocations: 1.07 GiB) (only connections multithreading)
+#799.862 ms (219386 allocations: 1.07 GiB) (everything multithreaded)
+#864.517 ms (211023 allocations: 1.07 GiB) (only regions multithreading)
+
+
+#VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 #algebraicmultigrid is only better for more than 1e6 cells
 
 record_sol = true
