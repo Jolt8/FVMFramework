@@ -1,4 +1,6 @@
 TODO:
+    - For second-order spatial discretization, I've been recommended to use Venkatakrishnan limiters, Van Albada Limiters, or maybe even Learned Neural Flux Limiters
+    
     - I should probably implement second order meshes at some point. In my Biology IA that contained a lot of cylinders, I had to make a very fine mesh to capture the curve of the cylinders. This was especially bad for very thin cylinders.
 
     - The other thing that would be great to implement is a method to handle moving meshes, I'm sure this would be kinda challenging, but I've already implement deform box mesh moving in the past, so I don't think that Arbitrary Langrangian-Eulerian would be too far out of reach
