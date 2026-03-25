@@ -1,7 +1,12 @@
 function cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
     # J/s /= m^3 * kg*m^3 * J/(kg*K)
     # = K/s
-    du.temp[cell_id] = du.heat[cell_id] / (vol * u.rho[cell_id] * u.cp[cell_id])
+    #@show du.heat[cell_id]
+    #@show vol
+    #@show u.rho[cell_id]
+    #@show u.cp[cell_id]
+    du.temp[cell_id] += du.heat[cell_id] / (vol * u.rho[cell_id] * u.cp[cell_id])
+    #@show du.temp[cell_id]
     #=
     if isnan(du.temp[cell_id])
         println(du.temp[cell_id])
@@ -24,8 +29,8 @@ end
 function cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
     total_mass = vol * u.rho[cell_id]
 
-    foreach_field_at!(u.mass_fractions, du.species_mass_flows) do species, mass_fractions, species_mass_flows
-        mass_fractions[species[cell_id]] += (species_mass_flows[species[cell_id]] - mass_fractions[species[cell_id]] * du.mass[cell_id]) / total_mass
+    for_fields!(du.mass_fractions, u.mass_fractions,du.species_mass_flows) do species, du_mass_fractions, u_mass_fractions, species_mass_flows
+        du_mass_fractions[species[cell_id]] += (species_mass_flows[species[cell_id]] - u_mass_fractions[species[cell_id]] * du.mass[cell_id]) / total_mass
     end
 end
 
