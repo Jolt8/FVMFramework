@@ -44,10 +44,10 @@ struct FVMSystem
     region_groups::Vector{RegionGroup}
     du_virtual_axes::NamedTuple
     u_virtual_axes::NamedTuple
-    du_diff_cache_vec::DiffCache
-    u_diff_cache_vec::DiffCache
-    merged_properties::Vector{Number}
-    p_vec::Vector{Number}
+    du_diff_cache::DiffCache
+    u_diff_cache::DiffCache
+    properties_vec::Vector{Float64}
+    p_vec::Vector{Float64}
 end
 
 function finish_fvm_config(config, connection_map_function, special_caches; check_units::Bool)
@@ -181,6 +181,8 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
 
     merged_caches = merge_region_caches(config, special_caches, merged_properties)
 
+    state_axes = getaxes(config.u_proto)
+    
     du0_vec_units = Vector(deepcopy(upreferred.(config.u_proto)))
     du0_vec_units .*= 0.0
     u0_vec_units = Vector(deepcopy(upreferred.(config.u_proto)))
@@ -194,8 +196,8 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
     du_unitful_cache_vec = Vector(ComponentArray(; deepcopy(merged_caches)...))
     u_unitful_cache_vec = Vector(ComponentArray(; deepcopy(merged_caches)...))
 
-    du_diff_cache_vec = DiffCache(ustrip.(upreferred.(deepcopy(du_unitful_cache_vec))), N)
-    u_diff_cache_vec = DiffCache(ustrip.(upreferred.(deepcopy(u_unitful_cache_vec))), N)
+    du_diff_cache = DiffCache(ustrip.(upreferred.(deepcopy(du_unitful_cache_vec))), N)
+    u_diff_cache = DiffCache(ustrip.(upreferred.(deepcopy(u_unitful_cache_vec))), N)
 
     p_vec_units = Vector(ComponentVector(config.optimized_parameters))
     p_vec = ustrip.(upreferred.(Vector(ComponentVector(config.optimized_parameters))))
@@ -216,21 +218,21 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
         system = FVMSystem(
             connection_groups, controller_groups, patch_groups, region_groups,
             du_virtual_axes, u_virtual_axes,
-            du_diff_cache_vec, u_diff_cache_vec,
-            properties_vec_units,
-            p_vec_units
+            du_diff_cache, u_diff_cache,
+            properties_vec,
+            p_vec
         )
-        du_units, u_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec)
-        return du_units, u_units, 0, 0
+        du_units, u_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec, properties_vec_units, p_vec_units)
+        return du_units, u_units, state_axes, 0, 0
     end
 
     system = FVMSystem(
         connection_groups, controller_groups, patch_groups, region_groups,
         du_virtual_axes, u_virtual_axes,
-        du_diff_cache_vec, u_diff_cache_vec,
+        du_diff_cache, u_diff_cache,
         properties_vec,
         p_vec
     )
 
-    return du0_vec, u0_vec, config.geo, system
+    return du0_vec, u0_vec, state_axes, config.geo, system
 end
