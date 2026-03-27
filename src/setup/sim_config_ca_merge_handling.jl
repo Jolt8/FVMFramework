@@ -8,7 +8,11 @@ function _build_blank_dict!(current_dict, properties, n_cells)
             _build_blank_dict!(current_dict[property_name], value, n_cells)
         else
             if !haskey(current_dict, property_name)
-                current_dict[property_name] = zeros(n_cells) .* upreferred(unit(value))
+                if value isa AbstractArray
+                    current_dict[property_name] = zeros(n_cells) .* upreferred(unit(value[1]))
+                else
+                    current_dict[property_name] = zeros(n_cells) .* upreferred(unit(value))
+                end
             end
         end
     end
@@ -20,9 +24,15 @@ function _drill_down_and_fill_properties!(merged_properties, properties, cells)
         if merged_properties[property_name] isa ComponentArray
             _drill_down_and_fill_properties!(getproperty(merged_properties, property_name), getproperty(properties, property_name), cells)
         else
-            if merged_properties[property_name] isa AbstractArray || merged_properties[property_name] isa SubArray
-                for cell_id in cells
-                    view(merged_properties, property_name)[cell_id] = properties[property_name]
+            if merged_properties[property_name] isa AbstractArray 
+                if properties[property_name] isa AbstractArray
+                    for cell_id in cells
+                        view(merged_properties, property_name)[cell_id] = properties[property_name][cell_id]
+                    end
+                else
+                    for cell_id in cells
+                        view(merged_properties, property_name)[cell_id] = properties[property_name]
+                    end
                 end
             elseif merged_properties[property_name] isa Number
                 merged_properties[property_name] = properties[property_name]
@@ -38,9 +48,15 @@ function _drill_down_and_fill_patch_properties!(merged_properties, properties, c
         if merged_properties[property_name] isa ComponentArray
             _drill_down_and_fill_patch_properties!(getproperty(merged_properties, property_name), getproperty(properties, property_name), cells)
         else
-            if merged_properties[property_name] isa AbstractArray || merged_properties[property_name] isa SubArray
-                for cell_id in cells
-                    view(merged_properties, property_name)[cell_id] = properties[property_name]
+            if merged_properties[property_name] isa AbstractArray
+                if properties[property_name] isa AbstractArray
+                    for cell_id in cells
+                        view(merged_properties, property_name)[cell_id] = properties[property_name][cell_id]
+                    end
+                else
+                    for cell_id in cells
+                        view(merged_properties, property_name)[cell_id] = properties[property_name]
+                    end
                 end
             elseif merged_properties[property_name] isa Number
                 merged_properties[property_name] = properties[property_name]
@@ -78,7 +94,7 @@ function merge_region_properties(config)
     end
 
     for patch in config.patches
-        _drill_down_and_fill_patch_properties!(merged_properties, patch.properties, patch.cell_neighbors)
+        _drill_down_and_fill_patch_properties!(merged_properties, patch.properties, [cell[1] for cell in patch.cell_neighbors])
     end
 
     return merged_properties
