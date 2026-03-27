@@ -10,7 +10,7 @@ function unpack_fvm_state(du_vec, u_vec, p, t, system)
         u = VirtualFVMArray((u_vec, (get_tmp(system.u_diff_cache, first(u_vec) + first(p)) .= 0.0), system.properties_vec), system.u_virtual_axes)
     else
         du = VirtualFVMArray((du_vec, (get_tmp(system.du_diff_cache, first(u_vec) + first(p)) .= 0.0)), system.du_virtual_axes)
-        u = VirtualFVMArray((u_vec, get_tmp(system.u_diff_cache, first(u_vec) + first(p)), system.properties_vec), system.u_virtual_axes)
+        u = VirtualFVMArray((u_vec, (get_tmp(system.u_diff_cache, first(u_vec) + first(p)) .= 0.0), system.properties_vec), system.u_virtual_axes)
     end
     return du, u
 end
