@@ -53,7 +53,7 @@ MSR_rxn = ComponentVector(
     heat_of_reaction = 49500.0u"J/mol", 
     ref_delta_G = -3800.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 1.59e12u"s^-1", #sources online point to values around 1.25e7 mol / (kg * s * bar)
+    kf_A = 1.59e10u"s^-1", #sources online point to values around 1.25e7 mol / (kg * s * bar)
     kf_Ea = 103000.0u"J/mol",
     reactant_stoich_coeffs = (methanol = 1, water = 1),
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 3), 
@@ -66,7 +66,7 @@ MD_rxn = ComponentVector(
     heat_of_reaction = 90200.0u"J/mol", 
     ref_delta_G = 24800.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 1.46e16u"s^-1", #sources online point to values around 1.15e11 mol / (kg * s * bar)
+    kf_A = 1.46e13u"s^-1", #sources online point to values around 1.15e11 mol / (kg * s * bar)
     kf_Ea = 170000.0u"J/mol",
     reactant_stoich_coeffs = (methanol = 1,), 
     product_stoich_coeffs = (carbon_monoxide = 1, hydrogen = 2), 
@@ -79,7 +79,7 @@ WGS_rxn = ComponentVector(
     heat_of_reaction = -41100.0u"J/mol", 
     ref_delta_G = -28600.0u"J/mol", 
     ref_temp = 298.15u"K", 
-    kf_A = 4.63e12u"s^-1", #sources online point to values around 3.65e7 mol / (kg * s * bar)
+    kf_A = 4.63e10u"s^-1", #sources online point to values around 3.65e7 mol / (kg * s * bar)
     kf_Ea = 87500.0u"J/mol",
     reactant_stoich_coeffs = (carbon_monoxide = 1, water = 1), 
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 1), 
@@ -356,6 +356,7 @@ species_names = keys(config.regions[1].properties.molecular_weights)
 #species caches are for things like mass_face, which has an entry for every face of every cell rather than entries for each cell
 special_caches = ComponentArray(
     mass_face = zeros(n_cells, n_faces)u"kg",
+    mass_evaporated = zeros(n_cells)u"kg",
     net_rates = (
         reforming_reactions = NamedTuple{reaction_names}(
             Tuple(zeros(n_cells)u"mol/s" for _ in 1:length(reaction_names))
