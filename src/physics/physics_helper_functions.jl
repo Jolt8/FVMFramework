@@ -19,19 +19,12 @@ end
 function mw_avg!(u, cell_id)
     u.mw_avg[cell_id] *= 0.0
 
-    #@show u.mass_fractions[cell_id]
-    #@show u.molecular_weights[cell_id]
-
     for_fields!(u.mass_fractions, u.molecular_weights) do species, mass_fractions, molecular_weights
         u.mw_avg[cell_id] += mass_fractions[species[cell_id]] * molecular_weights[species[cell_id]]
     end
 end
 
 function rho_ideal!(u, cell_id)
-    #@show u.pressure[cell_id]
-    #@show u.mw_avg[cell_id]
-    #@show u.R_gas[cell_id]
-    #@show u.temp[cell_id]
     u.rho[cell_id] = (u.pressure[cell_id] * u.mw_avg[cell_id]) / (u.R_gas[cell_id] * u.temp[cell_id])
 
     #=if u.rho[cell_id] < 0
