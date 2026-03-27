@@ -26,7 +26,7 @@ function solve_patch_groups!(du, u, geo, system)
         solve_patch_group!(
             du, u,
             patch.patch_function!, patch.cell_neighbors,
-            geo.cell_neighbor_areas, geo.cell_neighbor_normals, geo.cell_neighbor_distances,
+            geo.cell_face_areas, geo.cell_neighbor_normals, geo.cell_neighbor_distances,
             geo.cell_volumes
         )
     end
