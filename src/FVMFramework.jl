@@ -74,7 +74,7 @@ include("physics/flux_methods/flux_physics/advection.jl")
 export species_advection!, all_species_advection!, enthalpy_advection!
 
 include("physics/flux_methods/flux_physics/darcy_flow.jl")
-export get_darcy_mass_flux, continuity_and_momentum_darcy
+export get_darcy_mass_flux, pressure_driven_mass_flux!
 
 include("physics/flux_methods/flux_physics/diffusion.jl")
 export species_numerical_flux, mass_fraction_diffusion!
@@ -105,9 +105,12 @@ include("physics/physics_face_summation_functions.jl")
 export sum_mass_flux_face_to_cell!
 
 # ----- Setup Methods -----
-include("setup/sim_config_helper_functions.jl")
-export get_cell_set_total_volume, get_facet_set_total_area, get_facet_set_cells_respective_areas, get_cell_ids_in_facet_set
+# ---- Helper Functions ----
+include("setup/setup_helper_functions/setup_geometry_helper_functions.jl")
+export get_cellset_volume, get_facetset_area, get_facetset_area_per_cell
 
+
+# ---- Main Setup Methods ----
 include("setup/sim_config_base.jl")
 export create_fvm_config, RegionSetupInfo, PatchSetupInfo, ControllerSetupInfo, SimulationConfigInfo
 
