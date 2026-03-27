@@ -5,7 +5,7 @@ function get_darcy_mass_flux(rho_avg, permeability, viscosity, pressure_a, press
     return m_dot
 end
 
-function continuity_and_momentum_darcy(
+function pressure_driven_mass_flux!(
     du, u,
     idx_a, idx_b, face_idx,
     area, norm, dist
@@ -19,6 +19,6 @@ function continuity_and_momentum_darcy(
 
     face_m_dot = get_darcy_mass_flux(rho_avg, permeability_avg, mu_avg, pressure_a, pressure_b, area, dist)
 
-    du.mass_face[idx_a][face_idx] -= face_m_dot
+    du.mass_face[idx_a, face_idx] -= face_m_dot
 end
 
