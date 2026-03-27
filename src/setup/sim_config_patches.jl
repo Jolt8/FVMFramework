@@ -32,6 +32,8 @@ function add_patch!(
         if !isnothing(neighbor_id)
             push!(cell_neighbors[cell_id][2], (neighbor_id, face_idx))
             #push!(cell_neighbors[neighbor_id][2], (cell_id, neighbor_face_idx)) #This is not necessary
+        else
+            push!(cell_neighbors[cell_id][2], (0, face_idx))
         end
     end
 
@@ -53,7 +55,7 @@ function add_patch!(
         config.patches[existing_patch_idx] = patch
     else   
         push!(config.patches, patch)
-
+        
         merge(config.regions[1].cache_syms_and_units, optimized_syms) 
     end
     return 
