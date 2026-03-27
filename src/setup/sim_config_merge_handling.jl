@@ -32,14 +32,14 @@ function _drill_down_and_fill_properties!(merged_properties, properties, cells)
     for (property_name, value) in pairs(properties)
         if merged_properties[property_name] isa NamedTuple
             _drill_down_and_fill_properties!(merged_properties[property_name], properties[property_name], cells)
-        else
+        elseif merged_properties[property_name] isa AbstractArray
             for cell_id in cells
-                if merged_properties[property_name] isa AbstractArray
-                    merged_properties[property_name][cell_id] = properties[property_name]
-                elseif merged_properties[property_name] isa Number
-                    merged_properties[property_name] = properties[property_name]
-                end
+                merged_properties[property_name][cell_id] = properties[property_name]
             end
+        elseif merged_properties[property_name] isa Number
+            merged_properties[property_name] = properties[property_name]
+        else
+            error("The property $property_name was not handled")
         end
     end
 end
@@ -48,8 +48,12 @@ function _drill_down_and_fill_patch_properties!(merged_properties, properties, c
     for (property_name, value) in pairs(properties)
         if merged_properties[property_name] isa NamedTuple
             _drill_down_and_fill_patch_properties!(merged_properties[property_name], properties[property_name], cells)
-        else
+        elseif merged_properties[property_name] isa AbstractArray
             merged_properties[property_name][1] = properties[property_name]
+        elseif merged_properties[property_name] isa Number
+            merged_properties[property_name] = properties[property_name]
+        else
+            error("The property $property_name was not handled")
         end
     end
 end
