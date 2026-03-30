@@ -35,10 +35,6 @@ u_proto = ComponentVector(
     gas_holdup = zeros(n_cells)u"m^3/m^3"
 )
 
-function merge(a::ComponentArray, b::ComponentArray)
-    return ComponentVector(; NamedTuple(a)..., NamedTuple(b)...)
-end
-
 config = create_fvm_config(grid, u_proto)
 
 van_t_hoff_A = ComponentVector(CH3O = 1.7e-6u"s^-1", HCOO = 4.74e-13u"s^-1", OH = 3.32e-14u"s^-1")
@@ -414,74 +410,9 @@ function solve_system!(du, u, p, t, geo, system)
     end
 
     solve_connection_groups!(du, u, geo, system)
-    #=
-    @show du.heat[sus_cell_id]
-    #@show u.temp[sus_cell_id]
-    #@show u.mass_fractions.methanol[sus_cell_id]
-    #@show u.mass_fractions.water[sus_cell_id]
-    #@show u.mass_fractions.hydrogen[sus_cell_id]
-    #@show u.mass_fractions.carbon_monoxide[sus_cell_id]
-    #@show u.mass_fractions.carbon_dioxide[sus_cell_id]
-
-    @show du.mass_fractions.methanol[sus_cell_id]
-    @show du.mass_fractions.water[sus_cell_id]
-    @show du.mass_fractions.hydrogen[sus_cell_id]
-    @show du.mass_fractions.carbon_monoxide[sus_cell_id]
-    @show du.mass_fractions.carbon_dioxide[sus_cell_id]
-
-    
-    @show du.mass[sus_cell_id]
-    @show du.mass_evaporated[sus_cell_id]
-    @show du.mass_face[sus_cell_id, :]
-
-    @show du.pressure[sus_cell_id]
-    @show du.superficial_velocity[sus_cell_id]
-    =#
-
-    
-    #@show du.mass_face[5162, :]
-    #@show du.mass_face[107, :]
-    
-
     solve_controller_groups!(du, u, geo, system)
     solve_patch_groups!(du, u, geo, system)
     solve_region_groups!(du, u, geo, system)
-    
-    
-    #@show du.heat[sus_cell_id]
-    #@show u.temp[sus_cell_id]
-    #@show u.mass_fractions.methanol[sus_cell_id]
-    #@show u.mass_fractions.water[sus_cell_id]
-    #@show u.mass_fractions.hydrogen[sus_cell_id]
-    #@show u.mass_fractions.carbon_monoxide[sus_cell_id]
-    #@show u.mass_fractions.carbon_dioxide[sus_cell_id]
-
-    #@show du.mass_fractions.methanol[sus_cell_id]
-    #@show du.mass_fractions.water[sus_cell_id]
-    #@show du.mass_fractions.hydrogen[sus_cell_id]
-    #@show du.mass_fractions.carbon_monoxide[sus_cell_id]
-    #@show du.mass_fractions.carbon_dioxide[sus_cell_id]
-
-    #@show du.mass[sus_cell_id]
-    #@show du.mass_evaporated[sus_cell_id]
-    #@show du.mass_face[5162, :]
-    #@show du.mass_face[107, :]
-
-    #@show du.mass[5162]
-    #@show du.mass[107]
-
-    #@show du.pressure[5162]
-    #@show du.pressure[107]
-
-    #@show du.mass_face[sus_cell_id, :]
-    #@show du.temp[sus_cell_id]
-    #@show du.mass_fractions.methanol[sus_cell_id]
-
-    #for cell_id in eachindex(geo.cell_volumes)
-    #    if du.temp[cell_id] > 500.0
-    #        @show cell_id
-    #    end
-    #end
 end
 
 
@@ -498,7 +429,7 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 1e-5
+tMax = 1000.0
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
