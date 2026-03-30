@@ -101,7 +101,10 @@ function ode_for_testing_f!(
     end
 
     @batch for cell_id in eachindex(cell_vols)
-        du.mass_fractions.methylene_blue[cell_id] += 1.0 
+        for_fields!(du.mass_fractions) do species, du_mass_fractions
+            du_mass_fractions[species[cell_id]] += 1.0
+        end
+        du.pressure[cell_id] += u.pressure[cell_id]
     end
     return 
 end
@@ -146,12 +149,14 @@ desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
-@btime sol = solve(implicit_prob, FBDF())
+#@btime sol = solve(implicit_prob, FBDF())
 #841.673 ms (260641 allocations: 863.35 MiB)
 #1.127 s (394500 allocations: 870.32 MiB) (multithreaded)
 
 u_vec .= 0.0
 explicit_prob = ODEProblem(f_closure, u_vec, tspan, p_vec)
-@btime sol = solve(explicit_prob, Tsit5())
+#@btime sol = solve(explicit_prob, Tsit5())
 #100.165 ms (16969 allocations: 133.64 MiB)
 #188.972 ms (85437 allocations: 137.20 MiB) (multithreaded)
+
+@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
