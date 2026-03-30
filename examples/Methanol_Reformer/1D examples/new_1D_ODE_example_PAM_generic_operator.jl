@@ -356,7 +356,6 @@ species_names = keys(config.regions[1].properties.molecular_weights)
 #species caches are for things like mass_face, which has an entry for every face of every cell rather than entries for each cell
 special_caches = ComponentArray(
     mass_face = zeros(n_cells, n_faces)u"kg",
-    mass_evaporated = zeros(n_cells)u"kg",
     net_rates = (
         reforming_reactions = NamedTuple{reaction_names}(
             Tuple(zeros(n_cells)u"mol/s" for _ in 1:length(reaction_names))
