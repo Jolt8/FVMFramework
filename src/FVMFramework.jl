@@ -57,6 +57,9 @@ include("named_tuple_interface/inline_views.jl")
 export create_views_inline
 
 # ----- ComponentArray Addons -----
+include("component_arrays_addons/simple_merge.jl")
+export merge_properties
+
 include("component_arrays_addons/virtual_component_array.jl")
 export FaceVectorView, VirtualAxis, VirtualFVMArray, virtual_merge_axes
 
