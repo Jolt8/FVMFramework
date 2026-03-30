@@ -69,14 +69,14 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
     region_groups = RegionGroup[]
 
     #Regions
-    cell_region_types_map = Vector{AbstractPhysics}(undef, n_cells)
+    cell_region_phys_map = Vector{AbstractPhysics}(undef, n_cells)
     #although this could be a part of RegionGroup, I'd rather not contaminate it with information not required in the simulation
 
     for region in config.regions
         push!(region_groups, RegionGroup(region.name, region.properties, region.cache_syms_and_units, region.region_function, region.region_cells))
 
         for cell_id in region.region_cells
-            cell_region_types_map[cell_id] = region.type
+            cell_region_phys_map[cell_id] = region.type
         end
     end
 
@@ -118,7 +118,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
             region_a = cell_regions_map[idx_a]
             region_b = cell_regions_map[idx_b]
 
-            flux_function! = connection_map_function(cell_region_types_map[idx_a], cell_region_types_map[idx_b])
+            flux_function! = connection_map_function(cell_region_phys_map[idx_a], cell_region_phys_map[idx_b])
 
             connection_group_id = findfirst(item -> item == (region_a.name, region_b.name), unique_region_connection_pairs)
 

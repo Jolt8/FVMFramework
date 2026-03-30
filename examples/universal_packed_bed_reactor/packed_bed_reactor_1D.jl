@@ -369,8 +369,8 @@ function fluid_fluid_flux!(
     )=#
 end
 
-function connection_map_function(type_a, type_b)
-    typeof(type_a) <: Fluid && typeof(type_b) <: Fluid && return fluid_fluid_flux!
+function connection_map_function(phys_a, phys_b)
+    typeof(phys_a) <: Fluid && typeof(phys_b) <: Fluid && return fluid_fluid_flux!
 end
 
 n_faces = length(config.geo.cell_neighbor_areas[1])
