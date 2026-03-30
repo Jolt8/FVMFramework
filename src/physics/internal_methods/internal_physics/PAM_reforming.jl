@@ -128,7 +128,9 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         println("")
         =#
 
-        du.molar_concentrations .= 0.0
+        for_fields!(du.molar_concentrations) do species, du_molar_concentrations
+            du_molar_concentrations[species[cell_id]] = 0.0
+        end
 
         #MSR_rxn
         for_fields!(u.reactions.reforming_reactions.MSR_rxn.stoich_coeffs, du.molar_concentrations) do species_name, stoich_coeffs, du_molar_concentrations
