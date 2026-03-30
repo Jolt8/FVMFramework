@@ -184,7 +184,7 @@ add_region!(
         mass_fractions = initial_mass_fractions,
         temp = 270.0u"°C"
     ),
-    properties = merge_props(reforming_area_properties, ComponentVector(corrected_m_dot_per_volume = corrected_m_dot_per_volume,)),
+    properties = merge_properties(reforming_area_properties, ComponentVector(corrected_m_dot_per_volume = corrected_m_dot_per_volume,)),
     optimized_syms = (),
     cache_syms_and_units = common_cache_syms_and_units,
     #anything else is assumed to be a fixed variable
