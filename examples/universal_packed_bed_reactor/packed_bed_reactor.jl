@@ -83,7 +83,7 @@ inlet_mass_fractions = ComponentVector(
     methanol = 1.0u"kg/kg",
     water = 1.3u"kg/kg",
     carbon_monoxide = 0.0001u"kg/kg",
-    hydrogen = 0.02u"kg/kg",
+    hydrogen = 0.001u"kg/kg",
     carbon_dioxide = 0.0001u"kg/kg",
     air = 0.0001u"kg/kg"
 )
@@ -121,17 +121,17 @@ reforming_area_properties = ComponentVector(
     pipe_mass_flow = 1.0u"g/s",
 
     pipe_inside_diameter = pipe_inside_diameter,
-    pipe_length = pipe_length,
     pipe_area = pipe_area,
+    per_cell_pipe_length = pipe_length / n_cells,
     cell_lengths_along_pipe = cell_lengths_along_pipe,
 
     bed_void_fraction = 0.4,
     packing_surface_area = 100.0u"m^2/m^3",
     particle_diameter = 5u"mm",
 
-    overall_heat_transfer_coefficient = 100.0u"W/(m^2*K)",
+    overall_heat_transfer_coefficient = 3000.0u"W/(m^2*K)",
 
-    external_temp = 100.0u"°C",
+    external_temp = 300.0u"°C",
     saturation_temp = 72.4u"°C",
     liquid_rho = 791.0u"kg/m^3",
     gas_rho = 1.225u"kg/m^3",
@@ -161,7 +161,7 @@ reforming_area_properties = ComponentVector(
 
 permeability = (reforming_area_properties.particle_diameter^2 * reforming_area_properties.bed_void_fraction^3) / (150.0 * (1.0 - reforming_area_properties.bed_void_fraction)^2)
 
-reforming_area_properties = merge(reforming_area_properties, ComponentVector(permeability = permeability))
+reforming_area_properties = merge_properties(reforming_area_properties, ComponentVector(permeability = permeability))
 
 struct Fluid <: AbstractPhysics end
 
@@ -201,24 +201,19 @@ common_cache_syms_and_units = (
     superficial_velocity = u"m/s",
 )
 
-test = ComponentVector(a = 1, b = 2)
-test2 = ComponentVector(b = 3, c = 4) #note that b = 3 overrides the b = 2 (which is great!)
-
-merge(test, test2) #ComponentVector(a = 1, b = 3, c = 4)
-
-inlet_mass_flow_per_unit_volume = reforming_area_properties.pipe_mass_flow / get_cellset_volume(config, "inlet_volume")u"m"
+inlet_mass_flow_per_unit_area = reforming_area_properties.pipe_mass_flow / get_facetset_area(config, "inlet_surface")
 
 add_region!(
     config, "inlet_volume";
     type = Fluid(),
     initial_conditions = ComponentVector(
         mass_fractions = inlet_mass_fractions,
-        pressure = 2.0u"atm",
+        pressure = 1.0u"atm",
         temp = 21.0u"°C",
         liquid_holdup = 1.0,
         gas_holdup = 0.0
     ),
-    properties = merge(reforming_area_properties, ComponentVector(inlet_mass_flow_per_unit_volume = inlet_mass_flow_per_unit_volume)),
+    properties = reforming_area_properties,
     optimized_syms = (),
     cache_syms_and_units = common_cache_syms_and_units,
     region_function =
@@ -226,14 +221,38 @@ add_region!(
         #vaporization_model!(du, u, cell_id, vol)
         #ergun_momentum_friction!(du, u, cell_id, vol)
 
-        du.mass[cell_id] += u.inlet_mass_flow_per_unit_volume[cell_id] * vol
-
-        du.heat[cell_id] *= 0.0
+        surface_area = pi * u.pipe_inside_diameter[cell_id] * u.per_cell_pipe_length[cell_id]
+        du.heat[cell_id] += u.overall_heat_transfer_coefficient[cell_id] * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         sum_and_cap_fluxes!(du, u, cell_id, vol)
+    end
+)
+
+add_patch!(
+    config, "inlet_surface";
+    properties = ComponentVector(
+        inlet_mass_flow_per_unit_area = inlet_mass_flow_per_unit_area,
+    ), 
+    optimized_syms = (),
+    patch_function =
+    function inlet_surface!(
+        du, u,
+        idx_a, idx_b, face_idx, #idx_b is not applicable here because it connects to nothing
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        cell_volumes
+    )
+
+        mass_in = u.inlet_mass_flow_per_unit_area[idx_a] * cell_neighbor_areas[idx_a][face_idx]
+
+        du.mass_face[idx_a, face_idx] += mass_in
+
+        du.heat[idx_a] += mass_in * u.cp[idx_a] * u.temp[idx_a]
+
+        #surface_area = pi * u.pipe_inside_diameter[idx_a] * u.pipe_length[idx_a]
+        #du.heat[idx_a] += u.overall_heat_transfer_coefficient[idx_a] * (u.external_temp[idx_a] - u.temp[idx_a]) * surface_area
 
         for_fields!(du.mass_fractions) do species, du_mass_fractions
-            du_mass_fractions[species[cell_id]] *= 0.0
+            du_mass_fractions[species[idx_a]] *= 0.0
         end
     end
 )
@@ -259,15 +278,13 @@ add_region!(
         #PAM_reforming_react_cell!(du, u, cell_id, vol)
 
         #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
-        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.pipe_length[cell_id]
+        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.per_cell_pipe_length[cell_id]
         #du.heat[cell_id] += u.overall_heat_transfer_coefficient[cell_id] * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
         #wall_heat_flux!(du, u, cell_id, vol)
 
         sum_and_cap_fluxes!(du, u, cell_id, vol)
     end
 )
-
-mass_flow_per_unit_area = config.regions[1].properties.pipe_mass_flow / get_facetset_area(config, "outlet_surface")
 
 add_region!(
     config, "outlet_volume";
@@ -284,11 +301,17 @@ add_region!(
     cache_syms_and_units = common_cache_syms_and_units,
     region_function =
     function outlet_volume!(du, u, cell_id, vol)
+        #vaporization_model!(du, u, cell_id, vol)
         #ergun_momentum_friction!(du, u, cell_id, vol)
+
+        #surface_area = pi * u.pipe_inside_diameter[cell_id] * u.per_cell_pipe_length[cell_id]
+        #du.heat[cell_id] += u.overall_heat_transfer_coefficient[cell_id] * (u.external_temp[cell_id] - u.temp[cell_id]) * surface_area
 
         sum_and_cap_fluxes!(du, u, cell_id, vol)
     end
 )
+
+mass_flow_per_unit_area = config.regions[1].properties.pipe_mass_flow / get_facetset_area(config, "outlet_surface")
 
 add_patch!(
     config, "outlet_surface";
@@ -304,14 +327,16 @@ add_patch!(
         cell_volumes
     )
 
-        du.mass_face[idx_a, face_idx] -= u.outlet_mass_flow_per_unit_area[idx_a] * cell_neighbor_areas[idx_a][face_idx]
+        mass_out = u.outlet_mass_flow_per_unit_area[idx_a] * cell_neighbor_areas[idx_a][face_idx]
+
+        du.mass_face[idx_a, face_idx] -= mass_out
 
         for_fields!(u.mass_fractions, du.species_mass_flows) do species, u_mass_fractions, du_species_mass_flows
-            du_species_mass_flows[species[idx_a]] += du.mass_face[idx_a, face_idx] * u_mass_fractions[species[idx_a]]
+            du_species_mass_flows[species[idx_a]] -= mass_out * u_mass_fractions[species[idx_a]]
         end
         #this is to prevent the concentration of all species from building up at the outlet
 
-        du.heat[idx_a] += du.mass_face[idx_a, face_idx] * u.cp[idx_a] * u.temp[idx_a]
+        du.heat[idx_a] -= mass_out * u.cp[idx_a] * u.temp[idx_a]
 
         #surface_area = pi * u.pipe_inside_diameter[idx_a] * u.pipe_length[idx_a]
         #du.heat[idx_a] += u.overall_heat_transfer_coefficient[idx_a] * (u.external_temp[idx_a] - u.temp[idx_a]) * surface_area
@@ -319,50 +344,29 @@ add_patch!(
     end
 )
 
-config.patches[1].cell_neighbors
-config.grid.facetsets["outlet_surface"].dict
-
 #Connection functions
 function fluid_fluid_flux!(
     du, u,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
 )
-    #=if idx_a == 5162 || idx_b == 5162
-        @show idx_a
-        @show idx_b
-        @show "before"
-        @show du.mass_face[idx_a, face_idx]
-        @show du.mass_face[idx_b, face_idx]
-    end=#
-
     new_pressure_driven_mass_flux!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
     )
-
-    #=if idx_a == 5162 || idx_b == 5162
-        @show "after"
-        @show du.mass_face[idx_a, face_idx]
-        @show du.mass_face[idx_b, face_idx]
-    end=#
-
-
-    #it would seem that removing the species advection and enthalpy advection fixes the issue
-
     
-    #=all_species_advection!(
+    all_species_advection!(
         du, u, 
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )=#
+    )
     
-    #=enthalpy_advection!(
+    enthalpy_advection!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
-    )=#
+    )
 
     #=mass_fraction_diffusion!(
         du, u,
@@ -394,14 +398,13 @@ special_caches = ComponentArray(
     species_mass_flows = NamedTuple{species_names}(
         Tuple(zeros(n_cells)u"kg" for _ in 1:length(species_names))
     ),
-    superficial_velocity = zeros(n_cells)u"m/s",
 )
 
 #you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful ComponentVectors
 du0_vec, u0_vec, state_axes, geo, system = finish_fvm_config(config, connection_map_function, special_caches, check_units = false);
 
 function solve_system!(du, u, p, t, geo, system)
-    sus_cell_id = 5162
+    #sus_cell_id = 5162
     #VERY IMPORTANT: since most software uses 0-based indexing, you need to adjust the cell id by +1
     #for example, if you mouse over cell_id 5161 in paraview, you need to use 5162 in the code because 
 
@@ -414,7 +417,6 @@ function solve_system!(du, u, p, t, geo, system)
     solve_patch_groups!(du, u, geo, system)
     solve_region_groups!(du, u, geo, system)
 end
-
 
 f_closure_implicit = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
 
@@ -437,18 +439,11 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
-using BenchmarkTools
-
 @time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 #@time sol = solve(implicit_prob, AutoTsit5(FBDF()), callback = approximate_time_to_finish_cb)
-
-sol.destats.nnonliniter
-sol.destats.nf
-sol.destats.njacs
-sol.destats.naccept
 sol.destats
 
-prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1e-7), p_guess)
+prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1e-5), p_guess)
 #@time sol = solve(prob, Tsit5(), callback = approximate_time_to_finish_cb)
 
 u_named = [ComponentVector(sol.u[i], state_axes) for i in 1:length(sol.u)]
