@@ -128,16 +128,16 @@ function ode_for_testing_f!(
         #    du.mass_fractions[species_name][cell_id] += 1.0
         #end
 
-        #du.mass_fractions.methylene_blue[cell_id] += 1.0
-        #du.mass_fractions.water[cell_id] += 1.0
-        #du.mass_fractions.methylene_blue[cell_id] += 1.0
-        #du.mass_fractions.water[cell_id] += 1.0
+        du.mass_fractions.methylene_blue[cell_id] += 1.0
+        du.mass_fractions.water[cell_id] += 1.0
+        du.mass_fractions.methylene_blue[cell_id] += 1.0
+        du.mass_fractions.water[cell_id] += 1.0
         
         #map(keys(du.reforming_reactions.net_rates.reforming_reactions)) do reaction_name
-        #    du.reforming_reactions.net_rates.reforming_reactions.WGS_[1] += 1.0
+        #    du.reforming_reactions.net_rates.reforming_reactions[reaction_name][cell_id] += 1.0
         #end
 
-        #du.mass[cell_id] += du.rho[cell_id] * u.viscosity[cell_id]
+        du.mass[cell_id] += du.rho[cell_id] * u.viscosity[cell_id]
     end
 end
 
@@ -182,10 +182,10 @@ desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
-@btime sol = solve(implicit_prob, FBDF())
+#@btime sol = solve(implicit_prob, FBDF())
 #846.439 ms (505760 allocations, 903.6 MiB)
 
 u_vec .= 0.0
 explicit_prob = ODEProblem(f_closure, u_vec, tspan, p_vec)
-@btime sol = solve(explicit_prob, Tsit5())
+#@btime sol = solve(explicit_prob, Tsit5())
 #131.480 ms (41128 allocations: 185.25 MiB)
