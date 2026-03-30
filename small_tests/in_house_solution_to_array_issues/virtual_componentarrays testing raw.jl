@@ -82,8 +82,6 @@ cell_volumes = ones(n_cells)
 virtual_du_axes = virtual_merge_axes((du_proto, du_cache_proto))
 virtual_u_axes = virtual_merge_axes((u_proto, u_cache_proto, p_proto, properties_proto))
 
-using LoopVectorization
-
 function ode_for_testing_f!(
     du_vec, u_vec, p_vec, t,
     v_du_axes, v_u_axes,
@@ -93,8 +91,10 @@ function ode_for_testing_f!(
 )
     du_vec .= 0.0
 
-    @tturbo for cell_id in eachindex(cell_vols)
-        du_vec[cell_id] += 1.0 
+    @batch for cell_id in eachindex(cell_vols)
+        du_vec[cell_id + 100] += 1.0
+        du_vec[cell_id + 200] += 1.0
+        du_vec[cell_id] += u_vec[cell_id]
     end
     return 
 end
@@ -139,12 +139,14 @@ desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
-@btime sol = solve(implicit_prob, FBDF())
+#@btime sol = solve(implicit_prob, FBDF())
 #819.045 ms (255688 allocations: 863.02 MiB)
 #1.104 s (400281 allocations: 870.58 MiB) (multithreaded)
 
 u_vec .= 0.0
 explicit_prob = ODEProblem(f_closure, u_vec, tspan, p_vec)
-@btime sol = solve(explicit_prob, Tsit5())
+#@btime sol = solve(explicit_prob, Tsit5())
 #77.192 ms (8602 allocations: 133.20 MiB)
 #363.229 ms (146815 allocations: 140.42 MiB) (multithreaded)
+
+@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
