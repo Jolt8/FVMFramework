@@ -49,6 +49,7 @@ struct FVMSystem
     properties_vec::Vector{Float64}
     properties_axes::Tuple
     p_vec::Vector{Float64}
+    p_axes::Tuple
 end
 
 function finish_fvm_config(config, connection_map_function, special_caches; check_units::Bool)
@@ -203,6 +204,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
 
     p_vec_units = Vector(ComponentVector(config.optimized_parameters))
     p_vec = ustrip.(upreferred.(Vector(ComponentVector(config.optimized_parameters))))
+    p_axes = getaxes(ComponentVector(config.optimized_parameters))
 
     #we have to split up properties to strip it of units
     properties_vec_units = Vector(merged_properties)
@@ -222,7 +224,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
             du_virtual_axes, u_virtual_axes,
             du_diff_cache, u_diff_cache,
             properties_vec, properties_axes,
-            p_vec
+            p_vec, p_axes
         )
         du_units, u_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec, properties_vec_units, p_vec_units)
         return du_units, u_units, state_axes, 0, 0
@@ -233,7 +235,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
         du_virtual_axes, u_virtual_axes,
         du_diff_cache, u_diff_cache,
         properties_vec, properties_axes,
-        p_vec
+        p_vec, p_axes
     )
 
     return du0_vec, u0_vec, state_axes, config.geo, system
