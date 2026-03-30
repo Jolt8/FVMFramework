@@ -27,7 +27,7 @@ end
 function rho_ideal!(u, cell_id)
     u.rho[cell_id] = (u.pressure[cell_id] * u.mw_avg[cell_id]) / (u.R_gas[cell_id] * u.temp[cell_id])
 
-    #=if u.rho[cell_id] < 0
+    #=if u.rho[cell_id] <= 0
         @show cell_id
         @show u.rho[cell_id]
         @show u.pressure[cell_id]
