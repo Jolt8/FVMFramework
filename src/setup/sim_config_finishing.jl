@@ -47,6 +47,7 @@ struct FVMSystem
     du_diff_cache::DiffCache
     u_diff_cache::DiffCache
     properties_vec::Vector{Float64}
+    properties_axes::Tuple
     p_vec::Vector{Float64}
 end
 
@@ -178,6 +179,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
     #deepcopy is needed for copying NamedTuples
 
     merged_properties = merge_region_properties(config)
+    properties_axes = getaxes(merged_properties)
 
     merged_caches = merge_region_caches(config, special_caches, merged_properties)
 
@@ -219,7 +221,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
             connection_groups, controller_groups, patch_groups, region_groups,
             du_virtual_axes, u_virtual_axes,
             du_diff_cache, u_diff_cache,
-            properties_vec,
+            properties_vec, properties_axes,
             p_vec
         )
         du_units, u_units = run_and_check_units(du0_vec_units, u0_vec_units, config.geo, system, du_unitful_cache_vec, u_unitful_cache_vec, properties_vec_units, p_vec_units)
@@ -230,7 +232,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
         connection_groups, controller_groups, patch_groups, region_groups,
         du_virtual_axes, u_virtual_axes,
         du_diff_cache, u_diff_cache,
-        properties_vec,
+        properties_vec, properties_axes,
         p_vec
     )
 
