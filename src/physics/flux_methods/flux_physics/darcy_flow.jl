@@ -10,14 +10,11 @@ function pressure_driven_mass_flux!(
     idx_a, idx_b, face_idx,
     area, norm, dist
 )
-    pressure_a = u.pressure[idx_a]
-    pressure_b = u.pressure[idx_b]
-
     rho_avg = 0.5 * (u.rho[idx_a] + u.rho[idx_b])
     mu_avg = 0.5 * (u.mu[idx_a] + u.mu[idx_b])
     permeability_avg = 0.5 * (u.permeability[idx_a] + u.permeability[idx_b])
 
-    face_m_dot = get_darcy_mass_flux(rho_avg, permeability_avg, mu_avg, pressure_a, pressure_b, area, dist)
+    face_m_dot = get_darcy_mass_flux(rho_avg, permeability_avg, mu_avg, u.pressure[idx_a], u.pressure[idx_b], area, dist)
 
     du.mass_face[idx_a, face_idx] -= face_m_dot
 end
