@@ -20,7 +20,19 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
     P_H2 = unit_independent_max(u.molar_concentrations.hydrogen[cell_id] * conversion_factor, 1e-20)
     P_CO2 = unit_independent_max(u.molar_concentrations.carbon_dioxide[cell_id] * conversion_factor, 1e-20)
 
-    if ustrip(P_H2) > 1e-8 && ustrip(P_CH3OH) > 1e-8
+    #P_CH3OH = u.molar_concentrations.methanol[cell_id] * conversion_factor
+    #P_H2O = u.molar_concentrations.water[cell_id] * conversion_factor
+    #P_CO = u.molar_concentrations.carbon_monoxide[cell_id] * conversion_factor
+    #P_H2 = u.molar_concentrations.hydrogen[cell_id] * conversion_factor
+    #P_CO2 = u.molar_concentrations.carbon_dioxide[cell_id] * conversion_factor
+
+    #this is weird, I get different results depending on whether or not I use max or not
+    #if I don't use it, for some reason the hydrogen conversion goes down a lot and the carbon monoxide concentration 
+    #decreases along the length of the reactor, and so does hydrogen concentration
+    #hmm, I think it's from the WGS reaction going in the reverse direction, but for some reason carbon dioxide concentration does not seem to increase
+    #I think we should really look into returning the extent of each reaction per cell to see what's going on
+
+    #if ustrip(P_H2) > 1e-8 && ustrip(P_CH3OH) > 1e-8 #ok this was causing a massive slowdown
         #=
         println("P_CH3OH: $(P_CH3OH)")
         println("P_H2O: $(P_H2O)")
@@ -160,5 +172,5 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
         #    du.heat[cell_id] += net_rates[reforming_reaction[cell_id]] * (-heat_of_reactions[reforming_reaction[cell_id]]) * vol 
         #    # rate (mol/(m3*s)) * H (J/mol) * vol (m3) = J/s = Watts
         #end
-    end
+    #end
 end
