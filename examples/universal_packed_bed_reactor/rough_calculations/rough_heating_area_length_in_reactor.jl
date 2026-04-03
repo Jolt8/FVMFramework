@@ -156,6 +156,24 @@ sol = solve(prob, Tsit5(), dt = 12u"inch" / 1000, adaptive = false)
 fluid_temperatures = [ComponentVector(sol.u[i], u_axes).fluid_temperature |> u"°C" for i in eachindex(sol.t)]
 fluid_qualities = [ComponentVector(sol.u[i], u_axes).fluid_quality for i in eachindex(sol.t)]
 
+good_enough_temp = 260u"°C"
+
+function find_good_enough_length(fluid_temperatures, good_enough_temp)
+    min_difference = 10000u"K"
+    min_idx = 1
+    for i in eachindex(fluid_temperatures)
+        if abs(fluid_temperatures[i] - good_enough_temp) < min_difference
+            min_difference = abs(fluid_temperatures[i] - good_enough_temp)
+            min_idx = i
+        end
+    end
+
+    return min_idx
+end
+
+min_idx = find_good_enough_length(fluid_temperatures, good_enough_temp)
+sol.t[min_idx] |> u"inch"
+
 plot(sol.t .|> u"inch", fluid_temperatures, xlabel = "Length", ylabel = "Temperature")
 plot(sol.t .|> u"inch", fluid_qualities, xlabel = "Length", ylabel = "Quality")
 
