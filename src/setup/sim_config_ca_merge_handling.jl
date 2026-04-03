@@ -148,20 +148,20 @@ function _build_blank_cache_dict!(current_dict, cache_syms_and_units, special_ca
     end
 end
 
-function merge_region_caches(config, special_caches, merged_properties)
+function merge_region_caches(config, merged_properties)
     n_cells = length(config.geo.cell_volumes)
 
     cache_dict = Dict{Symbol, Any}()
 
     for region in config.regions
-        _build_blank_cache_dict!(cache_dict, region.cache_syms_and_units, special_caches, n_cells)
+        _build_blank_cache_dict!(cache_dict, config.cache_syms_and_units, config.special_caches, n_cells)
     end
 
     merged_caches = ComponentVector(_dict_to_namedtuple(cache_dict))
 
     # Fill all regions from the merged_properties
     for region in config.regions
-        _drill_down_and_fill_caches!(merged_caches, region.cache_syms_and_units, special_caches, merged_properties)
+        _drill_down_and_fill_caches!(merged_caches, config.cache_syms_and_units, config.special_caches, merged_properties)
     end
 
     return merged_caches

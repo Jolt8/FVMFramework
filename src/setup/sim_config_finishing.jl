@@ -2,7 +2,6 @@
 struct RegionGroup{P <: ComponentVector, F <: Function}
     name::String
     properties::P
-    cache_syms_and_units::NamedTuple
     region_function!::F
     region_cells::Vector{Int}
 end
@@ -52,20 +51,12 @@ struct FVMSystem
     p_axes::Tuple
 end
 
-function finish_fvm_config(config, connection_map_function, special_caches; check_units::Bool)
+function finish_fvm_config(config, connection_map_function; check_units::Bool)
     n_cells = length(config.geo.cell_volumes)
 
-    #in order from when they're executed in the solver 
-    #1. Connections
     connection_groups = ConnectionGroup[]
-    
-    #2. Controllers
     controller_groups = ControllerGroup[]
-
-    #3. Patches
     patch_groups = PatchGroup[]
-
-    #4. Regions
     region_groups = RegionGroup[]
 
     #Regions
@@ -73,7 +64,7 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
     #although this could be a part of RegionGroup, I'd rather not contaminate it with information not required in the simulation
 
     for region in config.regions
-        push!(region_groups, RegionGroup(region.name, region.properties, region.cache_syms_and_units, region.region_function, region.region_cells))
+        push!(region_groups, RegionGroup(region.name, region.properties, region.region_function, region.region_cells))
 
         for cell_id in region.region_cells
             cell_region_phys_map[cell_id] = region.type
@@ -137,14 +128,14 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
                     (idx_b, face_idx)
                 )
                 )
-            elseif (region_a.name, region_b.name) in unique_region_connection_pairs && isempty(connection_groups[connection_group_id].cell_neighbors[idx_a])
+            #=elseif (region_a.name, region_b.name) in unique_region_connection_pairs && isempty(connection_groups[connection_group_id].cell_neighbors[idx_a])
                 println("I'm unsure if this actually ever happens, check to line 237 in sim config if it does")
                 #after using this framework for a while, I've never actually seen this trigger
                 connection_group_id = findfirst(item -> item == (region_a.name, region_b.name), unique_region_connection_pairs)
                 push!(connection_groups[connection_group_id].cell_neighbors[idx_a], (
                     (idx_a, Vector{Tuple{Int, Int}}((idx_b, face_idx)))
                 )
-                )
+                )=#
             elseif !isempty(connection_groups[connection_group_id].cell_neighbors[idx_a])
                 connection_group_id = findfirst(item -> item == (region_a.name, region_b.name), unique_region_connection_pairs)
                 push!(connection_groups[connection_group_id].cell_neighbors[idx_a][2], (
@@ -155,34 +146,17 @@ function finish_fvm_config(config, connection_map_function, special_caches; chec
         end
     end
 
-    #If you want one that organizes based on unique groups, check the Tracer branch in sim_config and you can find it commented out there
-
     #remove empty tuples from cell_neighbors
     for CG in connection_groups
         filter!(conn -> !(isempty(conn[2])), CG.cell_neighbors)
     end
 
-    #=
-    #this code is to merge the state variables such as velocity, temperature or pressure with non-state variables such as integral_error
-    #integral error is indexed at its respective controller id
-    n_controllers = length(config.controllers)
-    u_non_state_proto = ()
-    if n_controllers != 0.0
-        u_non_state_proto = ComponentVector(
-            integral_error = zeros(n_controllers),
-        )
-    end
-    #unlike u_proto, u_non_state_proto is accessed at controller_id
-    =#
-    #I'm going to ditch this BS, as I'd rather make defining integral_error explicit, but that's a future problem
-    #just remember that integral_error is indexed by controller_id
-    
-    #deepcopy is needed for copying NamedTuples
-
     merged_properties = merge_region_properties(config)
     properties_axes = getaxes(merged_properties)
 
-    merged_caches = merge_region_caches(config, special_caches, merged_properties)
+    merged_caches = merge_region_caches(config, merged_properties)
+
+    merged_caches = merge_in_second_order_caches(config, merged_caches, merged_properties)
 
     state_axes = getaxes(config.u_proto)
     

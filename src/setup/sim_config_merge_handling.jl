@@ -1,4 +1,4 @@
-
+#=
 function _build_blank_dict!(current_dict, properties, n_cells)
     for (property_name, value) in pairs(properties)
         if value isa NamedTuple
@@ -130,3 +130,4 @@ function merge_region_caches(config, special_caches, merged_properties)
 
     return ComponentArray(merged_caches)
 end
+=#

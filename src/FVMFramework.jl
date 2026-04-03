@@ -120,6 +120,12 @@ export create_fvm_config, RegionSetupInfo, PatchSetupInfo, ControllerSetupInfo, 
 include("setup/sim_config_ca_merge_handling.jl")
 export merge_region_properties, merge_region_caches
 
+include("setup/sim_config_setup_syms.jl")
+export add_setup_syms!
+
+include("setup/sim_config_second_order_setup.jl")
+export merge_in_second_order_caches!
+
 include("setup/sim_config_regions.jl")
 export add_region!
 

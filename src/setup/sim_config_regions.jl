@@ -3,8 +3,6 @@ function add_region!(
     type,
     initial_conditions,
     properties,
-    optimized_syms,
-    cache_syms_and_units,
     region_function
 )
 
@@ -24,11 +22,7 @@ function add_region!(
         end
     end
 
-    for field in optimized_syms
-        config.optimized_parameters[field] = properties[field]
-    end
-
-    region = RegionSetupInfo(name, type, initial_conditions, properties, cache_syms_and_units, region_function, region_cells)
+    region = RegionSetupInfo(name, type, initial_conditions, properties, region_function, region_cells)
 
     all_region_names = [region.name for region in config.regions]
 
@@ -38,8 +32,6 @@ function add_region!(
         config.regions[existing_region_idx] = region
     else   
         push!(config.regions, region)
-
-        config.regions[1].cache_syms_and_units = merge(config.regions[1].cache_syms_and_units, optimized_syms) 
     end
     return 
 end

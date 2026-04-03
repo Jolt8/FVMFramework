@@ -17,7 +17,6 @@ end
 function add_patch!(
     config, name;
     properties,
-    optimized_syms,
     patch_function,
 )
     cell_ids_and_face_idxs = [cell_id_facet_idx.idx for cell_id_facet_idx in keys(config.grid.facetsets[name].dict)]
@@ -41,10 +40,6 @@ function add_patch!(
     filter!(conn -> !(isempty(conn[2])), cell_neighbors)
     #get rid of empty connections
 
-    for field in optimized_syms
-        config.optimized_parameters[field] = properties[field]
-    end
-
     patch = PatchSetupInfo(name, properties, patch_function, cell_neighbors)
 
     all_patch_names = [patch.name for patch in config.patches]
@@ -55,8 +50,6 @@ function add_patch!(
         config.patches[existing_patch_idx] = patch
     else   
         push!(config.patches, patch)
-        
-        merge(config.regions[1].cache_syms_and_units, optimized_syms) 
     end
     return 
 end
