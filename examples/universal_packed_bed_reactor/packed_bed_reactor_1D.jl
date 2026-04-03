@@ -49,7 +49,7 @@ u_proto = ComponentVector(
     gas_holdup = zeros(n_cells)u"m^3/m^3"
 )
 
-config = create_fvm_config(grid, u_proto)
+config = create_fvm_config(grid, u_proto);
 
 van_t_hoff_A = ComponentVector(CH3O = 1.7e-6u"s^-1", HCOO = 4.74e-13u"s^-1", OH = 3.32e-14u"s^-1")
 van_t_hoff_dH = ComponentVector(CH3O = -46800.0u"J/mol", HCOO = -115000.0u"J/mol", OH = -110000.0u"J/mol")
@@ -62,7 +62,7 @@ MSR_rxn = ComponentVector(
     kf_Ea = 103000.0u"J/mol",
     reactant_stoich_coeffs = (methanol = 1, water = 1),
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 3), 
-    stoich_coeffs = (methanol = -1, water = -1, hydrogen = 3, carbon_dioxide = 1), # CH3OH + H2O ⇋ CO2 + 3(H2)
+    stoich_coeffs = (methanol = -1, water = -1, carbon_dioxide = 1, hydrogen = 3), # CH3OH + H2O ⇋ CO2 + 3(H2)
     van_t_hoff_A = van_t_hoff_A, 
     van_t_hoff_dH = van_t_hoff_dH
 )
@@ -88,7 +88,7 @@ WGS_rxn = ComponentVector(
     kf_Ea = 87500.0u"J/mol",
     reactant_stoich_coeffs = (carbon_monoxide = 1, water = 1), 
     product_stoich_coeffs = (carbon_dioxide = 1, hydrogen = 1), 
-    stoich_coeffs = (water = -1, carbon_monoxide = -1, hydrogen = 1, carbon_dioxide = 1), # CO + H2O ⇋ CO2 + H2
+    stoich_coeffs = (carbon_monoxide = -1, water = -1, carbon_dioxide = 1, hydrogen = 1), # CO + H2O ⇋ CO2 + H2
     van_t_hoff_A = van_t_hoff_A, 
     van_t_hoff_dH = van_t_hoff_dH
 )
@@ -201,21 +201,46 @@ function sum_and_cap_fluxes!(du, u, cell_id, vol)
     cap_evaporation_rate_to_phase_holdup!(du, u, cell_id, vol)
 end
 
-common_cache_syms_and_units = (
-    heat = u"J",
-    mw_avg = u"kg/mol",
-    rho = u"kg/m^3",
-    molar_concentrations = u"mol/m^3",
-    species_mass_flows = u"kg/s",
-    net_rates = u"mol/s",
-    mass = u"kg",
-    mass_face = u"kg",
-    mass_evaporated = u"kg",
-    superficial_velocity = u"m/s",
+n_cells = length(config.geo.cell_volumes)
+n_faces = length(config.geo.cell_neighbor_areas[1])
+reaction_names = keys(reforming_area_properties.reactions.reforming_reactions)
+species_names = keys(reforming_area_properties.molecular_weights)
+
+add_setup_syms!(config;
+    cache_syms_and_units = (
+        heat = u"J",
+        mw_avg = u"kg/mol",
+        rho = u"kg/m^3",
+        molar_concentrations = u"mol/m^3",
+        species_mass_flows = u"kg/s",
+        net_rates = u"mol/s",
+        mass = u"kg",
+        mass_face = u"kg",
+        mass_evaporated = u"kg",
+        superficial_velocity = u"m/s"
+    ),
+    special_caches = ComponentArray(
+        mass_face = zeros(n_cells, n_faces)u"kg",
+        net_rates = (
+            reforming_reactions = NamedTuple{reaction_names}(
+                Tuple(zeros(n_cells)u"mol/s" for _ in 1:length(reaction_names))
+            ), #don't forget the comma!
+        ), 
+        molar_concentrations = NamedTuple{species_names}(
+            Tuple(zeros(n_cells)u"mol/m^3" for _ in 1:length(species_names))
+        ),
+        species_mass_flows = NamedTuple{species_names}(
+            Tuple(zeros(n_cells)u"kg" for _ in 1:length(species_names))
+        )
+    ),
+    second_order_syms = [
+    ],
+    optimized_parameters = ComponentVector(
+    )
 )
 
 function common_physics_functions!(du, u, cell_id, vol)
-    vaporization_model!(du, u, cell_id, vol)
+    #vaporization_model!(du, u, cell_id, vol)
     #ergun_momentum_friction!(du, u, cell_id, vol)
 end
 
@@ -230,8 +255,6 @@ add_region!(
         gas_holdup = 0.0
     ),
     properties = reforming_area_properties,
-    optimized_syms = (),
-    cache_syms_and_units = common_cache_syms_and_units,
     region_function =
     function inlet!(du, u, cell_id, vol)
         common_physics_functions!(du, u, cell_id, vol)
@@ -259,8 +282,6 @@ add_region!(
         gas_holdup = 0.0
     ),
     properties = reforming_area_properties,
-    optimized_syms = (),
-    cache_syms_and_units = common_cache_syms_and_units,
     region_function =
     function evaporator!(du, u, cell_id, vol)
         common_physics_functions!(du, u, cell_id, vol)
@@ -285,13 +306,11 @@ add_region!(
         gas_holdup = 0.0
     ),
     properties = reforming_area_properties,
-    optimized_syms = (),
-    cache_syms_and_units = common_cache_syms_and_units,
     region_function =
     function reactor!(du, u, cell_id, vol)
         common_physics_functions!(du, u, cell_id, vol)
 
-        #PAM_reforming_react_cell!(du, u, cell_id, vol)
+        PAM_reforming_react_cell!(du, u, cell_id, vol)
 
         #UA = overall_heat_transfer_coefficient(du, u, cell_id, vol) #W/(m^2 * K)
         surface_area = pi * u.pipe_inside_diameter[cell_id] * u.per_cell_pipe_length[cell_id]
@@ -313,8 +332,6 @@ add_region!(
         gas_holdup = 0.0
     ),
     properties = reforming_area_properties,
-    optimized_syms = (),
-    cache_syms_and_units = common_cache_syms_and_units,
     region_function =
     function outlet!(du, u, cell_id, vol)
         common_physics_functions!(du, u, cell_id, vol)
@@ -373,29 +390,8 @@ function connection_map_function(phys_a, phys_b)
     typeof(phys_a) <: Fluid && typeof(phys_b) <: Fluid && return fluid_fluid_flux!
 end
 
-n_faces = length(config.geo.cell_neighbor_areas[1])
-n_cells = length(config.geo.cell_volumes)
-reaction_names = keys(config.regions[1].properties.reactions.reforming_reactions)
-species_names = keys(config.regions[1].properties.molecular_weights)
-
-#species caches are for things like mass_face, which has an entry for every face of every cell rather than entries for each cell
-special_caches = ComponentArray(
-    mass_face = zeros(n_cells, n_faces)u"kg",
-    net_rates = (
-        reforming_reactions = NamedTuple{reaction_names}(
-            Tuple(zeros(n_cells)u"mol/s" for _ in 1:length(reaction_names))
-        ), #don't forget the comma!
-    ), 
-    molar_concentrations = NamedTuple{species_names}(
-        Tuple(zeros(n_cells)u"mol/m^3" for _ in 1:length(species_names))
-    ),
-    species_mass_flows = NamedTuple{species_names}(
-        Tuple(zeros(n_cells)u"kg" for _ in 1:length(species_names))
-    ),
-)
-
 #you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful ComponentVectors
-du0_vec, u0_vec, state_axes, geo, system = finish_fvm_config(config, connection_map_function, special_caches, check_units = false);
+du0_vec, u0_vec, state_axes, geo, system = finish_fvm_config(config, connection_map_function, check_units = false);
 
 function solve_system!(du, u, p, t, geo, system)
     #sus_cell_id = 5162
@@ -430,7 +426,7 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 100000.0
+tMax = 1000.0
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
@@ -440,9 +436,7 @@ save_interval = (tspan[end] / desired_steps)
 
 @time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 #@time sol = solve(implicit_prob, AutoTsit5(FBDF()), callback = approximate_time_to_finish_cb)
-#it seems like turning on the vaporization_model is what's causing everything to slow down
-#oof, for some reason turning on vaporization with PAM_reforming_react_cell! is what's causing the solution to become unstable
-
+#KrylovJL_BICGSTAB is another option, so is using algebraicmultigrid
 sol.destats
 
 prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1e-5), p_guess)
