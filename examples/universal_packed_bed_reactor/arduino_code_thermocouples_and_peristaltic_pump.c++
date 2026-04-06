@@ -24,7 +24,7 @@ const int numSensors = 5;
 
 // Variables for non-blocking temperature reads
 unsigned long previousTempMillis = 0;
-const long tempInterval = 1000; // Read temperatures every 1000 milliseconds
+const long tempInterval = 500; // Read temperatures every 1000 milliseconds
 
 // --- STEPPER MOTOR SETUP ---
 // MOVED PINS to avoid Hardware SPI conflicts!
@@ -110,8 +110,17 @@ void loop() {
     for (int i = 0; i < numSensors; i++) {
       double temp = thermocouples[i]->readCelsius();
       
+      // --- ADDED RETRY LOGIC ---
+      byte retries = 0;
+      while (isnan(temp) && retries < 3) {
+        smartDelay(50); // Wait 5ms for electrical noise to clear
+        temp = thermocouples[i]->readCelsius();
+        retries++;
+      }
+      // -------------------------
+
       if (isnan(temp)) {
-        Serial.print("NaN");
+        Serial.print("NaN"); // If it still fails after 3 retries, print NaN
       } else {
         Serial.print(temp);
       }
@@ -121,5 +130,21 @@ void loop() {
       }
     }
     Serial.println();
+  }
+}
+
+void smartDelay(unsigned long waitMillis) {
+  unsigned long startWait = millis();
+  
+  while (millis() - startWait < waitMillis) {
+    unsigned long currentMicros = micros();
+    
+    // Check if the stepper motor needs a pulse during the wait time
+    if (currentMicros - previousStepMicros >= stepIntervalMicros) {
+      previousStepMicros = currentMicros;
+      digitalWrite(PUL_PIN, LOW); 
+      delayMicroseconds(50); 
+      digitalWrite(PUL_PIN, HIGH); 
+    }
   }
 }
