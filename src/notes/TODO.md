@@ -1,4 +1,20 @@
 TODO:
+    - I've just realized that since this solver is primarily going to be used for doing parameter fitting, making the actual internals of the solver parallelizable is actually pretty useless. Instead, I think it's going to be much better to distribute different guesses of the optimized parameters across a cluster and then let each core solve the problem independently and pick the best guess. 
+        - This prevents bottlenecks due to the lack of communication needed between cores
+        - It's great because it kinda limits me to doing smaller scale problems that are doable on a single core for debugging and then easily scaling them up with multiple parameters 
+        - and I don't need to put any of the effort into making the solver parallel which would probably make everything uglier 
+        - I'm pretty sure that EnsembleDistributed or EnsembleGPU could handle this for me and this should be pretty trivial to implement
+        - However, one thing that would be tricky is that we wouldn't know if the solves that are taking the longest are the ones that are the most true to life or if they're just bad guesses. 
+        - Perhaps we could check on the fly if lower solver times corresponds to higher accuracy and if it does, we could just terminate early for bad guesses, however this could get stuck in local minima. 
+        - However, perhaps this wouldn't be necessary as higher stiffness is usually an indicator of bad guesses 
+        - Basically, it would check if higher stiffness in the runs that finish very early creates a better fit to the data. If it does, we could let the next longest time to finish with similar parameters (very important*) to finish. As soon as we see that a higher stiffness problem as the one before produces parameters that are less accurate than the stiffness of the ones before, we stop all currently running simulations and then use that as the best guess.
+            - *If a run with completely different parameters from another just happened to be slightly more or less stiff from another, 
+            - Thus, we would probably have to check this along each row and column of possible parameters 
+            - Furthermore, we would still want to check the parameters that enclose (are to the left and right) to make sure we don't miss the true minima between values.
+            - Although, now that I'm thinking about this, how does this differ to just stopping rows/columns early that return worse fits?
+            - **IMPORTANT** I've just realized that even taking stiffness into consideration is not necessary. Simply terminating runs that result in a worse fit is way better. 
+            - I wonder if SciMLSensitivity.jl does this already?
+    
     - For second-order spatial discretization, I've been recommended to use Venkatakrishnan limiters, Van Albada Limiters, or maybe even Learned Neural Flux Limiters. DONE!
     
     - I should probably implement second order meshes at some point. In my Biology IA that contained a lot of cylinders, I had to make a very fine mesh to capture the curve of the cylinders. This was especially bad for very thin cylinders.
