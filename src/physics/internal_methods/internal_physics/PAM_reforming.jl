@@ -7,7 +7,6 @@ function PAM_reforming_react_cell!(du, u, cell_id, vol)
     mw_avg!(u, cell_id)
     rho_ideal!(u, cell_id)
     molar_concentrations!(u, cell_id)
-
     
     #we divide by 1e-5 because PAM parameters are in bar
     #we add a tiny epsilon (1e-12) to prevent division by zero in the denominators/roots

@@ -233,14 +233,12 @@ add_setup_syms!(config;
             Tuple(zeros(n_cells)u"kg" for _ in 1:length(species_names))
         )
     ),
-    second_order_syms = [
-    ],
-    optimized_parameters = ComponentVector(
-    )
+    second_order_syms = [],
+    optimized_parameters = ComponentVector()
 )
 
 function common_physics_functions!(du, u, cell_id, vol)
-    #vaporization_model!(du, u, cell_id, vol)
+    vaporization_model!(du, u, cell_id, vol)
     #ergun_momentum_friction!(du, u, cell_id, vol)
 end
 
@@ -396,7 +394,7 @@ du0_vec, u0_vec, state_axes, geo, system = finish_fvm_config(config, connection_
 function solve_system!(du, u, p, t, geo, system)
     #sus_cell_id = 5162
     #VERY IMPORTANT: since most software uses 0-based indexing, you need to adjust the cell id by +1
-    #for example, if you mouse over cell_id 5161 in paraview, you need to use 5162 in the code because 
+    #for example, if you mouse over cell_id 5161 in paraview, you need to use 5162 in the code because julia uses 1-based indexing 
 
     for cell_id in eachindex(geo.cell_volumes)
         update_properties!(du, u, cell_id, geo.cell_volumes[cell_id])

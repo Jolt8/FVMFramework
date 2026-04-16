@@ -17,6 +17,8 @@ import Logging
 using ComponentArrays
 using StaticArrays
 using ProfileView
+using FVMFramework
+using Unitful
 
 abstract type AbstractPhysics end
 
@@ -97,11 +99,10 @@ function net_reaction_rate(chemical_reaction, molar_concentrations, T, kf_A, kf_
     return net_reaction_rate
 end
 
+function K_gibbs_free_2(T_ref, T_actual, ΔG_rxn_ref, ΔH_rxn_ref)
+    K_ref = exp(-ΔG_rxn_ref / (8.314e-3 * T_ref)) #R is in kJ
 
-function K_gibbs_free(u, cell_id, reaction)
-    K_ref = exp(-reaction.delta_gibbs_free_energy / (8.314e-3 * reaction.K_gibbs_free_ref_temp)) #R is in kJ
-
-    ln_K_ratio = (-reaction.heat_of_reaction / 8.314e-3) * (1 / u.temp[cell_id] - 1 / reaction.K_gibbs_free_ref_temp)
+    ln_K_ratio = (-ΔH_rxn_ref / 8.314e-3) * (1 / T_actual - 1 / T_ref)
 
     K_T = K_ref * exp(ln_K_ratio)
 
@@ -163,7 +164,7 @@ function FVM_iter_f!(
             kf_Ea = A_Ea_pairs[reaction_id][2]
 
             #find reverse pre exponential_factor
-            #K_ref = K_gibbs_free(temperatures_vec[time_idx, cell_id], reaction.K_gibbs_free_ref_temp, reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
+            K_ref = K_gibbs_free_2(reaction.K_gibbs_free_ref_temp, temperatures_vec[time_idx, cell_id], reaction.delta_gibbs_free_energy, reaction.heat_of_reaction)
 
             kr_A = (kf_A / K_ref) * exp(-reaction.heat_of_reaction / (8.314e-3 * temperatures_vec[time_idx, cell_id]))
 
@@ -272,23 +273,20 @@ end
 
 initial_node_coordinates = get_node_coordinates(grid)
 
-cell_neighbor_map, neighbor_map_respective_node_ids = get_neighbor_map(grid)
-
-unconnected_cell_face_map, unconnected_map_respective_node_ids = get_unconnected_map(grid)
+cell_neighbor_map = nothing
+neighbor_map_respective_node_ids = nothing
+unconnected_cell_face_map = nothing
+unconnected_map_respective_node_ids = nothing
 
 nodes_of_cells = get_nodes_of_cells(grid)
 
-cell_volumes,
-cell_centroids, #cell volumes and cell centroids are accessed at the id of the cell
-connection_areas,
-connection_normals,
-connection_distances, #connection areas, normals, and distances are simply accessed by their location in the list which corresponds to the respective connection in cell_neighbor_map
-unconnected_areas,
-unconnected_normals = rebuild_fvm_geometry(
-    cell_neighbor_map, neighbor_map_respective_node_ids,
-    unconnected_cell_face_map, unconnected_map_respective_node_ids,
-    initial_node_coordinates, nodes_of_cells
-)
+cell_volumes = [50u"ml" |> u"m^3"]
+cell_centroids = nothing
+connection_areas = nothing
+connection_normals = nothing
+connection_distances = nothing
+unconnected_areas = nothing
+unconnected_normals = nothing
 
 #= 
 NOTE: We might have to declare these as constant to prevent dynamic dispatch in the future but we're leaving this out for now
@@ -306,13 +304,10 @@ du0 = u0 .* 0.0
 #Experimental data retrieval and processing
 
 using XLSX
-using Unitful
 
 experimental_data_path = joinpath(@__DIR__, "esterification_data_processing_for_julia.xlsx")
 
 xf = XLSX.readxlsx(experimental_data_path)
-
-typeof(float.(vec(xf["40C"]["A2:A10"])))
 
 struct TrialPreprocessedData
     temperature_timestamps::Vector{Float64}
@@ -593,7 +588,6 @@ XLSX.writetable("esterification_simulation_results_4.xlsx",
     "T2" => df2,
     "T3" => df3
 )
-
 
 println("done")
 
