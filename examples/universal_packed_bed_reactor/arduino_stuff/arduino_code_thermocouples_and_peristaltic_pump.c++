@@ -39,7 +39,11 @@ unsigned long previousStepMicros = 0;
 // E.g., 1 RPM = 6400 pulses per 60 seconds = ~106 pulses/second.
 // 1 second (1,000,000 micros) / 106 = ~9433 microseconds between pulses.
 // Change this value to adjust your flow rate. Higher number = slower flow.
-long stepIntervalMicros = 9433; 
+double target_rpm = 5.0; //change me!
+
+long pulses_per_revolution = 6400; //check TB6600 for the pulse/rev, the setting resulting in the highest pulse/rev should be used
+double pulses_per_second = target_rpm * pulses_per_revolution / 60;
+unsigned long stepIntervalMicros = 1_000_000 / pulses_per_second;
 
 // Motor direction state
 bool motorDirection = true; // true for one way, false for the other
