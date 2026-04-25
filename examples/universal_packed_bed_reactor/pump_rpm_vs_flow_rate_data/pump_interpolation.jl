@@ -34,7 +34,7 @@ for trial_sheet_name in trial_sheet_names
     deleteat!(grams_accumulated, missing_indicies)
 
     times = Float64.(ustrip.(times)) * u"s"
-    grams_accumulated = Float64.(ustrip.(grams_accumulated)) * u"g" #some values were brought in as Int64
+    grams_accumulated = Float64.(ustrip.(grams_accumulated)) * u"g" #some values were interpreted as Int64
 
     water_density = 1.0u"g/mL"
 
