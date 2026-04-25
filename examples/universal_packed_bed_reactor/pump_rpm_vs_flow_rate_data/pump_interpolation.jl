@@ -23,16 +23,16 @@ for trial_sheet_name in trial_sheet_names
     times = vec(ts["A3:A12"]) * u"s"
     grams_accumulated = vec(ts["B3:B12"]) * u"g"
 
-    missing_indicies = []
+    missing_indices = Int64[]
 
     for i in eachindex(grams_accumulated)
         if ismissing(grams_accumulated[i])
-            push!(missing_indicies, i)
+            push!(missing_indices, i)
         end
     end
 
-    deleteat!(times, missing_indicies)
-    deleteat!(grams_accumulated, missing_indicies)
+    deleteat!(times, missing_indices)
+    deleteat!(grams_accumulated, missing_indices)
 
     seconds_times = Float64.(ustrip.(times))
     minutes_times = seconds_times ./ 60 
