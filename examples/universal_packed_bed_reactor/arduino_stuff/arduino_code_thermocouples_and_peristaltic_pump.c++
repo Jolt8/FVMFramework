@@ -39,9 +39,16 @@ unsigned long previousStepMicros = 0;
 // E.g., 1 RPM = 6400 pulses per 60 seconds = ~106 pulses/second.
 // 1 second (1,000,000 micros) / 106 = ~9433 microseconds between pulses.
 // Change this value to adjust your flow rate. Higher number = slower flow.
-double target_rpm = 5.0; //change me!
 
-long pulses_per_revolution = 6400; //check TB6600 for the pulse/rev, the setting resulting in the highest pulse/rev should be used
+//double target_flow_rate_ml_per_sec = 1.0; //change me!
+//double target_rpm = -0.0723492318793547 + 196.6253272135435 * target_flow_rate_ml_per_sec;
+
+double target_flow_rate_ml_per_min = 1.0; //change me!
+double target_rpm = -0.07234923187935079 + 3.2770887868923912 * target_flow_rate_ml_per_min;
+
+long pulses_per_revolution = 6400; 
+// check TB6600 for the pulse/rev, the setting resulting in the highest pulse/rev should be used 
+// unless you need more head pressure or need to overcome a higher pressure drop
 double pulses_per_second = target_rpm * pulses_per_revolution / 60;
 unsigned long stepIntervalMicros = 1_000_000 / pulses_per_second;
 
