@@ -51,18 +51,23 @@ end
 
 @inline Base.getindex(vax::VirtualAxis{Src}, i) where {Src} = VirtualIndex{Src, typeof(getindex(vax.ax, i))}(getindex(vax.ax, i))
 
-@inline _resolve(data, idx::Int) = view(data, idx:idx)
-@inline _resolve(data, idx::UnitRange{Int}) = view(data, idx)
-@inline _resolve(data, idx::ComponentArrays.ComponentIndex) = _apply_axis(view(data, idx.idx), idx.ax)
-@inline _resolve(data, ax::ComponentArrays.AbstractAxis) = ComponentArray(data, (ax,))
+@inline _resolve(data::AbstractArray, idx::Int) = view(data, idx:idx)
+@inline _resolve(data::AbstractArray, idx::UnitRange{Int}) = view(data, idx)
+@inline _resolve(data::AbstractArray, idx::ComponentArrays.ComponentIndex) = _apply_axis(view(data, idx.idx), idx.ax)
+@inline _resolve(data::AbstractArray, ax::ComponentArrays.AbstractAxis) = ComponentArray(data, (ax,))
+
+@inline _resolve(data::Number, idx::Int) = data
+@inline _resolve(data::Number, idx::UnitRange{Int}) = data
+@inline _resolve(data::Number, idx::ComponentArrays.ComponentIndex) = data
+@inline _resolve(data::Number, ax::ComponentArrays.AbstractAxis) = data
 
 @inline _apply_axis(data, ax::ComponentArrays.AbstractAxis) = ComponentArray(data, (ax,))
 @inline _apply_axis(data, ax::ComponentArrays.ShapedAxis) = reshape(data, size(ax))
 @inline _apply_axis(data, ax::ComponentArrays.ViewAxis) = _apply_axis(data, ax.ax)
 @inline _apply_axis(data, ax::ComponentArrays.PartitionedAxis{N}) where {N} = FaceVectorView(data, N, 1)
 
-@inline _resolve(data, ax::Tuple{Int, Int}) = FaceVectorView(data, ax[2], ax[1])
-@inline _resolve(data, ax::Tuple{Int}) = view(data, ax[1]:ax[1])
+@inline _resolve(data::AbstractArray, ax::Tuple{Int, Int}) = FaceVectorView(data, ax[2], ax[1])
+@inline _resolve(data::AbstractArray, ax::Tuple{Int}) = view(data, ax[1]:ax[1])
 
 @inline function _virtual_resolve(data::Tuple, vax::VirtualAxis{Src}) where {Src}
     return _resolve(data[Src], vax.ax) 
