@@ -176,9 +176,17 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
     du_diff_cache = DiffCache(ustrip.(upreferred.(deepcopy(du_unitful_cache_vec))), N)
     u_diff_cache = DiffCache(ustrip.(upreferred.(deepcopy(u_unitful_cache_vec))), N)
 
-    p_vec_units = Vector(ComponentVector(config.optimized_parameters))
-    p_vec = ustrip.(upreferred.(Vector(ComponentVector(config.optimized_parameters))))
-    p_axes = getaxes(ComponentVector(config.optimized_parameters))
+    pre_lengthened_optimized_parameters_dict = Dict{Symbol, Any}()
+
+    for name in propertynames(config.optimized_parameters)
+        pre_lengthened_optimized_parameters_dict[name] = getproperty(config.optimized_parameters, name)
+    end
+
+    lengthened_optimized_parameters = ComponentVector(_dict_to_namedtuple(pre_lengthened_optimized_parameters_dict))
+
+    p_vec_units = Vector(ComponentVector(lengthened_optimized_parameters))
+    p_vec = ustrip.(upreferred.(Vector(ComponentVector(lengthened_optimized_parameters))))
+    p_axes = getaxes(ComponentVector(lengthened_optimized_parameters))
 
     #we have to split up properties to strip it of units
     properties_vec_units = Vector(merged_properties)
@@ -189,7 +197,7 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
     if ComponentVector(config.optimized_parameters) == Union{}[] #if the user doesn't provide any optimized parameters, we ignore them
         u_virtual_axes = virtual_merge_axes((ComponentVector(config.u_proto), ComponentVector(merged_caches), ComponentVector(merged_properties)))
     else
-        u_virtual_axes = virtual_merge_axes((ComponentVector(config.u_proto), ComponentVector(merged_caches), ComponentVector(merged_properties), ComponentVector(config.optimized_parameters)))
+        u_virtual_axes = virtual_merge_axes((ComponentVector(config.u_proto), ComponentVector(merged_caches), ComponentVector(merged_properties), ComponentVector(lengthened_optimized_parameters)))
     end
 
     if check_units == true
