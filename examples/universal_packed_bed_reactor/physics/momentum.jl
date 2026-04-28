@@ -7,7 +7,7 @@ function ergun_momentum_friction!(du, u, cell_id, vol)
     B = 1.75 * (1.0 - u.bed_void_fraction[cell_id]) / (u.particle_diameter[cell_id] * u.bed_void_fraction[cell_id]^3)
 
     # Calculate the pressure drop over the cell's length
-    dp_dz = A * u.viscosity[cell_id] * u.superficial_velocity[cell_id] + B * u.rho[cell_id] * abs(u.superficial_velocity[cell_id]) * u.superficial_velocity[cell_id]
+    dp_dz = A * u.dynamic_viscosity[cell_id] * u.superficial_velocity[cell_id] + B * u.rho[cell_id] * abs(u.superficial_velocity[cell_id]) * u.superficial_velocity[cell_id]
 
     du.pressure[cell_id] -= (dp_dz * u.cell_lengths_along_pipe[cell_id]) 
     #is it more logical to use per_cell_pipe_length or cell_lengths_along_pipe? 
@@ -34,10 +34,10 @@ function new_pressure_driven_mass_flux!(
     # We take the average of the two cells for property evaluation
     eps = (u.bed_void_fraction[idx_a] + u.bed_void_fraction[idx_b]) / 2.0
     dp = (u.particle_diameter[idx_a] + u.particle_diameter[idx_b]) / 2.0
-    mu = (u.viscosity[idx_a] + u.viscosity[idx_b]) / 2.0
+    dynamic_viscosity = (u.dynamic_viscosity[idx_a] + u.dynamic_viscosity[idx_b]) / 2.0
     rho = (u.rho[idx_a] + u.rho[idx_b]) / 2.0
     
     K = (dp^2 * eps^3) / (150.0 * (1.0 - eps)^2)
     
-    du.mass_face[idx_a, face_idx] -= (rho * K * face_area / mu) * (u.pressure[idx_a] - u.pressure[idx_b]) / distance
+    du.mass_face[idx_a, face_idx] -= (rho * K * face_area / dynamic_viscosity) * (u.pressure[idx_a] - u.pressure[idx_b]) / distance
 end
