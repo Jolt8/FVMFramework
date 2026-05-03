@@ -5,7 +5,7 @@ import time
 # --- SERIAL CONFIGURATION ---
 # 1. Find your Arduino's COM port (check Device Manager)
 # 2. Set the baud rate to match the Arduino code (115200)
-SERIAL_PORT = 'COM3'  # Change this to your Arduino's port
+SERIAL_PORT = 'COM4'  # Change this to your Arduino's port
 BAUD_RATE = 115200
 
 # --- FILE CONFIGURATION ---
