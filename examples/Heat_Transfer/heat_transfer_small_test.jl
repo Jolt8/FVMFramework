@@ -107,7 +107,7 @@ function solid_solid_flux!(
 
     #hmm, perhaps these physics functions need to be more strictly typed
     #Checking profview, I'm getting some runtime dispatch and GC here, I don't know why 
-    temp_diffusion!(
+    heat_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]

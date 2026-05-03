@@ -69,7 +69,7 @@ export for_fields!, foreach_field_at!
 # ----- Physics ----
 #   ---- Physics Types ----
 include("physics_types/abstract_physics_types.jl")
-export AbstractPhysics, AbstractFluidPhysics, AbstractSolidPhysics, AbstractReaction
+export AbstractPhysics
 
 #   ---- Flux Methods ----
 #       --- Flux Physics ---
@@ -83,7 +83,7 @@ include("physics/flux_methods/flux_physics/diffusion.jl")
 export species_numerical_flux, mass_fraction_diffusion!
 
 include("physics/flux_methods/flux_physics/heat_transfer.jl")
-export get_k_effective, numerical_flux, temp_diffusion!
+export get_k_effective, numerical_flux, heat_diffusion!
 
 #   ---- Internal Methods ----
 #       --- Internal Capacities ---

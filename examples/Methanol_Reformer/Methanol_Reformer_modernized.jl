@@ -330,7 +330,7 @@ function fluid_fluid_flux!(
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
     )
 
-    temp_diffusion!(
+    heat_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
@@ -361,7 +361,7 @@ function solid_solid_flux!(
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
 )
 
-    temp_diffusion!(
+    heat_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]
@@ -377,7 +377,7 @@ function fluid_solid_flux!(
     rho_ideal!(u, idx_a)
     molar_concentrations!(u, idx_a)
 
-    temp_diffusion!(
+    heat_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]
@@ -393,7 +393,7 @@ function solid_fluid_flux!(
     rho_ideal!(u, idx_b)
     molar_concentrations!(u, idx_b)
 
-    temp_diffusion!(
+    heat_diffusion!(
         du, u,
         idx_a, idx_b, face_idx,
         cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]
