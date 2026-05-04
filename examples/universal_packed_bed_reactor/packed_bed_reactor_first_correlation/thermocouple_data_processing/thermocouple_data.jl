@@ -14,10 +14,6 @@ trial = CSV.read(experimental_data_path, DataFrame)
 timestamps = (trial.Time_ms .* u"ms") .|> u"s"
 timestamps = Float64.(ustrip(timestamps)) * u"s"
 
-Revise.includet(joinpath(@__DIR__, "..", "recorded_data_processing", "values_of_note.jl"))
-
-trial_1_values_of_note = get_trial_1_values_of_note()
-
 temp_tc1 = (trial.TC1_C .* u"°C") .|> u"K"
 temp_tc2 = (trial.TC2_C .* u"°C") .|> u"K"
 temp_tc3 = (trial.TC3_C .* u"°C") .|> u"K"
