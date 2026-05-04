@@ -53,11 +53,6 @@ return (
     TC3_temp_at_start = TC3_temp_at_start,
     TC4_temp_at_start = TC4_temp_at_start,
     TC5_temp_at_start = TC5_temp_at_start,
-    TC1_offset = TC1_offset,
-    TC2_offset = TC2_offset,
-    TC3_offset = TC3_offset,
-    TC4_offset = TC4_offset,
-    TC5_offset = TC5_offset,
     multimeter_offset = multimeter_offset,
     flow_rate_throughout_trial = flow_rate_throughout_trial,
     first_drops_at_outlet_time = first_drops_at_outlet_time,
@@ -69,3 +64,23 @@ return (
 )
 
 end
+
+
+#other values that are less obvious
+
+reactor_approximate_volume = flow_rate_throughout_trial * (first_drops_at_outlet_time - 0.0u"s") |> u"ml"
+#huh, 50 ml
+#based on the fact that the reactor is 12.1 inches tall and has 0.5 inches of ID, it's volume would be 38.93ml
+#that doesn't seem quite right
+#oh, I forgot about the copper tube on the end of it
+
+#ah, with the copper pipe having an ID of 5mm and a length of 60cm, it's volume would be 11.78ml
+#50 - 11.78 = 38.22ml
+#that makes sense
+
+reactor_avaliable_volume = 38.22u"ml" |> u"m^3"
+
+#I'm pretty sure that the 0.5 inches ID is probably incorrect, so I'll measure the actual inner diameter of the pipe and the copper tubing to get a good measurement
+#then, I'll use that to roughly estimate bed void fraction 
+#since I use two different packing media, I'll have to figure out the void fraction of one then estimate the other with this number since the void fraction of the copper mesh
+#mesh is going to be hard to estimate, the silicon carbide sand packing media should be pretty easy to find the void fraction of 
