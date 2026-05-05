@@ -1,3 +1,4 @@
+
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
 
@@ -7,9 +8,10 @@ const int VOLT_PIN = A0;  // ZMPT101B Voltage Sensor
 
 // --- CALIBRATION CONSTANTS ---
 // You will tune these to match your multimeter/Kill-A-Watt
-float VOLTAGE_CAL = 0.585;  // Adjust so V reads ~120V at full power
-float CURRENT_CAL = 0.042;  // Adjust so I matches a known load
-const int V_OFFSET = 512;   // The center point of the AC wave (usually 512)
+float VOLTAGE_CAL = 1.15;  // Adjust so V reads ~120V at full power
+float CURRENT_CAL = 0.01028;  // Adjust so I matches a known load
+const int V_OFFSET = 511.81;   // The center point of the AC wave (usually 512)
+//might also be 511.50
 
 void setup() {
   Serial.begin(115200);
@@ -21,7 +23,7 @@ void setup() {
     while (1);
   }
 
-  ads.setDataRate(RATE_ADS1115_860SPS)
+  ads.setDataRate(RATE_ADS1115_860SPS); 
 
   Serial.println("Power Monitor Test Started...");
   Serial.println("V_RMS, I_RMS, Wattage");
@@ -36,11 +38,9 @@ void loop() {
 
   // --- SAMPLING WINDOW ---
   // We sample for 50ms (3 full cycles of 60Hz) to get an accurate RMS
-  while (millis() - start_time < 50) {
+  while (millis() - start_time < 200) {
     // Read Voltage (ZMPT101B)
     int16_t v_raw = analogRead(VOLT_PIN) - V_OFFSET;
-
-    Serial.print(analogRead(VOLT_PIN))
     
     // Read Current (SCT-013 Differential)
     // A0 and A1 pins on the ADS1115
@@ -50,6 +50,10 @@ void loop() {
     i_sq_sum += (long)i_raw * i_raw;
     sample_count++;
   }
+
+  //Serial.print(analogRead(VOLT_PIN));
+  //Serial.print(" analogRead(VOLT_PIN), ");
+  Serial.println(ads.readADC_Differential_0_1());
 
   // --- CALCULATE TRUE RMS ---
   double v_rms = sqrt(v_sq_sum / sample_count) * VOLTAGE_CAL;
