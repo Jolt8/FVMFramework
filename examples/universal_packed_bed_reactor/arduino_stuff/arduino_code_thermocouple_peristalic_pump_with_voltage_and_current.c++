@@ -1,12 +1,17 @@
-// Merged Arduino code: 5 thermocouples + peristaltic pump + AC voltage/current
-// The pump continues stepping during ALL blocking operations (RMS sampling,
-// thermocouple retries, etc.) via pumpDuringWait() helpers.
+// Merged: 5 thermocouples + peristaltic pump + AC voltage/current
 //
-// Hardware summary:
+// The pump uses a Timer1 hardware interrupt so stepper pulses fire
+// at precise intervals regardless of blocking I2C (ADS1115) or
+// SPI (MAX31855) reads in the main loop.
+//
+// Hardware:
 //   - 5x MAX31855 thermocouples on SPI (CS pins 2-6)
 //   - TB6600 stepper driver (PUL 9, DIR 7, ENA 8)
 //   - ZMPT101B voltage sensor on A0
 //   - SCT-013 current sensor via ADS1115 on I2C (differential A0/A1)
+//
+// Assumes 16 MHz Arduino (Uno/Mega). If using 8 MHz, halve the
+// prescaler divisor in setupStepperTimer().
 
 #include <SPI.h>
 #include <Wire.h>
@@ -31,7 +36,6 @@ Adafruit_MAX31855 tc5(CS5);
 Adafruit_MAX31855* thermocouples[] = {&tc1, &tc2, &tc3, &tc4, &tc5};
 const int numSensors = 5;
 
-// Non-blocking temperature read interval
 unsigned long previousTempMillis = 0;
 const long tempInterval = 500; // ms between temperature reads
 
@@ -42,17 +46,16 @@ const long tempInterval = 500; // ms between temperature reads
 #define ENA_PIN 8
 #define PUL_PIN 9
 
-unsigned long previousStepMicros = 0;
-
-double target_flow_rate_ml_per_min = 1.0; // ← change me!
+double target_flow_rate_ml_per_min = 1.0; // <-- change me!
 double target_rpm = -0.07234923187935079 + 3.2770887868923912 * target_flow_rate_ml_per_min;
 
 long pulses_per_revolution = 6400;
-// check TB6600 for the pulse/rev, the setting resulting in the highest pulse/rev should be used 
-// unless you need more head pressure or need to overcome a higher pressure drop
-// I'm not sure if you would need to do another interpolation if you change the pulse/rev
-// since this is a positive displacement pump where the relationship between the flow rate and rpm is very linear, 
-// I don't think a new interpolation would be required
+// check TB6600 for the pulse/rev, the setting resulting in the highest
+// pulse/rev should be used unless you need more head pressure or need
+// to overcome a higher pressure drop.
+// Since this is a positive displacement pump where the relationship
+// between the flow rate and rpm is very linear, I don't think a new
+// interpolation would be required if you change the pulse/rev.
 double pulses_per_second = target_rpm * pulses_per_revolution / 60.0;
 unsigned long stepIntervalMicros = 1000000UL / (unsigned long)pulses_per_second;
 
@@ -64,45 +67,52 @@ bool motorDirection = true; // true for one way, false for the other
 Adafruit_ADS1115 ads;         // ADS1115 for current (SCT-013)
 const int VOLT_PIN = A0;      // ZMPT101B voltage sensor
 
-// Calibration constants — tune to match your multimeter / Kill-A-Watt
+// Calibration constants -- tune to match your multimeter / Kill-A-Watt
 float VOLTAGE_CAL  = 1.15;      // Adjust so V reads ~120 V at full power
 float CURRENT_CAL  = 0.01028;   // Adjust so I matches a known load
 const int V_OFFSET = 511;       // Center point of the AC wave (usually ~512)
 
-// Non-blocking power read interval
 unsigned long previousPowerMillis = 0;
 const long powerInterval = 1000; // ms between power readings
 
-// RMS sampling window length (200 ms ≈ 12 full cycles of 60 Hz)
+// RMS sampling window length (200 ms = 12 full cycles of 60 Hz)
 const unsigned long rmsSampleWindowMs = 200;
 
-// Latest power readings — updated every powerInterval ms,
-// printed every tempInterval ms alongside thermocouple data.
+// Cached power readings (updated every powerInterval, printed with temps)
 double lastVrms    = 0.0;
 double lastIrms    = 0.0;
 double lastWattage = 0.0;
 
 // =============================================================
-//  HELPERS: keep the pump stepping during blocking operations
+//  TIMER1 INTERRUPT — generates stepper pulses in hardware
+//  This fires regardless of any blocking I2C/SPI in loop().
 // =============================================================
-
-// Single pump-service call — fire one pulse if it's time
-inline void servicePump() {
-  unsigned long now = micros();
-  if (now - previousStepMicros >= stepIntervalMicros) {
-    previousStepMicros = now;
-    digitalWrite(PUL_PIN, LOW);
-    delayMicroseconds(50);
-    digitalWrite(PUL_PIN, HIGH);
-  }
+ISR(TIMER1_COMPA_vect) {
+  // Common-anode: LOW = pulse, HIGH = idle
+  digitalWrite(PUL_PIN, LOW);
+  delayMicroseconds(10);  // TB6600 min pulse width is ~2.5 us; 10 is safe
+  digitalWrite(PUL_PIN, HIGH);
 }
 
-// Keep the pump stepping for a given number of milliseconds
-void pumpDuringDelay(unsigned long waitMillis) {
-  unsigned long startWait = millis();
-  while (millis() - startWait < waitMillis) {
-    servicePump();
-  }
+void setupStepperTimer() {
+  // Timer1 CTC mode, prescaler 64 → 4 us per tick at 16 MHz
+  // Max period = 65536 * 4 us ≈ 262 ms (plenty for any pump speed)
+  noInterrupts();
+
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TCNT1  = 0;
+
+  unsigned long ocrVal = stepIntervalMicros / 4 - 1;
+  if (ocrVal > 65535) ocrVal = 65535;
+  if (ocrVal < 1)     ocrVal = 1;
+  OCR1A = (uint16_t)ocrVal;
+
+  TCCR1B |= (1 << WGM12);                  // CTC mode
+  TCCR1B |= (1 << CS11) | (1 << CS10);     // prescaler 64
+  TIMSK1 |= (1 << OCIE1A);                 // enable compare-match interrupt
+
+  interrupts();
 }
 
 // =============================================================
@@ -117,8 +127,8 @@ void setup() {
   pinMode(DIR_PIN, OUTPUT);
   pinMode(ENA_PIN, OUTPUT);
 
-  // Common-anode logic
-  digitalWrite(PUL_PIN, HIGH); // Default state HIGH (no pulse)
+  // Common-anode logic defaults
+  digitalWrite(PUL_PIN, HIGH); // idle (no pulse)
   digitalWrite(ENA_PIN, HIGH); // HIGH = no current = driver ENABLED
 
   if (motorDirection) {
@@ -137,7 +147,7 @@ void setup() {
   }
 
   // --- ADS1115 (current sensor) ---
-  ads.setGain(GAIN_TWO); // ±2.048 V range (good for SCT-013 with burden)
+  ads.setGain(GAIN_TWO); // +/- 2.048 V (good for SCT-013 with burden)
   if (!ads.begin()) {
     Serial.println("Failed to initialize ADS1115. Check wiring!");
     while (1);
@@ -146,28 +156,21 @@ void setup() {
 
   // --- CSV header ---
   Serial.println("Time_ms,TC1_C,TC2_C,TC3_C,TC4_C,TC5_C,V_RMS,I_RMS,Wattage");
-  pumpDuringDelay(500); // Let MAX31855 stabilize (pump keeps flowing)
+
+  // Start Timer1 — pump runs from here on, completely in hardware
+  setupStepperTimer();
+
+  delay(500); // Let MAX31855 stabilize (pump is already running via ISR)
 }
 
 // =============================================================
-//  MAIN LOOP
+//  MAIN LOOP — no pump-servicing needed; Timer1 handles it
 // =============================================================
 void loop() {
   unsigned long currentMillis = millis();
-  unsigned long currentMicros = micros();
 
   // -----------------------------------------------------------
-  // 1. NON-BLOCKING STEPPER MOTOR CONTROL
-  // -----------------------------------------------------------
-  if (currentMicros - previousStepMicros >= stepIntervalMicros) {
-    previousStepMicros = currentMicros;
-    digitalWrite(PUL_PIN, LOW);
-    delayMicroseconds(50);
-    digitalWrite(PUL_PIN, HIGH);
-  }
-
-  // -----------------------------------------------------------
-  // 2. NON-BLOCKING TEMPERATURE READINGS
+  // 1. TEMPERATURE READINGS (every 500 ms)
   // -----------------------------------------------------------
   if (currentMillis - previousTempMillis >= tempInterval) {
     previousTempMillis = currentMillis;
@@ -178,10 +181,10 @@ void loop() {
     for (int i = 0; i < numSensors; i++) {
       double temp = thermocouples[i]->readCelsius();
 
-      // Retry logic — pump keeps flowing during retries
+      // Retry on NaN — pump keeps running via Timer1 during delay()
       byte retries = 0;
       while (isnan(temp) && retries < 3) {
-        pumpDuringDelay(50); // wait 50 ms while still pulsing the pump
+        delay(50);
         temp = thermocouples[i]->readCelsius();
         retries++;
       }
@@ -195,8 +198,7 @@ void loop() {
       Serial.print(",");
     }
 
-    // Print latest power values (or 0 if we haven't sampled yet)
-    // These will update on their own schedule via the power block below
+    // Append latest power values
     Serial.print(lastVrms);
     Serial.print(",");
     Serial.print(lastIrms);
@@ -205,9 +207,9 @@ void loop() {
   }
 
   // -----------------------------------------------------------
-  // 3. NON-BLOCKING POWER (V / I) READINGS
-  //    The RMS sampling window runs for rmsSampleWindowMs, but
-  //    the pump is serviced inside the loop so flow never stops.
+  // 2. POWER (V / I) READINGS (every 1000 ms)
+  //    The 200 ms sampling window blocks the main loop, but
+  //    Timer1 keeps the pump pulsing automatically.
   // -----------------------------------------------------------
   if (currentMillis - previousPowerMillis >= powerInterval) {
     previousPowerMillis = currentMillis;
@@ -219,13 +221,11 @@ void loop() {
     unsigned long sampleStart = millis();
 
     while (millis() - sampleStart < rmsSampleWindowMs) {
-      // --- keep the pump alive inside the sampling window ---
-      servicePump();
-
       // Voltage sample (ZMPT101B — fast analogRead)
       int16_t v_raw = analogRead(VOLT_PIN) - V_OFFSET;
 
-      // Current sample (SCT-013 via ADS1115 differential)
+      // Current sample (SCT-013 via ADS1115 — blocks ~1-2 ms per read,
+      // but Timer1 ISR fires right through it)
       int16_t i_raw = ads.readADC_Differential_0_1();
 
       v_sq_sum += (long)v_raw * v_raw;
@@ -243,7 +243,7 @@ void loop() {
       wattage = 0.0;
     }
 
-    // Cache for printing alongside thermocouple data
+    // Cache for next temperature print
     lastVrms    = v_rms;
     lastIrms    = i_rms;
     lastWattage = wattage;
