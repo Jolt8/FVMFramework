@@ -46,7 +46,7 @@ const long tempInterval = 500; // ms between temperature reads
 #define ENA_PIN 8
 #define PUL_PIN 9
 
-double target_flow_rate_ml_per_min = 1.0; // <-- change me!
+double target_flow_rate_ml_per_min = 10.0; // <-- change me!
 double target_rpm = -0.07234923187935079 + 3.2770887868923912 * target_flow_rate_ml_per_min;
 
 long pulses_per_revolution = 6400;
@@ -70,7 +70,8 @@ const int VOLT_PIN = A0;      // ZMPT101B voltage sensor
 // Calibration constants -- tune to match your multimeter / Kill-A-Watt
 float VOLTAGE_CAL  = 1.15;      // Adjust so V reads ~120 V at full power
 float CURRENT_CAL  = 0.01028;   // Adjust so I matches a known load
-const int V_OFFSET = 511;       // Center point of the AC wave (usually ~512)
+const float V_OFFSET = 511.81;       // Center point of the AC wave (usually ~512)
+//511.51 seemed to be better when actually using power
 
 unsigned long previousPowerMillis = 0;
 const long powerInterval = 1000; // ms between power readings
