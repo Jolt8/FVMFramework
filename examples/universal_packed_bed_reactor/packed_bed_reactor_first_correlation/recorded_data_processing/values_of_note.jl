@@ -84,3 +84,8 @@ reactor_avaliable_volume = 38.22u"ml" |> u"m^3"
 #then, I'll use that to roughly estimate bed void fraction 
 #since I use two different packing media, I'll have to figure out the void fraction of one then estimate the other with this number since the void fraction of the copper mesh
 #mesh is going to be hard to estimate, the silicon carbide sand packing media should be pretty easy to find the void fraction of 
+
+#the inner diameter of the reactor is 15.9mm
+#the outer diameter of the reactor is 18mm
+#the inner diameter of the copper tubing is 5mm
+
