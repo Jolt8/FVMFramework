@@ -9,7 +9,7 @@ SERIAL_PORT = 'COM4'  # Change this to your Arduino's port
 BAUD_RATE = 115200
 
 # Column headers
-HEADERS = ['Time_ms', 'TC1_C', 'TC2_C', 'TC3_C', 'TC4_C', 'TC5_C']
+HEADERS = ['Time_ms', 'TC1_C', 'TC2_C', 'TC3_C', 'TC4_C', 'TC5_C', 'V_RMS', 'I_RMS', 'Wattage']
 
 def main():
     # --- GENERATE DYNAMIC FILENAME ---
