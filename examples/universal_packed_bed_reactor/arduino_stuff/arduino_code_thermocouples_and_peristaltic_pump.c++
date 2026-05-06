@@ -53,7 +53,7 @@ long pulses_per_revolution = 6400;
 // since this is a positive displacement pump where the relationship between the flow rate and rpm is very linear, 
 // I don't think a new interpolation would be required
 double pulses_per_second = target_rpm * pulses_per_revolution / 60;
-unsigned long stepIntervalMicros = 1_000_000 / pulses_per_second;
+unsigned long stepIntervalMicros = 1000000 / pulses_per_second;
 
 // Motor direction state
 bool motorDirection = true; // true for one way, false for the other
