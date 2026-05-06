@@ -1,3 +1,4 @@
+
 function upwind(
     du, u,
     idx_a, idx_b, face_idx,
@@ -9,6 +10,20 @@ function upwind(
         return var_b
     end
 end
+
+
+#=
+function upwind(
+    du, u,
+    idx_a, idx_b, face_idx,
+    var_a, var_b
+)
+    #wow, this is a lot slower than the basic upwind function, I thought it would allow the solver to take larger steps, guess not
+    k = 10
+    return ((var_a - var_b) / 2) * tanh(k * du.mass_face[idx_a, face_idx]) + ((var_a + var_b) / 2)
+end
+=#
+
 
 function harmonic_mean(val_a, val_b)
     2 * val_a * val_b / (val_a + val_b)
