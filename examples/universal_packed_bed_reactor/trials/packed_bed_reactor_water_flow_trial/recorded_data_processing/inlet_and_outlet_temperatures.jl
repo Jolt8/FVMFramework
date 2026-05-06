@@ -1,7 +1,7 @@
 using XLSX
 using Unitful
 using DataFrames, CSV, GLM
-using LsqFit
+#using LsqFit
 using DataInterpolations
 using Plots
 
@@ -69,26 +69,23 @@ for i in eachindex(outlet_temperatures_with_missing)
     end
 end
 
-outlet_timestamps
-outlet_temperatures
-
 plot(ustrip.(outlet_timestamps), ustrip.(outlet_temperatures))
 
 #this one doesn't need to be interpolated because the curve is much more complex
 #note that the first droplets of this liquid came out at around 5 minutes in
 #thus, we're going to have to account for that in the fit
 
-outlet_temperatures_interpolation = CubicSpline(ustrip.(outlet_temperatures), ustrip.(outlet_timestamps))
+outlet_temperatures_interpolation = CubicSpline(ustrip.(vcat(outlet_temperatures[1], outlet_temperatures)), ustrip.(vcat(timestamps[1], outlet_timestamps)))
 
 plot(ustrip.(outlet_timestamps), ustrip.(outlet_temperatures))
 
-small_interpolation_timestamps = range(outlet_timestamps[1], outlet_timestamps[end], 500)
+small_interpolation_timestamps = range(timestamps[1], outlet_timestamps[end], 500)
 plot!(ustrip.(small_interpolation_timestamps), outlet_temperatures_interpolation.(ustrip.(small_interpolation_timestamps))) 
 #yep, this looks good!\
 
 return (
-    inlet_temperatures_interpolation = inlet_temperatures_interpolation,
-    outlet_temperatures_interpolation = outlet_temperatures_interpolation
+    inlet_temp_interp = inlet_temperatures_interpolation,
+    outlet_temp_interp = outlet_temperatures_interpolation
 )
 
 end

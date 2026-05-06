@@ -238,7 +238,7 @@ add_setup_syms!(config;
 )
 
 function common_physics_functions!(du, u, cell_id, vol)
-    vaporization_model!(du, u, cell_id, vol)
+    #vaporization_model!(du, u, cell_id, vol)
     #ergun_momentum_friction!(du, u, cell_id, vol)
 end
 
