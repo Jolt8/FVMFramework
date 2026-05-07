@@ -26,7 +26,7 @@ pipe_length = 12.1u"inch" |> u"m"
 stripped_pipe_length = ustrip(pipe_length |> u"m")
 pipe_width = ustrip(pipe_inside_diameter |> u"m")
 
-n_cells = 100
+n_cells = 1000
 
 grid_dimensions = (1, 1, n_cells)
 left = Ferrite.Vec{3}((0.0, 0.0, 0.0))
@@ -392,6 +392,10 @@ pump_shutoff_timestamp = ustrip(values_of_note.pump_shut_off_time)
 inlet_temp_interp(0.0)
 inlet_temp_interp(100.0)
 
+function measured_heater_wattage(t)
+    return 0.0
+end
+
 function pump_shut_off(du, u, cell_id, t)
     if t <= pump_shutoff_timestamp #pump on
         #FOR FUTURE REFERENCE JUST SO YOU KNOW WHAT'S HAPPENING:
@@ -498,7 +502,7 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
 
 Revise.includet(joinpath(@__DIR__, "thermocouple_data_processing", "thermocouple_data.jl"))
-path_to_thermocouple_data = joinpath(@__DIR__, "thermocouple_data_processing", "reactor_data_2026_05_02__15_56_13.csv")
+path_to_thermocouple_data = joinpath(@__DIR__, "thermocouple_data_processing", "hot_water_flow_tc_temps.csv")
 thermocouple_data = get_thermocouple_data(path_to_thermocouple_data)
 
 t0 = 0.0
