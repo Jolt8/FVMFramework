@@ -389,17 +389,33 @@ inlet_temp_interp = inlet_and_outlet_temperatures.inlet_temp_interp
 pump_shutoff_timestamp = ustrip(values_of_note.pump_shut_off_time)
 #I wonder if it's fine to put ustrip(values_of_note.pump_shut_off_time in the function itself)
 
+inlet_temp_interp(0.0)
+inlet_temp_interp(100.0)
+
 function pump_shut_off(du, u, cell_id, t)
     if t <= pump_shutoff_timestamp #pump on
-        u.temp[1] = inlet_temp_interp(t) 
+        #FOR FUTURE REFERENCE JUST SO YOU KNOW WHAT'S HAPPENING:
+        #=if eltype(u.temp[1]) <: ForwardDiff.Dual && eltype(t) <: ForwardDiff.Dual
+            u.temp[1] = inlet_temp_interp(ForwardDiff.value(t))
+        elseif eltype(t) <: ForwardDiff.Dual
+            u.temp[1] = inlet_temp_interp(ForwardDiff.value(t))
+        elseif eltype(u.temp[1]) <: ForwardDiff.Dual
+            u.temp[1] = inlet_temp_interp(t)
+        else
+            u.temp[1] = inlet_temp_interp(t) 
+            #TODO: figure out this nonsense
+            #why is this required, this is never required anywhere else
+        end=#
+        
+        u.temp[1] = inlet_temp_interp(ForwardDiff.value(t)) 
+        #for anything that uses t for an interpolation, make sure to get the value of it to prevent Dual shenanigans
+        
         u.pipe_mass_flow[cell_id] = pipe_mass_flow
-
     else #pump shut off
         #do nothing to the inlet temp
         u.pipe_mass_flow[cell_id] = 0.0
     end
 end
-
 
 function solve_system!(du, u, p, t, geo, system)
     #VERY IMPORTANT: since most software uses 0-based indexing, you need to adjust the cell id by +1
@@ -480,9 +496,7 @@ path_to_thermocouple_data = joinpath(@__DIR__, "thermocouple_data_processing", "
 thermocouple_data = get_thermocouple_data(path_to_thermocouple_data)
 
 t0 = 0.0
-tMax = 10.0
-#ustrip(thermocouple_data.timestamps[end])
-#ustrip(experimental_data[end, 1])
+tMax = ustrip(thermocouple_data.timestamps[end])
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
@@ -492,6 +506,11 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 #woah, wtf, why is FBDF so much faster all of a sudden?
 #even KLUFactorization is way faster than KrylovJL_GMRES
 #KrylovJL_BICGSTAB is another option, so is using algebraicmultigrid
+
+@time sol = solve(implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
+#1.366 s (700880 allocations: 78.07 MiB)
+
+@time sol = solve(implicit_prob, Rodas5P(linsolve = KLUFactorization()), callback = approximate_time_to_finish_cb)
 
 #prob = ODEProblem(ode_func, u0_vec, (0.0, 1e-5), p_guess)
 #@time sol = solve(prob, Tsit5(), callback = approximate_time_to_finish_cb)
@@ -504,27 +523,23 @@ sim_file = @__FILE__
 
 timestamps = ustrip.(thermocouple_data.timestamps)
 
-thermocouple_interps = [
-    thermocouple_data.TC1_temps_interp, 
-    thermocouple_data.TC2_temps_interp, 
-    thermocouple_data.TC3_temps_interp, 
-    thermocouple_data.TC4_temps_interp, 
-    thermocouple_data.TC5_temps_interp
-]
-
 outlet_temp_interp = inlet_and_outlet_temperatures.outlet_temp_interp
 
 function loss(θ)
     #prob = ODEProblem(ode_func, u0_vec, (0.0, ustrip(thermocouple_data.timestamps[end])), θ)
 
-    loss_prob = remake(implicit_prob, p = vcat(θ, [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))
+    #loss_prob = remake(implicit_prob, p = vcat(θ, [100.0, 100.0, 100.0, 100.0, 100.0]))
+
+    loss_prob = remake(implicit_prob, p = θ)
+
+    #FBDF or Rodas5P works well here
     
     sol = solve(
         loss_prob, 
-        Rodas5P(linsolve = SparspakFactorization(),), 
+        FBDF(linsolve = SparspakFactorization(),), 
         sensealg = ForwardSensitivity(),
         #InterpolatingAdjoint(autodiff = AutoMooncake()),
-        callback = approximate_time_to_finish_cb
+        #callback = approximate_time_to_finish_cb
     )
 
     u_named = [ComponentVector(sol.u[i], state_axes) for i in eachindex(sol.u)]
@@ -544,74 +559,135 @@ function loss(θ)
     return mean_squared_error
 end
 
-p_guess = ustrip.(Vector(ComponentVector(
-    UA_to_environment = 0.0001u"W/K", 
-    empty_reactor_thermal_mass = 1.0u"J/K",
+p_guess_init = ComponentVector(
+    UA_to_environment = 0.5u"W/K", 
+    empty_reactor_thermal_mass = 1000.0u"J/K", 
 
     #heater_poly_p2 = 0.001u"W/m^3", 
     #heater_poly_p1 = 0.0u"W/m^2", 
     #heater_poly_p0 = 1312.0u"W/m", 
     
-    TC1_UA_to_center_of_reactor = 1.0u"W/K", 
-    TC2_UA_to_center_of_reactor = 1.0u"W/K", 
-    TC3_UA_to_center_of_reactor = 1.0u"W/K", 
-    TC4_UA_to_center_of_reactor = 1.0u"W/K", 
-    TC5_UA_to_center_of_reactor = 1.0u"W/K",
-)))
+    TC1_UA_to_center_of_reactor = 0.0005u"W/K", #I think the units here should 1/s
+    TC2_UA_to_center_of_reactor = 0.0005u"W/K",
+    TC3_UA_to_center_of_reactor = 0.0005u"W/K",
+    TC4_UA_to_center_of_reactor = 0.0005u"W/K",
+    TC5_UA_to_center_of_reactor = 0.0005u"W/K"
+)
+
+p_axes = getaxes(p_guess_init)
+p_guess = ustrip.(upreferred.(Vector(p_guess_init)))
 
 loss(p_guess)
 #why is getting the gradient take so much longer than just running the simulation
 #usually finding the gradient takes around 2x-5x longer than running the simulation once
 #while the Tsit5() solver does obey this rule of thumb, any kind of FBDF method takes forever
 
-grad = ForwardDiff.gradient(loss, [1.0])
+@time grad = ForwardDiff.gradient(loss, p_guess)
+#1.967 s (1368576 allocations: 369.83 MiB)
+#that's great, it means that these types of 1D problems are not very computationally intensive for finding gradients
 
-println(grad)
-
-#grad = Mooncake.gradient(loss, ustrip.(Vector(p_guess)))
-
-#grad_cache = Mooncake.prepare_gradient_cache(loss, ustrip.(Vector(p_guess)))
-
-#val, grad = Mooncake.value_and_gradient!!(grad_cache, loss, ustrip.(Vector(p_guess)))
-
-jac = ForwardDiff.jacobian(loss, ustrip.(Vector(p_guess)))
-
-#using Zygote
-#grad_zygote = Zygote.gradient(loss, ustrip.(Vector(p_guess)))
-
-#jac_zygote = Zygote.jacobian(loss, ustrip.(Vector(p_guess)))
-
-jac[1, :]
-jac[round(Int, (length(jac[:, 1])/2)), :]
-jac[end, :]
-
-plot(1:length(jac[:, 1]), jac[:, 1], label = "UA_to_environ")
-plot!(1:length(jac[:, 2]), jac[:, 2], label = "empty_reactor_thermal_mass")
-plot!(1:length(jac[:, 3]), jac[:, 3], label = "heater_poly_p2")
-plot!(1:length(jac[:, 4]), jac[:, 4], label = "heater_poly_p1")
-plot!(1:length(jac[:, 5]), jac[:, 5], label = "heater_poly_p0")
-plot!(1:length(jac[:, 6]), jac[:, 6], label = "TC1_UA_to_center_of_reactor")
-plot!(1:length(jac[:, 7]), jac[:, 7], label = "TC2_UA_to_center_of_reactor")
-plot!(1:length(jac[:, 8]), jac[:, 8], label = "TC3_UA_to_center_of_reactor")
-plot!(1:length(jac[:, 9]), jac[:, 9], label = "TC4_UA_to_center_of_reactor")
-plot!(1:length(jac[:, 10]), jac[:, 10], label = "TC5_UA_to_center_of_reactor")
-
-plot(jac[:, 1])
+#jac = ForwardDiff.jacobian(loss, p_guess)
 
 
+#OPTIMIZATION
 
+#SciMLSensitivity.STACKTRACE_WITH_VJPWARN[] = true #turn to true to debug EnzymeJVP
 
+#Logging.disable_logging(Logging.Warn)  # Disable all warnings
+#Logging.disable_logging(Logging.Warn - 1)  # enable all warnings
 
-sense_prob = ODEForwardSensitivityProblem(ode_func, u0_vec, tspan, ustrip.(Vector(p_guess)))
+adtype = Optimization.AutoForwardDiff()
+optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 
-@time sol = solve(
-    sense_prob, 
-    Tsit5(), 
-    sensealg = InterpolatingAdjoint(autodiff = AutoMooncake()),
-    callback = approximate_time_to_finish_cb,
-    tspan = (0.0, 1e-5)
+p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
+    UA_to_environment = 0.001u"W/K", 
+    empty_reactor_thermal_mass = 0.001u"J/K", 
+
+    #heater_poly_p2 = 0.001u"W/m^3", 
+    #heater_poly_p1 = 0.0u"W/m^2", 
+    #heater_poly_p0 = 1312.0u"W/m", 
+    
+    TC1_UA_to_center_of_reactor = 0.0005u"W/K", 
+    TC2_UA_to_center_of_reactor = 0.0005u"W/K", 
+    TC3_UA_to_center_of_reactor = 0.0005u"W/K", 
+    TC4_UA_to_center_of_reactor = 0.0005u"W/K", 
+    TC5_UA_to_center_of_reactor = 0.0005u"W/K",
+))))
+
+p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
+    UA_to_environment = 1.0u"W/K", 
+    empty_reactor_thermal_mass = 10000.0u"J/K", 
+
+    #heater_poly_p2 = 0.001u"W/m^3", 
+    #heater_poly_p1 = 0.0u"W/m^2", 
+    #heater_poly_p0 = 1312.0u"W/m", 
+    
+    TC1_UA_to_center_of_reactor = 10.0u"W/K", #maybe more like 0.1
+    TC2_UA_to_center_of_reactor = 10.0u"W/K", 
+    TC3_UA_to_center_of_reactor = 10.0u"W/K", 
+    TC4_UA_to_center_of_reactor = 10.0u"W/K", 
+    TC5_UA_to_center_of_reactor = 10.0u"W/K",
+))))
+
+optprob = Optimization.OptimizationProblem(optf, p_guess, lb=p_lower_bounds, ub=p_upper_bounds)
+
+function randomize(lower, upper)
+    return lower + (upper - lower) * rand()
+end
+
+p_ensemble = [[randomize(p_lower_bounds[i], p_upper_bounds[i]) for i in eachindex(p_lower_bounds)] for _ in 1:Sys.CPU_THREADS]
+
+function prob_func(prob, i, repeat)
+    return remake(prob, p = p_ensemble[i])  
+end
+
+ensembleprob = EnsembleProblem(optprob; prob_func)
+
+LOSS = Float64[]
+PARS = []
+
+cb = function (state, l)
+    display(l)
+    display(state.u)
+    append!(LOSS, l)
+    append!(PARS, [state.u])
+    false
+end
+
+@time res = Optimization.solve(
+    optprob,
+    callback = cb,
+    OptimizationOptimJL.LBFGS(),
+    #LBFGS, BFGS, and Fminbox don't work if the guess is very far away from the actual value
+    #IPNewton works kinda fine
+    f_abstol=1e-8,
+    g_abstol=1e-8,
 )
 
-sensitivities = extract_local_sensitivities(sol)
+using OptimizationBBO #for BlackBoxOptim
+@time res = solve(
+    ensembleprob, 
+    BBO_adaptive_de_rand_1_bin_radiuslimited(), 
+    EnsembleThreads(),
+    trajectories = Sys.CPU_THREADS,
+    callback = cb,
+)
 
-sensitivities[1]
+res.u0_vec
+
+p_vec_fitted = ComponentVector(
+    UA_to_environment = 10.0, 
+    empty_reactor_thermal_mass = 5000.0, 
+
+    #these seem realistic
+    TC1_UA_to_center_of_reactor = 3506.360686437608,
+    TC2_UA_to_center_of_reactor = 3574.5384332683784,
+    TC3_UA_to_center_of_reactor = 7008.964692396236,
+    TC4_UA_to_center_of_reactor = 2900.8559678803063,
+    TC5_UA_to_center_of_reactor = 2198.8087517546082
+)
+
+loss(ustrip.(upreferred.(Vector(p_vec_fitted))))
+
+p_fitted = ComponentVector(res.u, p_axes)
+
