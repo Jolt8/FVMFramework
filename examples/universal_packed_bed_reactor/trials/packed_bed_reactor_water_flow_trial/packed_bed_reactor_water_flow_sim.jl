@@ -54,7 +54,15 @@ Revise.includet(joinpath(@__DIR__, "..", "..", "physics", "momentum.jl"))
 
 #this is required because since cp is a cache to allow duals such as u.empty_reactor_thermal_mass to pass through the system
 function update_cp!(du, u, cell_id, vol)
-    u.cp[cell_id] = 4184.0 + u.empty_reactor_thermal_mass[1] / vol
+    # J/K = (J/kg/K * kg/m^3 * m^3) + (J/(m*K) * m)
+    u.cell_combined_stationary_thermal_mass[cell_id] = (u.cp[cell_id] * u.rho[cell_id] * vol) + (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[cell_id])
+end
+
+#we use a polynomial due to the fact that the endcaps allow for a lot more heat to escape the ends of the reactor 
+#than the cells closer to the center of the reactor 
+#we don't need p1 
+function update_UA_to_environment!(du, u, cell_id, vol)
+    u.UA_to_environment_per_m[cell_id] = u.UA_to_environment_per_m_p2 * (u.per_cell_pipe_length[cell_id] - (u.pipe_length[1] / 2))^2 + u.UA_to_environment_per_m_p0
 end
 
 function update_properties!(du, u, cell_id, vol)
@@ -91,14 +99,14 @@ u_proto = ComponentVector(
     temp = zeros(n_cells)u"K",
     liquid_holdup = zeros(n_cells)u"m^3/m^3",
     gas_holdup = zeros(n_cells)u"m^3/m^3",
-    TC_temps = zeros(n_cells)u"K",
+    TC_temp = zeros(n_cells)u"K",
 )
 
 config = create_fvm_config(grid, u_proto);
 
 Revise.includet(joinpath(@__DIR__, "..", "..", "common_reformer_properties", "common_reformer_properties.jl"))
 cell_lengths_along_pipe = [config.geo.cell_centroids[i][3]u"m" for i in 1:length(config.geo.cell_centroids)]
-reforming_area_properties = return_common_reformer_properties(cell_lengths_along_pipe)
+reforming_area_properties = return_common_reformer_properties(pipe_length, n_cells, cell_lengths_along_pipe)
 
 n_cells = length(config.geo.cell_volumes)
 n_faces = length(config.geo.cell_neighbor_areas[1])
@@ -110,14 +118,9 @@ add_setup_syms!(config;
         heat = u"J",
         mw_avg = u"kg/mol",
         rho = u"kg/m^3",
-        cp = u"J/kg/K", 
-        ##we do this so we can add the dual of the reactor thermal mass to it, this can be removed later once we do optimization
-        #to find the reactor thermal mass
-        #hmm, I think one thing we should do is create a generated function that makes all of the cache values equal to their fixed properties
-        #TODO: do the thing above
-        #we would have to decide if the initial values of these caches would be set here or be in the common_reformer_properties
-        #hold up, could we create a tracer that only stores duals for values that actually need it?
-        #then we wouldn't have to deal with distinguishing between caches and fixed properties
+        cell_combined_stationary_thermal_mass = u"J/K",
+        UA_to_environment_per_m = u"W/(m*K)",
+        wattage_received_per_m = u"W/m",
         molar_concentrations = u"mol/m^3",
         species_mass_flows = u"kg/s",
         net_rates = u"mol/s",
@@ -146,18 +149,19 @@ add_setup_syms!(config;
     ),
     second_order_syms = [],
     optimized_parameters = ComponentVector(
-        UA_to_environment = 0.0u"W/K", 
-        empty_reactor_thermal_mass = 0.0u"J/K",
+        UA_to_environment_per_m_p0 = 0.0u"W/(m*K)", 
+        UA_to_environment_per_m_p2 = 0.0u"W/(m^2*K)", 
+        empty_reactor_thermal_mass = 0.0u"J/(m*K)",
 
-        #heater_poly_p2 = 0.0u"W/m^3", 
-        #heater_poly_p1 = 0.0u"W/m^2", 
-        #heater_poly_p0 = 0.0u"W/m", 
+        heater_poly_p3 = 0.0u"W/m^3", 
+        heater_poly_p2 = 0.0u"W/m^2", 
+        heater_poly_p0 = 0.0u"W", 
         
-        TC1_UA_to_center_of_reactor = 0.0u"W/K", 
-        TC2_UA_to_center_of_reactor = 0.0u"W/K", 
-        TC3_UA_to_center_of_reactor = 0.0u"W/K", 
-        TC4_UA_to_center_of_reactor = 0.0u"W/K", 
-        TC5_UA_to_center_of_reactor = 0.0u"W/K",
+        TCs_UA_to_center_of_reactor = 0.0u"W/K", 
+        #TC2_UA_to_center_of_reactor = 0.0u"W/K", 
+        #TC3_UA_to_center_of_reactor = 0.0u"W/K", 
+        #TC4_UA_to_center_of_reactor = 0.0u"W/K", 
+        #TC5_UA_to_center_of_reactor = 0.0u"W/K",
     )
 )
 
@@ -219,7 +223,7 @@ add_region!(
         temp = 21.0u"°C",
         liquid_holdup = 1.0,
         gas_holdup = 0.0,
-        TC_temps = 21.0u"°C",
+        TC_temp = 21.0u"°C",
     ),
     properties = reforming_area_properties,
     region_function =
@@ -228,7 +232,7 @@ add_region!(
 
         du.mass_face[cell_id, 1] += u.pipe_mass_flow[cell_id]
 
-        du.heat[cell_id] += u.UA_to_environment[1] * (u.measured_room_temp[cell_id] - u.temp[cell_id])
+        du.heat[cell_id] += (u.UA_to_environment_per_m[cell_id] * u.per_cell_pipe_length[cell_id]) * (u.measured_room_temp[cell_id] - u.temp[cell_id])
 
         du.heat[cell_id] += u.per_cell_fraction_of_total_heat_received[cell_id] * u.measured_heater_wattage[cell_id]
 
@@ -252,14 +256,14 @@ add_region!(
         temp = 21.0u"°C",
         liquid_holdup = 0.0,
         gas_holdup = 1.0,
-        TC_temps = 21.0u"°C",
+        TC_temp = 21.0u"°C",
     ),
     properties = reforming_area_properties,
     region_function =
     function evaporator!(du, u, cell_id, vol)
         common_physics_functions!(du, u, cell_id, vol)
 
-        du.heat[cell_id] += u.UA_to_environment[1] * (u.measured_room_temp[cell_id] - u.temp[cell_id])
+        du.heat[cell_id] += (u.UA_to_environment_per_m[cell_id] * u.per_cell_pipe_length[cell_id]) * (u.measured_room_temp[cell_id] - u.temp[cell_id])
 
         du.heat[cell_id] += u.per_cell_fraction_of_total_heat_received[cell_id] * u.measured_heater_wattage[cell_id]
 
@@ -276,7 +280,7 @@ add_region!(
         temp = 21.0u"°C",
         liquid_holdup = 0.0,
         gas_holdup = 1.0,
-        TC_temps = 21.0u"°C",
+        TC_temp = 21.0u"°C",
     ),
     properties = reforming_area_properties,
     region_function =
@@ -285,7 +289,7 @@ add_region!(
 
         #PAM_reforming_react_cell!(du, u, cell_id, vol)
 
-        du.heat[cell_id] += u.UA_to_environment[1] * (u.measured_room_temp[cell_id] - u.temp[cell_id])
+        du.heat[cell_id] += (u.UA_to_environment_per_m[cell_id] * u.per_cell_pipe_length[cell_id]) * (u.measured_room_temp[cell_id] - u.temp[cell_id])
 
         du.heat[cell_id] += u.per_cell_fraction_of_total_heat_received[cell_id] * u.measured_heater_wattage[cell_id]
 
@@ -302,14 +306,14 @@ add_region!(
         temp = 21.0u"°C",
         liquid_holdup = 0.0,
         gas_holdup = 1.0,
-        TC_temps = 21.0u"°C",
+        TC_temp = 21.0u"°C",
     ),
     properties = reforming_area_properties,
     region_function =
     function outlet!(du, u, cell_id, vol)
         common_physics_functions!(du, u, cell_id, vol)
 
-        du.heat[cell_id] += u.UA_to_environment[1] * (u.measured_room_temp[cell_id] - u.temp[cell_id])
+        du.heat[cell_id] += (u.UA_to_environment_per_m[cell_id] * u.per_cell_pipe_length[cell_id]) * (u.measured_room_temp[cell_id] - u.temp[cell_id])
 
         du.heat[cell_id] += u.per_cell_fraction_of_total_heat_received[cell_id] * u.measured_heater_wattage[cell_id]
 
@@ -373,10 +377,6 @@ end
 #you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful ComponentVectors
 #VSCodeServer.@profview 
 du0_vec, u0_vec, state_axes, geo, system = finish_fvm_config(config, connection_map_function, check_units = false);
-
-function measured_heater_wattage(t) #just a placeholder for now 
-    return 0.0
-end
 
 #TODO: create an interpolation for heater wattage using data from an arduino measuring voltage and current input
 
@@ -442,23 +442,31 @@ function solve_system!(du, u, p, t, geo, system)
     end
 
     #this is a mess, ugh, imagine if we had 20 or 50 TCs!
+    # K/s = (W/K * K) / (J/K)
     TC1_closest_cell_id = Int(u.TC1_closest_cell_id[1])
-    du.TC_temps[1] += u.TC1_UA_to_center_of_reactor[1] * (u.temp[TC1_closest_cell_id] - u.TC_temps[1])
-    #hmm, I think we're going to have to have TC1_UA_to_center_of_reactor be a lumped parameter with thermal mass 
+    TC1_heat_flux = u.UA_to_environment_per_m[TC1_closest_cell_id] * (u.temp[TC1_closest_cell_id] - u.TC_temp[1])
+    du.TC_temp[1] += TC1_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC1_closest_cell_id])
+    du.temp[TC1_closest_cell_id] -= TC1_heat_flux / (u.cp[TC1_closest_cell_id] * u.per_cell_pipe_length[TC1_closest_cell_id])
 
     TC2_closest_cell_id = Int(u.TC2_closest_cell_id[1])
-    du.TC_temps[2] += u.TC2_UA_to_center_of_reactor[1] * (u.temp[TC2_closest_cell_id] - u.TC_temps[2])
+    TC2_heat_flux = u.UA_to_environment_per_m[TC2_closest_cell_id] * (u.temp[TC2_closest_cell_id] - u.TC_temp[2])
+    du.TC_temp[2] += TC2_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC2_closest_cell_id])
+    du.temp[TC2_closest_cell_id] -= TC2_heat_flux / (u.cp[TC2_closest_cell_id] * u.per_cell_pipe_length[TC2_closest_cell_id])
 
     TC3_closest_cell_id = Int(u.TC3_closest_cell_id[1])
-    du.TC_temps[3] += u.TC3_UA_to_center_of_reactor[1] * (u.temp[TC3_closest_cell_id] - u.TC_temps[3])
+    TC3_heat_flux = u.UA_to_environment_per_m[TC3_closest_cell_id] * (u.temp[TC3_closest_cell_id] - u.TC_temp[3])
+    du.TC_temp[3] += TC3_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC3_closest_cell_id])
+    du.temp[TC3_closest_cell_id] -= TC3_heat_flux / (u.cp[TC3_closest_cell_id] * u.per_cell_pipe_length[TC3_closest_cell_id])
 
     TC4_closest_cell_id = Int(u.TC4_closest_cell_id[1])
-    du.TC_temps[4] += u.TC4_UA_to_center_of_reactor[1] * (u.temp[TC4_closest_cell_id] - u.TC_temps[4])
+    TC4_heat_flux = u.UA_to_environment_per_m[TC4_closest_cell_id] * (u.temp[TC4_closest_cell_id] - u.TC_temp[4])
+    du.TC_temp[4] += TC4_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC4_closest_cell_id])
+    du.temp[TC4_closest_cell_id] -= TC4_heat_flux / (u.cp[TC4_closest_cell_id] * u.per_cell_pipe_length[TC4_closest_cell_id])
 
     TC5_closest_cell_id = Int(u.TC5_closest_cell_id[1])
-    du.TC_temps[5] += u.TC5_UA_to_center_of_reactor[1] * (u.temp[TC5_closest_cell_id] - u.TC_temps[5])
-
-    #calculate_fraction_of_total_heat_received!(du, u, geo)
+    TC5_heat_flux = u.UA_to_environment_per_m[TC5_closest_cell_id] * (u.temp[TC5_closest_cell_id] - u.TC_temp[5])
+    du.TC_temp[5] += TC5_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC5_closest_cell_id])
+    du.temp[TC5_closest_cell_id] -= TC5_heat_flux / (u.cp[TC5_closest_cell_id] * u.per_cell_pipe_length[TC5_closest_cell_id])
 
     solve_connection_groups!(du, u, geo, system)
     solve_controller_groups!(du, u, geo, system)
@@ -469,18 +477,16 @@ end
 f_closure_implicit = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
 
 p_guess = ustrip.(Vector(ComponentVector(
-    UA_to_environment = 0.0001u"W/K", 
-    empty_reactor_thermal_mass = 1.0u"J/K",
+    UA_to_environment_per_m_p0 = 0.5u"W/(m*K)", 
+    UA_to_environment_per_m_p2 = 1.0u"W/(m^2*K)", 
+    empty_reactor_thermal_mass = 1.0u"J/(m*K)",
 
-    #heater_poly_p2 = 0.001u"W/m^3", 
-    #heater_poly_p1 = 0.0u"W/m^2", 
-    #heater_poly_p0 = 1312.0u"W/m", 
-    
-    TC1_UA_to_center_of_reactor = 1.0u"W/K", 
-    TC2_UA_to_center_of_reactor = 1.0u"W/K", 
-    TC3_UA_to_center_of_reactor = 1.0u"W/K", 
-    TC4_UA_to_center_of_reactor = 1.0u"W/K", 
-    TC5_UA_to_center_of_reactor = 1.0u"W/K",
+    #is a heater polynomial ever going to be accurate considering how 
+    #uneven the spacing between each turn of heating wire is?
+    #heater_poly_p3 = 0.0u"W/m^3", 
+    #heater_poly_p2 = 0.0u"W/m^2", 
+
+    TCs_UA_to_center_of_reactor = 1.0u"W/K", 
 )))
 
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
@@ -510,7 +516,7 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 @time sol = solve(implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
 #1.366 s (700880 allocations: 78.07 MiB)
 
-@time sol = solve(implicit_prob, Rodas5P(linsolve = KLUFactorization()), callback = approximate_time_to_finish_cb)
+#@time sol = solve(implicit_prob, Rodas5P(linsolve = KLUFactorization()), callback = approximate_time_to_finish_cb)
 
 #prob = ODEProblem(ode_func, u0_vec, (0.0, 1e-5), p_guess)
 #@time sol = solve(prob, Tsit5(), callback = approximate_time_to_finish_cb)
@@ -522,8 +528,6 @@ sim_file = @__FILE__
 #sol_to_vtk(sol, u_named, grid, sim_file)
 
 timestamps = ustrip.(thermocouple_data.timestamps)
-
-outlet_temp_interp = inlet_and_outlet_temperatures.outlet_temp_interp
 
 function loss(θ)
     #prob = ODEProblem(ode_func, u0_vec, (0.0, ustrip(thermocouple_data.timestamps[end])), θ)
@@ -547,11 +551,11 @@ function loss(θ)
     mean_squared_error = 0.0
 
     for i in eachindex(sol.t)
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temps[1]) - ustrip(thermocouple_data.TC1_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temps[2]) - ustrip(thermocouple_data.TC2_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temps[3]) - ustrip(thermocouple_data.TC3_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temps[4]) - ustrip(thermocouple_data.TC4_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temps[5]) - ustrip(thermocouple_data.TC5_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[1]) - ustrip(thermocouple_data.TC1_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[2]) - ustrip(thermocouple_data.TC2_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[3]) - ustrip(thermocouple_data.TC3_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[4]) - ustrip(thermocouple_data.TC4_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[5]) - ustrip(thermocouple_data.TC5_temps_interp(sol.t[i])))
         #mean_squared_error += abs2(ustrip(u_named[i].temp[end]) - ustrip(outlet_temp_interp(sol.t[i])))
         #I don't think using the measured outlet temperature is actually useful
     end
@@ -560,18 +564,19 @@ function loss(θ)
 end
 
 p_guess_init = ComponentVector(
-    UA_to_environment = 0.5u"W/K", 
-    empty_reactor_thermal_mass = 1000.0u"J/K", 
+    UA_to_environment_per_m_p0 = 0.5u"W/(m*K)", 
+    UA_to_environment_per_m_p2 = 0.01u"W/(m^2*K)", 
+    empty_reactor_thermal_mass = 1000.0u"J/(m*K)", 
 
     #heater_poly_p2 = 0.001u"W/m^3", 
     #heater_poly_p1 = 0.0u"W/m^2", 
     #heater_poly_p0 = 1312.0u"W/m", 
     
-    TC1_UA_to_center_of_reactor = 0.0005u"W/K", #I think the units here should 1/s
-    TC2_UA_to_center_of_reactor = 0.0005u"W/K",
-    TC3_UA_to_center_of_reactor = 0.0005u"W/K",
-    TC4_UA_to_center_of_reactor = 0.0005u"W/K",
-    TC5_UA_to_center_of_reactor = 0.0005u"W/K"
+    TCs_UA_to_center_of_reactor = 0.0005u"W/K", #I think the units here should 1/s
+    #TC2_UA_to_center_of_reactor = 0.0005u"W/K",
+    #TC3_UA_to_center_of_reactor = 0.0005u"W/K",
+    #TC4_UA_to_center_of_reactor = 0.0005u"W/K",
+    #TC5_UA_to_center_of_reactor = 0.0005u"W/K"
 )
 
 p_axes = getaxes(p_guess_init)
@@ -600,33 +605,35 @@ adtype = Optimization.AutoForwardDiff()
 optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    UA_to_environment = 0.001u"W/K", 
-    empty_reactor_thermal_mass = 0.001u"J/K", 
+    UA_to_environment_per_m_p0 = 0.001u"W/(m*K)", 
+    UA_to_environment_per_m_p2 = 0.0001u"W/(m^2*K)", 
+    empty_reactor_thermal_mass = 0.001u"J/(m*K)", 
 
     #heater_poly_p2 = 0.001u"W/m^3", 
     #heater_poly_p1 = 0.0u"W/m^2", 
     #heater_poly_p0 = 1312.0u"W/m", 
     
-    TC1_UA_to_center_of_reactor = 0.0005u"W/K", 
-    TC2_UA_to_center_of_reactor = 0.0005u"W/K", 
-    TC3_UA_to_center_of_reactor = 0.0005u"W/K", 
-    TC4_UA_to_center_of_reactor = 0.0005u"W/K", 
-    TC5_UA_to_center_of_reactor = 0.0005u"W/K",
+    TCs_UA_to_center_of_reactor = 0.0001u"W/K", 
+    #TC2_UA_to_center_of_reactor = 0.0001u"W/K", 
+    #TC3_UA_to_center_of_reactor = 0.0001u"W/K", 
+    #TC4_UA_to_center_of_reactor = 0.0001u"W/K", 
+    #TC5_UA_to_center_of_reactor = 0.0001u"W/K",
 ))))
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    UA_to_environment = 1.0u"W/K", 
-    empty_reactor_thermal_mass = 10000.0u"J/K", 
+    UA_to_environment_per_m_p0 = 100.0u"W/(m*K)", 
+    UA_to_environment_per_m_p2 = 0.1u"W/(m^2*K)", 
+    empty_reactor_thermal_mass = 10000.0u"J/(m*K)", 
 
     #heater_poly_p2 = 0.001u"W/m^3", 
     #heater_poly_p1 = 0.0u"W/m^2", 
     #heater_poly_p0 = 1312.0u"W/m", 
     
-    TC1_UA_to_center_of_reactor = 10.0u"W/K", #maybe more like 0.1
-    TC2_UA_to_center_of_reactor = 10.0u"W/K", 
-    TC3_UA_to_center_of_reactor = 10.0u"W/K", 
-    TC4_UA_to_center_of_reactor = 10.0u"W/K", 
-    TC5_UA_to_center_of_reactor = 10.0u"W/K",
+    TCs_UA_to_center_of_reactor = 10.0u"W/K", #maybe more like 0.1
+    #TC2_UA_to_center_of_reactor = 10.0u"W/K", 
+    #TC3_UA_to_center_of_reactor = 10.0u"W/K", 
+    #TC4_UA_to_center_of_reactor = 10.0u"W/K", 
+    #TC5_UA_to_center_of_reactor = 10.0u"W/K",
 ))))
 
 optprob = Optimization.OptimizationProblem(optf, p_guess, lb=p_lower_bounds, ub=p_upper_bounds)
@@ -675,19 +682,12 @@ using OptimizationBBO #for BlackBoxOptim
 
 res.u0_vec
 
-p_vec_fitted = ComponentVector(
-    UA_to_environment = 10.0, 
-    empty_reactor_thermal_mass = 5000.0, 
-
-    #these seem realistic
-    TC1_UA_to_center_of_reactor = 3506.360686437608,
-    TC2_UA_to_center_of_reactor = 3574.5384332683784,
-    TC3_UA_to_center_of_reactor = 7008.964692396236,
-    TC4_UA_to_center_of_reactor = 2900.8559678803063,
-    TC5_UA_to_center_of_reactor = 2198.8087517546082
-)
-
 loss(ustrip.(upreferred.(Vector(p_vec_fitted))))
 
 p_fitted = ComponentVector(res.u, p_axes)
+
+#0.41741
+#0.045
+#7050
+#8.71
 
