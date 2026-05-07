@@ -1,4 +1,4 @@
-function return_common_reformer_properties(cell_lengths_along_pipe)
+function return_common_reformer_properties(pipe_length, n_cells, cell_lengths_along_pipe)
     van_t_hoff_A = ComponentVector(CH3O = 1.7e-6u"s^-1", HCOO = 4.74e-13u"s^-1", OH = 3.32e-14u"s^-1")
     van_t_hoff_dH = ComponentVector(CH3O = -46800.0u"J/mol", HCOO = -115000.0u"J/mol", OH = -110000.0u"J/mol")
 
@@ -75,7 +75,7 @@ function return_common_reformer_properties(cell_lengths_along_pipe)
 
     reforming_area_properties = ComponentVector(
         k = 0.026u"W/(m*K)", 
-        #cp = 1006u"J/(kg*K)",
+        cp = 4186u"J/(kg*K)",
         dynamic_viscosity = 1.81e-5u"Pa*s",
         rho = 998.2u"kg/m^3",
         R_gas = 8.314u"J/(mol*K)",
@@ -84,6 +84,7 @@ function return_common_reformer_properties(cell_lengths_along_pipe)
 
         pipe_inside_diameter = pipe_inside_diameter,
         pipe_area = pipe_area,
+        pipe_length = pipe_length,
         per_cell_pipe_length = pipe_length / n_cells,
         cell_lengths_along_pipe = cell_lengths_along_pipe,
 
