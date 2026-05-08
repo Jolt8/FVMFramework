@@ -25,32 +25,34 @@ pipe_length = 12.1u"inch" |> u"m"
 stripped_pipe_length = ustrip(pipe_length |> u"m")
 pipe_width = ustrip(pipe_inside_diameter |> u"m")
 
-n_cells = 100
+n_cells_axial = 100
 n_layers = 2
 
-grid_dimensions = (1, n_layers, n_cells)
+grid_dimensions = (1, n_layers, n_cells_axial)
 left = Ferrite.Vec{3}((0.0, 0.0, 0.0))
 right = Ferrite.Vec{3}((pipe_width, pipe_width * n_layers, stripped_pipe_length))
 grid = generate_grid(Hexahedron, grid_dimensions, left, right)
 
 evaporator_endpoint = 3u"inch" |> u"m"
-evaporator_endpoint_cell = evaporator_endpoint / (pipe_length / n_cells)
+evaporator_endpoint_cell = Int(round(evaporator_endpoint / (pipe_length / n_cells_axial)))
 
-
-addcellset!(grid, "pipe_inlet", xyz -> xyz[3] <= (1 * (stripped_pipe_length / n_cells)) && xyz[2] <= pipe_width)
+addcellset!(grid, "pipe_inlet", xyz -> xyz[3] <= (1 * (stripped_pipe_length / n_cells_axial)) && xyz[2] <= pipe_width)
 getcellset(grid, "pipe_inlet")
 
-addcellset!(grid, "pipe_evaporator", xyz -> xyz[3] >= (1 * (stripped_pipe_length / n_cells)) && xyz[3] <= (19 * (stripped_pipe_length / n_cells)) && xyz[2] <= pipe_width)
+addcellset!(grid, "pipe_evaporator", xyz -> xyz[3] >= (1 * (stripped_pipe_length / n_cells_axial)) && xyz[3] <= (evaporator_endpoint_cell * (stripped_pipe_length / n_cells_axial)) && xyz[2] <= pipe_width)
 getcellset(grid, "pipe_evaporator")
 
-addcellset!(grid, "pipe_reactor", xyz -> xyz[3] >= (19 * (stripped_pipe_length / n_cells)) && xyz[3] <= (99 * (stripped_pipe_length / n_cells)) && xyz[2] <= pipe_width)
+addcellset!(grid, "pipe_reactor", xyz -> xyz[3] >= (evaporator_endpoint_cell * (stripped_pipe_length / n_cells_axial)) && xyz[3] <= ((n_cells_axial - 1) * (stripped_pipe_length / n_cells_axial)) && xyz[2] <= pipe_width)
 getcellset(grid, "pipe_reactor")
 
-addcellset!(grid, "pipe_outlet", xyz -> xyz[3] >= (99 * (stripped_pipe_length / n_cells)) && xyz[2] <= pipe_width)
+addcellset!(grid, "pipe_outlet", xyz -> xyz[3] >= ((n_cells_axial - 1) * (stripped_pipe_length / n_cells_axial)) && xyz[2] <= pipe_width)
 getcellset(grid, "pipe_outlet")
 
-addcellset!(grid, "wall", xyz -> xyz[2] > pipe_width)
+addcellset!(grid, "wall", xyz -> xyz[2] > pipe_width - (pipe_width * 0.05))
 getcellset(grid, "wall")
+
+
+n_cells = length(grid.cells)
 
 struct Fluid <: AbstractPhysics end
 struct Solid <: AbstractPhysics end
@@ -106,8 +108,18 @@ u_proto = ComponentVector(
 config = create_fvm_config(grid, u_proto);
 
 Revise.includet(joinpath(@__DIR__, "..", "..", "common_reformer_properties", "common_reformer_properties.jl"))
+
+
 cell_lengths_along_pipe = [config.geo.cell_centroids[i][3]u"m" for i in 1:length(config.geo.cell_centroids)]
-reforming_area_properties = return_common_reformer_properties(pipe_length, n_cells, cell_lengths_along_pipe)
+
+wall_lengths_along_pipe = zeros(length(grid.cellsets["wall"])) .* u"m"
+for (i, cell_id) in enumerate(grid.cellsets["wall"]) 
+    wall_lengths_along_pipe[i] = cell_lengths_along_pipe[cell_id]
+end
+
+reforming_area_properties = return_common_reformer_properties(pipe_length, n_cells, cell_lengths_along_pipe, wall_lengths_along_pipe)
+
+reforming_area_properties = 
 
 n_cells = length(config.geo.cell_volumes)
 n_faces = length(config.geo.cell_neighbor_areas[1])
@@ -171,7 +183,6 @@ function common_physics_functions!(du, u, cell_id, vol)
     #ergun_momentum_friction!(du, u, cell_id, vol)
 end
 
-
 inlet_mass_fractions = ComponentVector(
     methanol = 0.0001u"kg/kg",
     water = 1.0u"kg/kg",
@@ -216,7 +227,7 @@ outlet_temp_interp = inlet_and_outlet_temperatures.outlet_temp_interp
 #the inlet mass flow to what was observed in the experiment
 
 add_region!(
-    config, "inlet";
+    config, "pipe_inlet";
     type = Fluid(),
     initial_conditions = ComponentVector(
         mass_fractions = inlet_mass_fractions,
@@ -249,7 +260,7 @@ add_region!(
 )
 
 add_region!(
-    config, "evaporator";
+    config, "pipe_evaporator";
     type = Fluid(),
     initial_conditions = ComponentVector(
         mass_fractions = empty_mass_fractions,
@@ -273,7 +284,7 @@ add_region!(
 )
 
 add_region!(
-    config, "reactor";
+    config, "pipe_reactor";
     type = Fluid(),
     initial_conditions = ComponentVector(
         mass_fractions = empty_mass_fractions,
@@ -299,7 +310,7 @@ add_region!(
 )
 
 add_region!(
-    config, "outlet";
+    config, "pipe_outlet";
     type = Fluid(),
     initial_conditions = ComponentVector(
         mass_fractions = empty_mass_fractions,
@@ -331,6 +342,23 @@ add_region!(
         #du.heat[cell_id] *= 0.0
 
         sum_and_cap_fluxes!(du, u, cell_id, vol)
+    end
+)
+
+add_region!(
+    config, "wall";
+    type = Solid(),
+    initial_conditions = ComponentVector(
+        mass_fractions = empty_mass_fractions,
+        pressure = 1.0u"atm",
+        temp = 21.0u"°C",
+        liquid_holdup = 0.0,
+        gas_holdup = 1.0,
+    ),
+    properties = reforming_area_properties,
+    region_function =
+    function wall!(du, u, cell_id, vol)
+        common_solid_physics_functions!(du, u, cell_id, vol)
     end
 )
 
@@ -371,8 +399,23 @@ function fluid_fluid_flux!(
     )=#
 end
 
+function solid_solid_flux!(du, u,
+    idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+)
+    
+    heat_diffusion!(
+        du, u,
+        idx_a, idx_b, face_idx,
+        cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
+    )
+end
+
 function connection_map_function(phys_a, phys_b)
     typeof(phys_a) <: Fluid && typeof(phys_b) <: Fluid && return fluid_fluid_flux!
+    typeof(phys_a) <: Fluid && typeof(phys_b) <: Solid && return solid_solid_flux!
+    typeof(phys_a) <: Solid && typeof(phys_b) <: Fluid && return solid_solid_flux!
+    typeof(phys_a) <: Solid && typeof(phys_b) <: Solid && return solid_solid_flux!
 end
 
 #you can check units by setting check_units = true and du0_vec and u0_vec will be returned as unitful ComponentVectors
@@ -444,30 +487,30 @@ function solve_system!(du, u, p, t, geo, system)
 
     #this is a mess, ugh, imagine if we had 20 or 50 TCs!
     # K/s = (W/K * K) / (J/K)
-    TC1_closest_cell_id = Int(u.TC1_closest_cell_id[1])
-    TC1_heat_flux = u.UA_to_environment_per_m[TC1_closest_cell_id] * (u.temp[TC1_closest_cell_id] - u.TC_temp[1])
-    du.TC_temp[1] += TC1_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC1_closest_cell_id])
-    du.temp[TC1_closest_cell_id] -= TC1_heat_flux / (u.cp[TC1_closest_cell_id] * u.per_cell_pipe_length[TC1_closest_cell_id])
+    TC1_cell_id = Int(u.TC1_cell_id[1])
+    TC1_heat_flux = u.UA_to_environment_per_m[TC1_cell_id] * (u.temp[TC1_cell_id] - u.TC_temp[1])
+    du.TC_temp[1] += TC1_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC1_cell_id])
+    du.temp[TC1_cell_id] -= TC1_heat_flux / (u.cp[TC1_cell_id] * u.per_cell_pipe_length[TC1_cell_id])
 
-    TC2_closest_cell_id = Int(u.TC2_closest_cell_id[1])
-    TC2_heat_flux = u.UA_to_environment_per_m[TC2_closest_cell_id] * (u.temp[TC2_closest_cell_id] - u.TC_temp[2])
-    du.TC_temp[2] += TC2_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC2_closest_cell_id])
-    du.temp[TC2_closest_cell_id] -= TC2_heat_flux / (u.cp[TC2_closest_cell_id] * u.per_cell_pipe_length[TC2_closest_cell_id])
+    TC2_cell_id = Int(u.TC2_cell_id[1])
+    TC2_heat_flux = u.UA_to_environment_per_m[TC2_cell_id] * (u.temp[TC2_cell_id] - u.TC_temp[2])
+    du.TC_temp[2] += TC2_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC2_cell_id])
+    du.temp[TC2_cell_id] -= TC2_heat_flux / (u.cp[TC2_cell_id] * u.per_cell_pipe_length[TC2_cell_id])
 
-    TC3_closest_cell_id = Int(u.TC3_closest_cell_id[1])
-    TC3_heat_flux = u.UA_to_environment_per_m[TC3_closest_cell_id] * (u.temp[TC3_closest_cell_id] - u.TC_temp[3])
-    du.TC_temp[3] += TC3_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC3_closest_cell_id])
-    du.temp[TC3_closest_cell_id] -= TC3_heat_flux / (u.cp[TC3_closest_cell_id] * u.per_cell_pipe_length[TC3_closest_cell_id])
+    TC3_cell_id = Int(u.TC3_cell_id[1])
+    TC3_heat_flux = u.UA_to_environment_per_m[TC3_cell_id] * (u.temp[TC3_cell_id] - u.TC_temp[3])
+    du.TC_temp[3] += TC3_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC3_cell_id])
+    du.temp[TC3_cell_id] -= TC3_heat_flux / (u.cp[TC3_cell_id] * u.per_cell_pipe_length[TC3_cell_id])
 
-    TC4_closest_cell_id = Int(u.TC4_closest_cell_id[1])
-    TC4_heat_flux = u.UA_to_environment_per_m[TC4_closest_cell_id] * (u.temp[TC4_closest_cell_id] - u.TC_temp[4])
-    du.TC_temp[4] += TC4_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC4_closest_cell_id])
-    du.temp[TC4_closest_cell_id] -= TC4_heat_flux / (u.cp[TC4_closest_cell_id] * u.per_cell_pipe_length[TC4_closest_cell_id])
+    TC4_cell_id = Int(u.TC4_cell_id[1])
+    TC4_heat_flux = u.UA_to_environment_per_m[TC4_cell_id] * (u.temp[TC4_cell_id] - u.TC_temp[4])
+    du.TC_temp[4] += TC4_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC4_cell_id])
+    du.temp[TC4_cell_id] -= TC4_heat_flux / (u.cp[TC4_cell_id] * u.per_cell_pipe_length[TC4_cell_id])
 
-    TC5_closest_cell_id = Int(u.TC5_closest_cell_id[1])
-    TC5_heat_flux = u.UA_to_environment_per_m[TC5_closest_cell_id] * (u.temp[TC5_closest_cell_id] - u.TC_temp[5])
-    du.TC_temp[5] += TC5_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC5_closest_cell_id])
-    du.temp[TC5_closest_cell_id] -= TC5_heat_flux / (u.cp[TC5_closest_cell_id] * u.per_cell_pipe_length[TC5_closest_cell_id])
+    TC5_cell_id = Int(u.TC5_cell_id[1])
+    TC5_heat_flux = u.UA_to_environment_per_m[TC5_cell_id] * (u.temp[TC5_cell_id] - u.TC_temp[5])
+    du.TC_temp[5] += TC5_heat_flux / (u.empty_reactor_thermal_mass[1] * u.per_cell_pipe_length[TC5_cell_id])
+    du.temp[TC5_cell_id] -= TC5_heat_flux / (u.cp[TC5_cell_id] * u.per_cell_pipe_length[TC5_cell_id])
 
     solve_connection_groups!(du, u, geo, system)
     solve_controller_groups!(du, u, geo, system)
@@ -551,12 +594,18 @@ function loss(θ)
 
     mean_squared_error = 0.0
 
+    TC1_cell_id = Int(u.TC1_cell_id[1])
+    TC2_cell_id = Int(u.TC2_cell_id[1])
+    TC3_cell_id = Int(u.TC3_cell_id[1])
+    TC4_cell_id = Int(u.TC4_cell_id[1])
+    TC5_cell_id = Int(u.TC5_cell_id[1])
+
     for i in eachindex(sol.t)
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[1]) - ustrip(thermocouple_data.TC1_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[2]) - ustrip(thermocouple_data.TC2_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[3]) - ustrip(thermocouple_data.TC3_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[4]) - ustrip(thermocouple_data.TC4_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].TC_temp[5]) - ustrip(thermocouple_data.TC5_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC1_cell_id]) - ustrip(thermocouple_data.TC1_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC2_cell_id]) - ustrip(thermocouple_data.TC2_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC3_cell_id]) - ustrip(thermocouple_data.TC3_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC4_cell_id]) - ustrip(thermocouple_data.TC4_temps_interp(sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC5_cell_id]) - ustrip(thermocouple_data.TC5_temps_interp(sol.t[i])))
         #mean_squared_error += abs2(ustrip(u_named[i].temp[end]) - ustrip(outlet_temp_interp(sol.t[i])))
         #I don't think using the measured outlet temperature is actually useful
     end
