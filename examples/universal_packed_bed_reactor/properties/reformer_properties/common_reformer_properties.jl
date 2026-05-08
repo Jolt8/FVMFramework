@@ -1,4 +1,4 @@
-function return_common_reformer_properties(pipe_length, n_cells, cell_lengths_along_pipe)
+function return_common_reformer_properties(pipe_length, n_cells, cell_lengths_along_pipe, wall_lengths_along_pipe)
     van_t_hoff_A = ComponentVector(CH3O = 1.7e-6u"s^-1", HCOO = 4.74e-13u"s^-1", OH = 3.32e-14u"s^-1")
     van_t_hoff_dH = ComponentVector(CH3O = -46800.0u"J/mol", HCOO = -115000.0u"J/mol", OH = -110000.0u"J/mol")
 
@@ -54,25 +54,7 @@ function return_common_reformer_properties(pipe_length, n_cells, cell_lengths_al
     empty_mass_fractions ./= total_empty_mass_fractions
 
     pipe_area = pi * (pipe_inside_diameter / 2)^2
-
-    #cell_lengths_along_pipe = [config.geo.cell_centroids[i][3]u"m" for i in 1:length(config.geo.cell_centroids)]
-    #this only works because the base of the pipe is at z = 0.0
-
-    TC1_position_along_reactor = 1.5u"inch"
-    TC1_closest_cell_id = argmin(abs.(cell_lengths_along_pipe .- TC1_position_along_reactor))
-
-    TC2_position_along_reactor = 3.0u"inch"
-    TC2_closest_cell_id = argmin(abs.(cell_lengths_along_pipe .- TC2_position_along_reactor))
-
-    TC3_position_along_reactor = 5.0u"inch"
-    TC3_closest_cell_id = argmin(abs.(cell_lengths_along_pipe .- TC3_position_along_reactor))
-
-    TC4_position_along_reactor = 7.5u"inch"
-    TC4_closest_cell_id = argmin(abs.(cell_lengths_along_pipe .- TC4_position_along_reactor))
-
-    TC5_position_along_reactor = 10.0u"inch"
-    TC5_closest_cell_id = argmin(abs.(cell_lengths_along_pipe .- TC5_position_along_reactor))
-
+    
     reforming_area_properties = ComponentVector(
         k = 0.026u"W/(m*K)", 
         cp = 4186u"J/(kg*K)",
