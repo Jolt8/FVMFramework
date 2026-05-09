@@ -2,7 +2,7 @@ using XLSX
 using Unitful
 
 #I don't indent anything here so the function can be easily removed later for inspection
-function get_trial_1_values_of_note()
+function get_packed_bed_reactor_water_flow_trial_values_of_note()
 
 experimental_data_path = joinpath(@__DIR__, "PBR_hot_water_test.xlsx")
 
@@ -47,7 +47,6 @@ room_temp_at_103_minutes = sheet["G13"] * u"°C" .|> u"K"
 room_temp_observation_time_3 = 6200u"s"
 
 return (
-    room_temperature_at_start = room_temperature_at_start,
     TC1_temp_at_start = TC1_temp_at_start,
     TC2_temp_at_start = TC2_temp_at_start,
     TC3_temp_at_start = TC3_temp_at_start,
@@ -57,6 +56,7 @@ return (
     flow_rate_throughout_trial = flow_rate_throughout_trial,
     first_drops_at_outlet_time = first_drops_at_outlet_time,
     pump_shut_off_time = pump_shut_off_time,
+    room_temperature_at_start = room_temperature_at_start,
     room_temp_at_53_minutes = room_temp_at_53_minutes,
     room_temp_observation_time_2 = room_temp_observation_time_2,
     room_temp_at_103_minutes = room_temp_at_103_minutes,
