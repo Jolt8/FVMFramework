@@ -51,9 +51,7 @@ interpolated_inlet_temperatures = [coeffs_inlet_temperatures[1] + coeffs_inlet_t
 
 plot(ustrip.(inlet_timestamps), ustrip.(inlet_temperatures))
 plot!(ustrip.(timestamps), ustrip.(interpolated_inlet_temperatures))
-
 inlet_temperatures_interpolation = CubicSpline(ustrip.(interpolated_inlet_temperatures), ustrip.(timestamps))
-
 
 #Outlet Temperatures
 outlet_temperatures_unprocessed = vec(xf["processed data"]["D2:D96"])
