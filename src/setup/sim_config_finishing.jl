@@ -178,15 +178,9 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
 
     optimized_parameters_property_names = propertynames(config.optimized_parameters)
     #TODO: decide if optimized parameters should be only inputted as a single value or for all cells
-    #optimized_parameters_values = [repeat([getproperty(config.optimized_parameters, name)], n_cells) for name in optimized_parameters_property_names]
     optimized_parameters_values = [[getproperty(config.optimized_parameters, name)] for name in optimized_parameters_property_names]
 
     lengthened_optimized_parameters = ComponentVector(NamedTuple{optimized_parameters_property_names}(optimized_parameters_values))
-
-    println(lengthened_optimized_parameters)
-    println(length(lengthened_optimized_parameters))
-
-    #lengthened_optimized_parameters = ComponentVector(pre_lengthened_optimized_parameters_dict...)
 
     p_vec_units = Vector(ComponentVector(lengthened_optimized_parameters))
     p_vec = ustrip.(upreferred.(Vector(ComponentVector(lengthened_optimized_parameters))))
@@ -195,10 +189,7 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
     #we have to split up properties to strip it of units
     properties_vec_units = Vector(merged_properties)
     properties_vec = ustrip.(upreferred.(deepcopy(properties_vec_units)))
-
-    #println(properties_vec)
-    println(length(properties_vec))
-
+    
     #virtual_merge_axes takes in a tuple of ComponentArrays
     du_virtual_axes = virtual_merge_axes((ComponentVector(config.u_proto), ComponentVector(merged_caches)))
     if ComponentVector(config.optimized_parameters) == Union{}[] #if the user doesn't provide any optimized parameters, we ignore them
