@@ -779,13 +779,14 @@ end
     callback = cb,
     OptimizationOptimJL.LBFGS(),
     EnsembleThreads(),
-    trajectories = Sys.CPU_THREADS,
+    trajectories = 50,
+    #Sys.CPU_THREADS,
     #LBFGS, BFGS, and Fminbox don't work if the guess is very far away from the actual value
     #IPNewton works kinda fine
     #f_abstol=1e-8,
     #g_abstol=1e-8,
 )
-
+#=
 using OptimizationBBO #for BlackBoxOptim
 @time res = solve(
     ensembleprob, 
@@ -794,6 +795,7 @@ using OptimizationBBO #for BlackBoxOptim
     trajectories = Sys.CPU_THREADS,
     callback = cb,
 )
+    =#
 
 res.u0_vec
 
