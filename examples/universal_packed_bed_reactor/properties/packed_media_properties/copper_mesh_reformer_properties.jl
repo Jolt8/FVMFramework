@@ -42,7 +42,7 @@ function get_copper_mesh_reformer_properties(pipe_length, n_cells, cell_lengths_
     )
     
     reforming_area_properties = ComponentVector(
-        k = 0.026u"W/(m*K)", 
+        k = 0.6u"W/(m*K)", 
         cp = 4186u"J/(kg*K)",
         dynamic_viscosity = 1.81e-5u"Pa*s",
         rho = 998.2u"kg/m^3",
