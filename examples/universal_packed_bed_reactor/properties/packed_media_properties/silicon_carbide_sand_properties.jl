@@ -36,34 +36,17 @@ function get_silicon_carbide_sand_properties(pipe_length, n_cells, cell_lengths_
     particle_diameter = 1.0u"mm"  # ⚠️ TODO: confirm actual SiC particle/grain size
 
     silicon_carbide_sand_properties = ComponentVector(
-        k = k_eff * u"W/(m*K)",
-        cp = cp_eff * u"J/(kg*K)",
-        rho = rho_eff * u"kg/m^3",
+        #k = k_eff * u"W/(m*K)",
+        #cp = cp_eff * u"J/(kg*K)",
+        #rho = rho_eff * u"kg/m^3",
 
-        #pipe_inside_diameter = 16.0u"mm",
-        #pipe_length = pipe_length,
-        #per_cell_pipe_length = pipe_length / n_cells,
-        #cell_lengths_along_pipe = cell_lengths_along_pipe,
+        k = 0.6u"W/(m*K)", 
+        cp = 4186u"J/(kg*K)",
+        dynamic_viscosity = 1.81e-5u"Pa*s",
+        rho = 998.2u"kg/m^3",
 
         bed_void_fraction = bed_void_fraction,
         particle_diameter = particle_diameter,
-
-        diffusion_coefficients = (
-            methanol = 1e-5u"m^2/s",
-            water = 1e-5u"m^2/s",
-            carbon_monoxide = 1e-5u"m^2/s",
-            hydrogen = 1e-5u"m^2/s",
-            carbon_dioxide = 1e-5u"m^2/s",
-            air = 1e-5u"m^2/s"
-        ),
-        molecular_weights = (
-            methanol = 32.04u"g/mol",
-            water = 18.02u"g/mol",
-            carbon_monoxide = 28.01u"g/mol",
-            hydrogen = 2.02u"g/mol",
-            carbon_dioxide = 44.01u"g/mol",
-            air = 28.97u"g/mol"
-        ),
     )
 
     return silicon_carbide_sand_properties
