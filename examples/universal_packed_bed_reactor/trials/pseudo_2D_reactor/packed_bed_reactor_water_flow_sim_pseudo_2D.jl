@@ -85,8 +85,12 @@ Revise.includet(joinpath(@__DIR__, "..", "..", "physics", "momentum.jl"))
 
 function update_fluid_properties!(du, u, cell_id, vol, system)
     mw_avg!(u, cell_id)
-    rho_ideal!(u, cell_id)
+    #rho_ideal!(u, cell_id)
     #rho_multiphase!(du, u, cell_id, vol)
+
+    properties = ComponentVector(system.properties_vec, system.properties_axes)
+    u.rho[cell_id] = properties.rho[cell_id] 
+
     molar_concentrations!(u, cell_id)
     #update_velocity!(du, u, cell_id, vol)
 end
@@ -198,7 +202,7 @@ add_setup_syms!(config;
         mass_evaporated = u"kg",
         superficial_velocity = u"m/s",
         #a correlation will be developed to account for the fact that the heating wire inside the reactor is unevenly spaced
-        measured_heater_wattage = u"W", 
+        measured_heater_wattage_per_cell = u"W", 
         pipe_mass_flow = u"kg/s"
     ),
     special_caches = ComponentArray(
@@ -218,10 +222,6 @@ add_setup_syms!(config;
     second_order_syms = [],
     optimized_parameters = ComponentVector(
         overall_heat_transfer_coefficient_to_environment = 0.0u"W/(m^2*K)", 
-
-        heater_poly_p3 = 0.0u"W/m^3", 
-        heater_poly_p2 = 0.0u"W/m^2", 
-        heater_poly_p0 = 0.0u"W", 
         
         #TCs_UA_to_center_of_reactor = 0.0u"W/K", 
     )
@@ -377,7 +377,7 @@ add_region!(
     function thermocouple_and_heating_wire!(du, u, cell_id, vol)
         solid_physics_functions!(du, u, cell_id, vol)
 
-        du.heat[cell_id] += u.measured_heater_wattage[cell_id] / n_heating_wire_cells
+        #du.heat[cell_id] += u.measured_heater_wattage_per_cell[cell_id]
 
         solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     end
@@ -505,16 +505,47 @@ function pump_shut_off(du, u, cell_id, t)
         #for anything that uses t for an interpolation, make sure to get the value of it to prevent Dual shenanigans
         
         u.pipe_mass_flow[cell_id] = ustrip(upreferred(common_properties.pipe_mass_flow))
+        #u.pipe_mass_flow[cell_id] = 0.0
     else #pump shut off
         #do nothing to the inlet temp
         u.pipe_mass_flow[cell_id] = 0.0
     end
 end
 
+Revise.includet(joinpath(@__DIR__, "..", "thermocouple_data_processing", "thermocouple_data_with_wattage.jl"))
+
+thermocouple_data_path = joinpath(@__DIR__, "..", "thermocouple_data_processing", "heated_trial_tc_temps.csv")
+thermocouple_data = get_thermocouple_data(thermocouple_data_path)
+
+Revise.includet(joinpath(@__DIR__, "..", "thermocouple_data_processing", "thermocouple_data.jl"))
+
+thermocouple_data_path = joinpath(@__DIR__, "..", "thermocouple_data_processing", "hot_water_flow_tc_temps.csv")
+thermocouple_data = get_thermocouple_data(thermocouple_data_path)
+
 fluid_regions = ["pipe_inlet", "silicon_carbide_preheater", "copper_mesh_reformer", "pipe_outlet"]
 advecting_fluid_cells = vcat(collect(grid.cellsets["pipe_inlet"]), collect(grid.cellsets["silicon_carbide_preheater"]), collect(grid.cellsets["copper_mesh_reformer"]), collect(grid.cellsets["pipe_outlet"]))
 
-function solve_system!(du, u, p, t, geo, system)
+function measured_heater_wattage_per_cell(t)
+    #return thermocouple_data.heater_power_interp(ForwardDiff.value(t)) / ustrip(upreferred(10.0u"inch"))
+    #return thermocouple_data.heater_power_interp(ForwardDiff.value(t)) / length(heated_cells)
+    return 0.0
+end
+
+heater_start = 1.0u"inch"
+heater_end = 11.0u"inch"
+
+thermocouple_and_heating_wire_cells = collect(grid.cellsets["thermocouple_and_heating_wire"])
+heated_cells = Int[]
+
+for cell_id in thermocouple_and_heating_wire_cells
+    if common_properties.cell_lengths_along_pipe[cell_id] >= heater_start && common_properties.cell_lengths_along_pipe[cell_id] <= heater_end
+        push!(heated_cells, cell_id)
+    end
+end
+
+p_axes = system.p_axes
+
+function solve_system!(du, u, p_vec, t, geo, system)
     #VERY IMPORTANT: since most software uses 0-based indexing, you need to adjust the cell id by +1
     #for example, if you mouse over cell_id 5161 in ParaView, you need to use 5162 in the code because julia uses 1-based indexing 
 
@@ -534,10 +565,16 @@ function solve_system!(du, u, p, t, geo, system)
         end
     end
 
+    p = ComponentVector(p_vec, p_axes)
+
     for cell_id in eachindex(geo.cell_volumes)
-        u.measured_heater_wattage[cell_id] = measured_heater_wattage(t)
+        u.overall_heat_transfer_coefficient_to_environment[cell_id] = p.overall_heat_transfer_coefficient_to_environment[1]
 
         pump_shut_off(du, u, cell_id, t)
+    end
+
+    for cell_id in heated_cells
+        u.measured_heater_wattage_per_cell[cell_id] = measured_heater_wattage_per_cell(t) 
     end
 
     for i in 1:length(advecting_fluid_cells) - 1 #we don't take mass out of the outlet
@@ -557,13 +594,7 @@ end
 f_closure_implicit = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
 
 p_guess = ustrip.(Vector(ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 0.5u"W/(m^2*K)", 
-
-    #is a heater polynomial ever going to be accurate considering how 
-    #uneven the spacing between each turn of heating wire is?
-    heater_poly_p3 = 0.0u"W/m^3", 
-    heater_poly_p2 = 0.0u"W/m^2", 
-    heater_poly_p0 = 0.0u"W", 
+    overall_heat_transfer_coefficient_to_environment = 9.612656359973201u"W/(m^2*K)", 
 )))
 
 detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
@@ -575,8 +606,7 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure_implicit, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 2700
-#ustrip(upreferred(thermocouple_data.timestamps[end]))
+tMax = ustrip(upreferred(thermocouple_data.timestamps[end]))
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
@@ -599,9 +629,20 @@ u_named = [ComponentVector(sol.u[i], state_axes) for i in 1:length(sol.u)]
 
 sim_file = @__FILE__
 
-sol_to_vtk(sol, u_named, grid, sim_file)
+root_dir = "C:\\Users\\wille\\OneDrive\\Desktop\\Julia_cfd_output_files"
+
+#sol_to_vtk(sol, u_named, grid, sim_file, root_dir)
 
 timestamps = ustrip.(thermocouple_data.timestamps)
+
+TC1_cell_id = Int(ustrip(thermocouple_and_heating_wire_properties.TC1_closest_cell_id))
+TC2_cell_id = Int(ustrip(thermocouple_and_heating_wire_properties.TC2_closest_cell_id))
+TC3_cell_id = Int(ustrip(thermocouple_and_heating_wire_properties.TC3_closest_cell_id))
+TC4_cell_id = Int(ustrip(thermocouple_and_heating_wire_properties.TC4_closest_cell_id))
+TC5_cell_id = Int(ustrip(thermocouple_and_heating_wire_properties.TC5_closest_cell_id))
+
+n_saves = 100
+save_interval = tMax / n_saves
 
 function loss(θ)
     #prob = ODEProblem(ode_func, u0_vec, (0.0, ustrip(thermocouple_data.timestamps[end])), θ)
@@ -618,17 +659,18 @@ function loss(θ)
         sensealg = ForwardSensitivity(),
         #InterpolatingAdjoint(autodiff = AutoMooncake()),
         #callback = approximate_time_to_finish_cb
+        saveat = save_interval
     )
+
+    println(sol.retcode)
+
+    if length(sol.t) < n_saves
+        return 1e10
+    end
 
     u_named = [ComponentVector(sol.u[i], state_axes) for i in eachindex(sol.u)]
 
     mean_squared_error = 0.0
-
-    TC1_cell_id = Int(u.TC1_cell_id[1])
-    TC2_cell_id = Int(u.TC2_cell_id[1])
-    TC3_cell_id = Int(u.TC3_cell_id[1])
-    TC4_cell_id = Int(u.TC4_cell_id[1])
-    TC5_cell_id = Int(u.TC5_cell_id[1])
 
     for i in eachindex(sol.t)
         mean_squared_error += abs2(ustrip(u_named[i].temp[TC1_cell_id]) - ustrip(thermocouple_data.TC1_temps_interp(sol.t[i])))
@@ -640,17 +682,11 @@ function loss(θ)
         #I don't think using the measured outlet temperature is actually useful
     end
 
-    return mean_squared_error
+    return mean_squared_error / length(sol.t)
 end
 
 p_guess_init = ComponentVector(
     overall_heat_transfer_coefficient_to_environment = 0.5u"W/(m^2*K)",
-
-    heater_poly_p2 = 0.001u"W/m^3", 
-    heater_poly_p1 = 0.0u"W/m^2", 
-    heater_poly_p0 = 1312.0u"W/m", 
-    
-    #TCs_UA_to_center_of_reactor = 0.0005u"W/K",
 )
 
 p_axes = getaxes(p_guess_init)
@@ -680,22 +716,10 @@ optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     overall_heat_transfer_coefficient_to_environment = 0.5u"W/(m^2*K)",
-
-    heater_poly_p2 = 0.001u"W/m^3", 
-    heater_poly_p1 = 0.0u"W/m^2", 
-    heater_poly_p0 = 1312.0u"W/m", 
-    
-    #TCs_UA_to_center_of_reactor = 0.0001u"W/K", 
 ))))
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 100.0u"W/(m^2*K)", 
-
-    heater_poly_p2 = 0.001u"W/m^3", 
-    heater_poly_p1 = 0.0u"W/m^2", 
-    heater_poly_p0 = 1312.0u"W/m", 
-    
-    #TCs_UA_to_center_of_reactor = 10.0u"W/K", 
+    overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)", 
 ))))
 
 optprob = Optimization.OptimizationProblem(optf, p_guess, lb=p_lower_bounds, ub=p_upper_bounds)
@@ -704,7 +728,9 @@ function randomize(lower, upper)
     return lower + (upper - lower) * rand()
 end
 
-p_ensemble = [[randomize(p_lower_bounds[i], p_upper_bounds[i]) for i in eachindex(p_lower_bounds)] for _ in 1:Sys.CPU_THREADS]
+#p_ensemble = [[randomize(p_lower_bounds[i], p_upper_bounds[i]) for i in eachindex(p_lower_bounds)] for _ in 1:Sys.CPU_THREADS]
+
+p_ensemble = exp.(range(log(p_lower_bounds[1]), log(p_upper_bounds[1]), length=Sys.CPU_THREADS))
 
 function prob_func(prob, i, repeat)
     return remake(prob, p = p_ensemble[i])  
@@ -715,22 +741,49 @@ ensembleprob = EnsembleProblem(optprob; prob_func)
 LOSS = Float64[]
 PARS = []
 
+using Dates
+
+# Ensure the directory exists and use a filename-safe date format (colons are invalid on Windows)
+mkpath(joinpath(@__DIR__, "optimization_results"))
+results_path = joinpath(@__DIR__, "optimization_results", "optimization_results_$(Dates.format(Dates.now(), "yyyy-mm-dd_HH-MM-SS")).csv")
+
+# Create the file and manually write the header string using propertynames
+open(results_path, "w") do io
+    header_str = "loss," * join(string.(propertynames(p_guess_init)), ",")
+    println(io, header_str)
+end
+
+const cb_lock = ReentrantLock()
+
 cb = function (state, l)
     display(l)
     display(state.u)
-    append!(LOSS, l)
-    append!(PARS, [state.u])
+    
+    lock(cb_lock) do
+        push!(LOSS, l)
+        push!(PARS, state.u)
+        
+        # Convert state.u to a named tuple using your p_axes so the CSV has nice column headers
+        p_named = NamedTuple(ComponentVector(state.u, p_axes))
+        row = merge((loss = l, ), p_named)
+        
+        # CSV.write with append=true automatically opens, appends, and closes (flushes) the file
+        CSV.write(results_path, DataFrame([row]), append=true)
+    end
+    
     false
 end
 
 @time res = Optimization.solve(
-    optprob,
+    ensembleprob,
     callback = cb,
     OptimizationOptimJL.LBFGS(),
+    EnsembleThreads(),
+    trajectories = Sys.CPU_THREADS,
     #LBFGS, BFGS, and Fminbox don't work if the guess is very far away from the actual value
     #IPNewton works kinda fine
-    f_abstol=1e-8,
-    g_abstol=1e-8,
+    #f_abstol=1e-8,
+    #g_abstol=1e-8,
 )
 
 using OptimizationBBO #for BlackBoxOptim
@@ -752,4 +805,28 @@ p_fitted = ComponentVector(res.u, p_axes)
 #0.045
 #7050
 #8.71
+
+results_path = joinpath(@__DIR__, "optimization_results", "optimization_results_2026-05-10_14-09-03.csv")
+
+results_data = CSV.read(results_path, DataFrame)
+
+results_data.overall_heat_transfer_coefficient_to_environment
+
+middle_thermocouple_temps = []
+
+for i in eachindex(results_data.overall_heat_transfer_coefficient_to_environment[1:20])
+    p_test = [results_data.overall_heat_transfer_coefficient_to_environment[i]]
+
+    test_prob = remake(implicit_prob, p = p_test)
+    
+    sol = solve(
+        test_prob,
+        FBDF(linsolve = SparspakFactorization(),), 
+    )
+
+    u_named = [ComponentVector(sol.u[i], state_axes) for i in eachindex(sol.u)]
+
+    push!(middle_thermocouple_temps, [u_named[j].temp[TC3_cell_id] for j in eachindex(u_named)])
+end
+
 
