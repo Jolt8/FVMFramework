@@ -662,8 +662,6 @@ function loss(θ)
         saveat = save_interval
     )
 
-    println(sol.retcode)
-
     if length(sol.t) < n_saves
         return 1e10
     end
@@ -686,7 +684,7 @@ function loss(θ)
 end
 
 p_guess_init = ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 0.5u"W/(m^2*K)",
+    overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)",
 )
 
 p_axes = getaxes(p_guess_init)
@@ -715,11 +713,11 @@ adtype = Optimization.AutoForwardDiff()
 optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 0.5u"W/(m^2*K)",
+    overall_heat_transfer_coefficient_to_environment = 0.001u"W/(m^2*K)",
 ))))
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)", 
+    overall_heat_transfer_coefficient_to_environment = 1000.0u"W/(m^2*K)", 
 ))))
 
 optprob = Optimization.OptimizationProblem(optf, p_guess, lb=p_lower_bounds, ub=p_upper_bounds)
@@ -730,7 +728,26 @@ end
 
 #p_ensemble = [[randomize(p_lower_bounds[i], p_upper_bounds[i]) for i in eachindex(p_lower_bounds)] for _ in 1:Sys.CPU_THREADS]
 
-p_ensemble = exp.(range(log(p_lower_bounds[1]), log(p_upper_bounds[1]), length=Sys.CPU_THREADS))
+p_ensemble = exp.(range(log(p_lower_bounds[1]), log(p_upper_bounds[1]), length = 100))
+#length=Sys.CPU_THREADS))
+
+for i in eachindex(p_ensemble)
+    println(i)
+    loss_i = loss([p_ensemble[i]])
+    println(loss_i)
+    push!(resulting_losses, loss_i)
+end
+
+#resulting_losses = [loss([p_ensemble[i]]) for i in eachindex(p_ensemble)]
+
+plot(p_ensemble[1:80], resulting_losses[101:180])
+
+p_ensemble[67]
+resulting_losses[167]
+
+CSV.write("optimization_results_2026-05-11_09-01-04.csv", DataFrame(loss = resulting_losses[101:end], overall_heat_transfer_coefficient_to_environment = p_ensemble))
+
+#a heat transfer coefficient of 10.0  seems to give the lowest loss
 
 function prob_func(prob, i, repeat)
     return remake(prob, p = p_ensemble[i])  
@@ -786,6 +803,20 @@ end
     #f_abstol=1e-8,
     #g_abstol=1e-8,
 )
+
+@time res = Optimization.solve(
+    optprob,
+    callback = cb,
+    OptimizationOptimJL.LBFGS(),
+    #EnsembleThreads(),
+    #trajectories = 50,
+    #Sys.CPU_THREADS,
+    #LBFGS, BFGS, and Fminbox don't work if the guess is very far away from the actual value
+    #IPNewton works kinda fine
+    #f_abstol=1e-8,
+    #g_abstol=1e-8,
+)
+
 #=
 using OptimizationBBO #for BlackBoxOptim
 @time res = solve(
