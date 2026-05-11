@@ -684,7 +684,7 @@ function loss(θ)
 end
 
 p_guess_init = ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 0.5u"W/(m^2*K)",
+    overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)",
 )
 
 p_axes = getaxes(p_guess_init)
@@ -748,7 +748,7 @@ resulting_losses[167]
 CSV.write("optimization_results_2026-05-11_09-01-04.csv", DataFrame(loss = resulting_losses[101:end], overall_heat_transfer_coefficient_to_environment = p_ensemble))
 
 #a heat transfer coefficient of 10.0  seems to give the lowest loss
-#=
+
 function prob_func(prob, i, repeat)
     return remake(prob, p = p_ensemble[i])  
 end
@@ -803,6 +803,20 @@ end
     #f_abstol=1e-8,
     #g_abstol=1e-8,
 )
+
+@time res = Optimization.solve(
+    optprob,
+    callback = cb,
+    OptimizationOptimJL.LBFGS(),
+    #EnsembleThreads(),
+    #trajectories = 50,
+    #Sys.CPU_THREADS,
+    #LBFGS, BFGS, and Fminbox don't work if the guess is very far away from the actual value
+    #IPNewton works kinda fine
+    #f_abstol=1e-8,
+    #g_abstol=1e-8,
+)
+
 #=
 using OptimizationBBO #for BlackBoxOptim
 @time res = solve(
