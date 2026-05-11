@@ -16,11 +16,11 @@ function write_to_vtk_helper!(vtk, u_named_step, n_cells)
     end
 end
 
-function sol_to_vtk(sol, u_named, grid, sim_file)
+function sol_to_vtk(sol, u_named, grid, sim_file, root_dir)
     date_and_time = Dates.format(now(), "I.MM.SS p yyyy-mm-dd")
     #date_and_time = Dates.format(now(), "I.MM.SS p")
 
-    root_dir = "C://Users//wille//Desktop//Julia_cfd_output_files"
+    #root_dir = "C://Users//wille//Desktop//Julia_cfd_output_files"
 
     project_name = replace(basename(sim_file), r".jl" => "")
 
