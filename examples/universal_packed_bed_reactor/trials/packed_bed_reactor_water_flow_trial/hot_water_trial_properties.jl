@@ -32,6 +32,8 @@ empty_mass_fractions = empty_mass_fractions ./ total_empty_mass_fractions
 hot_water_trial_properties = ComponentVector(
     pipe_mass_flow = pipe_mass_flow,
 
+    room_temperature = 20u"°C" |> u"K",
+
     inlet_mass_fractions = inlet_mass_fractions,
     empty_mass_fractions = empty_mass_fractions
 )
