@@ -10,7 +10,6 @@ xf = XLSX.readxlsx(experimental_data_path)
 
 sheet = xf["processed data"]
 
-
 #the values given by the thermocouples will be used to create an offset for each
 #this was observed basically at the start
 room_temperature_at_start = sheet["G1"] .* u"°C" .|> u"K"
