@@ -11,6 +11,10 @@ using Unitful
     #this is the trial whre I heated up the reactor periodically to 300*C periodically and then waited for the temperatures to fall back down to a lower level
     #this was to determine the heat transfer coefficient of the heater to the thermocouples as well as the thermal mass of the reactor
     #the temperature of the room during the experiment was 14.5°C which stayed pretty constant throughout the experiment 
+
+function heater_power_interp(t)
+    return 0.0
+end
     
 function get_thermocouple_data(experimental_data_path::String)
 
@@ -47,6 +51,8 @@ TC3_temps_interp = LinearInterpolation(ustrip.(vcat(TC3_temps[1], TC3_temps)), u
 TC4_temps_interp = LinearInterpolation(ustrip.(vcat(TC4_temps[1], TC4_temps)), ustrip.(vcat(0.0, timestamps)))
 TC5_temps_interp = LinearInterpolation(ustrip.(vcat(TC5_temps[1], TC5_temps)), ustrip.(vcat(0.0, timestamps)))
 
+
+
 return (
     timestamps = timestamps,
     TC1_temps_interp = TC1_temps_interp,
@@ -59,6 +65,7 @@ return (
     TC3_temp_offset = TC3_temp_offset,
     TC4_temp_offset = TC4_temp_offset,
     TC5_temp_offset = TC5_temp_offset,
+    heater_power_interp = heater_power_interp
 )
 
 end
