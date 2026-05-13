@@ -41,46 +41,24 @@ function get_copper_mesh_reformer_properties(pipe_length, n_cells, cell_lengths_
         van_t_hoff_dH = van_t_hoff_dH
     )
     
-    reforming_area_properties = ComponentVector(
-        k = 0.6u"W/(m*K)", 
-        cp = 4186u"J/(kg*K)",
+    copper_mesh_reformer_properties = ComponentVector(
+        copper_k = 390.0u"W/(m*K)", 
+        copper_cp = 385.0u"J/(kg*K)",
         dynamic_viscosity = 1.81e-5u"Pa*s",
-        rho = 998.2u"kg/m^3",
+        copper_rho = 8960.0u"kg/m^3",
 
-        bed_void_fraction = 0.4,
-        packing_surface_area = 100.0u"m^2/m^3",
-        particle_diameter = 5.0u"mm",
+        bed_void_fraction = 0.65,
+        #packing_surface_area = 100.0u"m^2/m^3",
+        #particle_diameter = 5.0u"mm",
 
-        saturation_temp = 72.4u"°C",
-        liquid_rho = 791.0u"kg/m^3",
-        gas_rho = 1.225u"kg/m^3",
-        mass_transfer_coeff_vap = 0.001u"kg/(m^2*s*K)",
-        heat_of_vaporization = 1.5u"kJ/g",
-
-        diffusion_coefficients = (
-            methanol = 1e-5u"m^2/s",
-            water = 1e-5u"m^2/s",
-            carbon_monoxide = 1e-5u"m^2/s",
-            hydrogen = 1e-5u"m^2/s",
-            carbon_dioxide = 1e-5u"m^2/s",
-            air = 1e-5u"m^2/s"
-        ), 
-        molecular_weights = (
-            methanol = 32.04u"g/mol",
-            water = 18.02u"g/mol",
-            carbon_monoxide = 28.01u"g/mol",
-            hydrogen = 2.02u"g/mol",
-            carbon_dioxide = 44.01u"g/mol",
-            air = 28.97u"g/mol"
-        ), 
         reactions = (reforming_reactions = (MSR_rxn = MSR_rxn, MD_rxn = MD_rxn, WGS_rxn = WGS_rxn),),
         reactions_kg_cat = (reforming_reactions = (MSR_rxn = 1250.0u"kg/m^3", MD_rxn = 1250.0u"kg/m^3", WGS_rxn = 1250.0u"kg/m^3"),), 
     )
 
-    permeability = (reforming_area_properties.particle_diameter^2 * reforming_area_properties.bed_void_fraction^3) / (150.0 * (1.0 - reforming_area_properties.bed_void_fraction)^2)
+    #permeability = (copper_mesh_reformer_properties.particle_diameter^2 * copper_mesh_reformer_properties.bed_void_fraction^3) / (150.0 * (1.0 - copper_mesh_reformer_properties.bed_void_fraction)^2)
 
-    reforming_area_properties = merge_properties(reforming_area_properties, ComponentVector(permeability = permeability))
+    #copper_mesh_reformer_properties = merge_properties(copper_mesh_reformer_properties, ComponentVector(permeability = permeability))
 
-    return reforming_area_properties
+    return copper_mesh_reformer_properties
 end
 
