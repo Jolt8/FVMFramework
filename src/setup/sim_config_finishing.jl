@@ -170,7 +170,7 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
 
     N::Int = ForwardDiff.pickchunksize(length(u0_vec))
 
-    #we could also do this in the future, although this will require a lot of testing:
+    #we could also do this in the future, although this will require a lot of testing to make sure nothing siliently breaks:
     #du_unitful_cache_vec = Vector(deepcopy(merged_caches))
     #u_unitful_cache_vec = Vector(deepcopy(merged_caches))
     #du_diff_cache = DiffCache(ustrip.(upreferred.(Vector(deepcopy(merged_caches)))), N)
