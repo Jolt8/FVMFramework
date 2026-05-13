@@ -1,52 +1,11 @@
-function get_silicon_carbide_sand_properties(pipe_length, n_cells, cell_lengths_along_pipe)
-    # ── Silicon Carbide (SiC) packing / preheater bed properties ─────────────
-    # SiC is used here purely as a thermal pre-heater / evaporator bed,
-    # not as a catalyst. No reactions occur in this zone.
-    #
-    # Bulk / packed-bed values (solid + void):
-    #   SiC solid:  k ≈ 120 W/(m·K), ρ ≈ 3210 kg/m³, cp ≈ 750 J/(kg·K)  at ~300°C
-    #   Bed void fraction ε ≈ 0.38–0.42 for random packing of equal spheres
-    #
-    # The effective bed k (Zehner-Schlünder or simple mixing rule) is dominated
-    # by the gas phase in a packed bed, but for a hot SiC bed the solid conduction
-    # is high enough that the effective k is much higher than pure air.
-    # A conservative estimate using the simple parallel-model lower bound:
-    #   k_eff ≈ (1 - ε) * k_solid + ε * k_gas ≈ 0.60 * 120 + 0.40 * 0.05 ≈ 72 W/(m·K)
-    # However for thin beds and coarse particles a value of 1–5 W/(m·K) is
-    # commonly used in literature for gas-filled packed beds. 
-    # ⚠️ TODO: clarify particle size and packing density of the SiC bed
-
-    bed_void_fraction = 0.40  # dimensionless
-
-    # Effective packed-bed properties (volume-fraction weighted):
-    rho_SiC = 3210.0   # kg/m³  solid SiC density
-    cp_SiC  = 750.0    # J/(kg·K) at ~300°C; use 670 at room temp if preferred
-    k_SiC   = 120.0    # W/(m·K) solid SiC
-
-    rho_gas = 1.0      # kg/m³  (air/steam approximate)
-    cp_gas  = 1050.0   # J/(kg·K)
-    k_gas   = 0.05     # W/(m·K)
-
-    rho_eff = (1.0 - bed_void_fraction) * rho_SiC + bed_void_fraction * rho_gas   # ≈ 1926 kg/m³
-    cp_eff  = ((1.0 - bed_void_fraction) * rho_SiC * cp_SiC + bed_void_fraction * rho_gas * cp_gas) / rho_eff
-    k_eff   = (1.0 - bed_void_fraction) * k_SiC + bed_void_fraction * k_gas  # parallel upper bound ≈ 72 W/(m·K)
-    # ⚠️ TODO: k_eff is highly uncertain for packed beds — consider using 1–10 W/(m·K)
-    # from literature if you don't have a better estimate
-
-    particle_diameter = 1.0u"mm"  # ⚠️ TODO: confirm actual SiC particle/grain size
-
+function get_silicon_carbide_sand_properties()
     silicon_carbide_sand_properties = ComponentVector(
-        #k = k_eff * u"W/(m*K)",
-        #cp = cp_eff * u"J/(kg*K)",
-        #rho = rho_eff * u"kg/m^3",
-
-        k = 0.6u"W/(m*K)", 
-        cp = 4186u"J/(kg*K)",
-        dynamic_viscosity = 1.81e-5u"Pa*s",
-        rho = 998.2u"kg/m^3",
-
-        bed_void_fraction = bed_void_fraction,
-        particle_diameter = particle_diameter,
+        silicon_carbide_k = 150.0u"W/(m*K)", #this could be changed to packing_k later, but this is fine for now
+        silicon_carbide_cp = 700.0u"J/(kg*K)",
+        silicon_carbide_rho = 3150.0u"kg/m^3",
+        
+        bed_void_fraction = 0.504,
+        particle_diameter = 0.200u"mm"
     )
 
     return silicon_carbide_sand_properties
