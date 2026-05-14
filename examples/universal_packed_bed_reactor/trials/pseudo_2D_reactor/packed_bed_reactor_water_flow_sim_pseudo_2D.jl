@@ -146,11 +146,11 @@ end
 
 u_proto = ComponentVector(
     mass_fractions = (
-        methanol = zeros(n_cells)u"kg/kg",
+        #methanol = zeros(n_cells)u"kg/kg",
         water = zeros(n_cells)u"kg/kg",
-        carbon_monoxide = zeros(n_cells)u"kg/kg",
-        hydrogen = zeros(n_cells)u"kg/kg",
-        carbon_dioxide = zeros(n_cells)u"kg/kg",
+        #carbon_monoxide = zeros(n_cells)u"kg/kg",
+        #hydrogen = zeros(n_cells)u"kg/kg",
+        #carbon_dioxide = zeros(n_cells)u"kg/kg",
         air = zeros(n_cells)u"kg/kg"
     ),
     pressure = zeros(n_cells)u"Pa",
@@ -251,11 +251,11 @@ end
 
 placeholder_temperature = 99999.9u"K" #we want this to error hard if it doesn't get updated by a trial's measured room temperature
 placeholder_mass_fractions = ComponentVector(
-    methanol = 1e-99u"kg/kg",
+    #methanol = 1e-99u"kg/kg",
     water = 1e-99u"kg/kg",
-    carbon_monoxide = 1e-99u"kg/kg",
-    hydrogen = 1e-99u"kg/kg",
-    carbon_dioxide = 1e-99u"kg/kg",
+    #carbon_monoxide = 1e-99u"kg/kg",
+    #hydrogen = 1e-99u"kg/kg",
+    #carbon_dioxide = 1e-99u"kg/kg",
     air = 1e-99u"kg/kg"
 )
 
@@ -1097,7 +1097,7 @@ p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
 ))))
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 1000.0u"W/(m^2*K)", 
+    overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)", 
     heater_weight_1 = 0.9999u"1",
     heater_weight_2 = 0.9999u"1",
 ))))
