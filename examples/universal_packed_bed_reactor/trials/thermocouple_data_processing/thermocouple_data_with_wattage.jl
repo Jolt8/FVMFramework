@@ -12,7 +12,7 @@ using Unitful
     #this was to determine the heat transfer coefficient of the heater to the thermocouples as well as the thermal mass of the reactor
     #the temperature of the room during the experiment was 14.5°C which stayed pretty constant throughout the experiment 
 
-function get_thermocouple_data(experimental_data_path::String)
+function get_dry_run_thermocouple_data()
 
 experimental_data_path = joinpath(@__DIR__, "heated_trial_tc_temps.csv")
 

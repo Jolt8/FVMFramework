@@ -179,7 +179,7 @@ pre_steel_pipe_wall_properties = get_steel_pipe_wall_properties()
 steel_pipe_wall_properties = merge_properties(pre_steel_pipe_wall_properties, common_properties)
 
 Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "thermocouple_and_heating_wire_properties", "thermocouple_and_heating_wire_properties.jl"))
-pre_thermocouple_and_heating_wire_properties = get_heating_wire_and_thermocouple_properties(grid, pipe_length, n_cells_axial, cell_lengths_along_pipe)
+pre_thermocouple_and_heating_wire_properties = get_new_heating_wire_and_thermocouple_properties(grid, pipe_length, n_cells_axial, cell_lengths_along_pipe)
 thermocouple_and_heating_wire_properties = merge_properties(pre_thermocouple_and_heating_wire_properties, common_properties)
 
 Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "insulation_properties", "insulation_properties.jl"))
@@ -202,6 +202,8 @@ add_setup_syms!(config;
         cp = u"J/(kg*K)",
         rho = u"kg/m^3",
         overall_heat_transfer_coefficient_to_environment = u"W/(m^2*K)",
+        heater_weight_1 = u"1",
+        heater_weight_2 = u"1",
         wattage_received_per_m = u"W/m",
         molar_concentrations = u"mol/m^3",
         species_mass_flows = u"kg/s",
@@ -231,6 +233,8 @@ add_setup_syms!(config;
     second_order_syms = [],
     optimized_parameters = ComponentVector(
         overall_heat_transfer_coefficient_to_environment = 0.0u"W/(m^2*K)",
+        heater_weight_1 = 0.0u"1",
+        heater_weight_2 = 0.0u"1",
     )
 )
 
@@ -245,7 +249,7 @@ end
 #TODO: remember to turn off the heater and to set 
 #the inlet mass flow to what was observed in the experiment
 
-placeholder_temperature = 99999.9u"K" #we want this to error hard if it doesn't get update by a trial's measured room temperature
+placeholder_temperature = 99999.9u"K" #we want this to error hard if it doesn't get updated by a trial's measured room temperature
 placeholder_mass_fractions = ComponentVector(
     methanol = 1e-99u"kg/kg",
     water = 1e-99u"kg/kg",
@@ -346,7 +350,7 @@ add_region!(
         #this is to prevent the concentration of all species from building up at the outlet
 
         #du.heat[cell_id] *= 0.0
-        du.heat[cell_id] -= u.pipe_mass_flow[cell_id] * u.cp[cell_id] * u.temp[cell_id] 
+        du.heat[cell_id] -= u.pipe_mass_flow[cell_id] * u.fluid_cp[cell_id] * u.temp[cell_id] 
         #this is to prevent the temperature from building up at the outlet
 
         fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
@@ -386,8 +390,6 @@ add_region!(
     region_function =
     function thermocouple_and_heating_wire!(du, u, cell_id, vol)
         solid_physics_functions!(du, u, cell_id, vol)
-
-        du.heat[cell_id] += u.measured_heater_wattage_per_cell[cell_id]
 
         solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     end
@@ -485,17 +487,55 @@ function connection_map_function(phys_a, phys_b)
     typeof(phys_a) <: Solid && typeof(phys_b) <: Solid && return solid_solid_flux!
 end
 
+heater_start = 1.0u"inch"
+heater_end = 11.0u"inch"
+
+thermocouple_and_heating_wire_properties.cell_lengths_along_pipe
+
+function get_heated_cells(heater_start, heater_end)
+    heated_cells = Int64[]
+    for cell_id in collect(grid.cellsets["thermocouple_and_heating_wire"])
+        distance_along_pipe = thermocouple_and_heating_wire_properties.cell_lengths_along_pipe[cell_id]
+        if upreferred(heater_start) <= distance_along_pipe <= upreferred(heater_end)
+            push!(heated_cells, cell_id)
+        end
+    end
+    return heated_cells
+end
+
+total_heater_length = 10u"inch"
+heater_start = 1u"inch"
+
+bottom_heater_start = heater_start + (total_heater_length / 3) * 0
+bottom_heater_end = heater_start + (total_heater_length / 3) * 1
+
+middle_heater_start = heater_start + (total_heater_length / 3) * 1
+middle_heater_end = heater_start + (total_heater_length / 3) * 2
+
+top_heater_start = heater_start + (total_heater_length / 3) * 2
+top_heater_end = heater_start + (total_heater_length / 3) * 3
+
+bottom_heated_cells = get_heated_cells(bottom_heater_start, bottom_heater_end)
+n_bottom_heated_cells = length(bottom_heated_cells)
+
+middle_heated_cells = get_heated_cells(middle_heater_start, middle_heater_end)
+n_middle_heated_cells = length(middle_heated_cells)
+
+top_heated_cells = get_heated_cells(top_heater_start, top_heater_end)
+n_top_heated_cells = length(top_heated_cells)
+
+n_total_heated_cells = n_bottom_heated_cells + n_middle_heated_cells + n_top_heated_cells
+
 Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_dry", "empty_trial_properties.jl"))
 Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_dry", "air_properties.jl"))
 Revise.includet(joinpath(@__DIR__, "..", "thermocouple_data_processing", "thermocouple_data_with_wattage.jl"))
-
 
 function dry_run_trial()
     dry_run_config = deepcopy(config)
     dry_run_properties = deepcopy(common_properties)
 
-    empty_trial_properties = get_empty_trial_properties() 
-    dry_run_properties = merge_properties(dry_run_properties, empty_trial_properties)
+    general_trial_properties = get_empty_trial_properties() 
+    dry_run_properties = merge_properties(dry_run_properties, general_trial_properties)
 
     air_properties = get_air_properties()
     dry_run_properties = merge_properties(dry_run_properties, air_properties)
@@ -503,40 +543,64 @@ function dry_run_trial()
     region_names = [dry_run_config.regions[i].name for i in eachindex(dry_run_config.regions)]
     regions = Dict(region_names .=> dry_run_config.regions)
 
-    regions["pipe_inlet"].initial_conditions.temp = dry_run_properties.room_temperature
-    regions["pipe_inlet"].initial_conditions.mass_fractions = dry_run_properties.inlet_mass_fractions
-
     function dry_run_inlet!(du, u, cell_id, vol)
         fluid_physics_functions!(du, u, cell_id, vol)
 
         fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     end
 
+    regions["pipe_inlet"].initial_conditions.temp = dry_run_properties.room_temperature
+    regions["pipe_inlet"].initial_conditions.mass_fractions = dry_run_properties.inlet_mass_fractions
     regions["pipe_inlet"].region_function = dry_run_inlet!
+    regions["pipe_inlet"].properties = merge_properties(regions["pipe_inlet"].properties, air_properties)
+    regions["pipe_inlet"].properties = merge_properties(regions["pipe_inlet"].properties, general_trial_properties)
+    update_region!(dry_run_config, "pipe_inlet")
 
     regions["silicon_carbide_preheater"].initial_conditions.temp = dry_run_properties.room_temperature
     regions["silicon_carbide_preheater"].initial_conditions.mass_fractions = dry_run_properties.empty_mass_fractions
+    regions["silicon_carbide_preheater"].properties = merge_properties(regions["silicon_carbide_preheater"].properties, air_properties)
+    regions["silicon_carbide_preheater"].properties = merge_properties(regions["silicon_carbide_preheater"].properties, general_trial_properties)
+    update_region!(dry_run_config, "silicon_carbide_preheater")
 
     regions["copper_mesh_reformer"].initial_conditions.temp = dry_run_properties.room_temperature
     regions["copper_mesh_reformer"].initial_conditions.mass_fractions = dry_run_properties.empty_mass_fractions
+    regions["copper_mesh_reformer"].properties = merge_properties(regions["copper_mesh_reformer"].properties, air_properties)
+    regions["copper_mesh_reformer"].properties = merge_properties(regions["copper_mesh_reformer"].properties, general_trial_properties)
+    update_region!(dry_run_config, "copper_mesh_reformer")
 
     regions["pipe_outlet"].initial_conditions.temp = dry_run_properties.room_temperature
     regions["pipe_outlet"].initial_conditions.mass_fractions = dry_run_properties.empty_mass_fractions
+    regions["pipe_outlet"].properties = merge_properties(regions["pipe_outlet"].properties, air_properties)
+    regions["pipe_outlet"].properties = merge_properties(regions["pipe_outlet"].properties, general_trial_properties)
+    update_region!(dry_run_config, "pipe_outlet")
 
     regions["steel_pipe_wall"].initial_conditions.temp = dry_run_properties.room_temperature
+    regions["steel_pipe_wall"].properties = merge_properties(regions["steel_pipe_wall"].properties, general_trial_properties)
+    update_region!(dry_run_config, "steel_pipe_wall")
 
     regions["thermocouple_and_heating_wire"].initial_conditions.temp = dry_run_properties.room_temperature
+    regions["thermocouple_and_heating_wire"].properties = merge_properties(regions["thermocouple_and_heating_wire"].properties, general_trial_properties)
+    update_region!(dry_run_config, "thermocouple_and_heating_wire")
 
     regions["insulation"].initial_conditions.temp = dry_run_properties.room_temperature
+    regions["insulation"].properties = merge_properties(regions["insulation"].properties, general_trial_properties)
+    update_region!(dry_run_config, "insulation")
 
-    thermocouple_data_path = joinpath(@__DIR__, "..", "thermocouple_data_processing", "heated_trial_tc_temps.csv")
-    thermocouple_data = get_thermocouple_data(thermocouple_data_path)
+    thermocouple_data = get_dry_run_thermocouple_data()
 
-    function measured_heater_wattage_per_cell(t)
-        return thermocouple_data.heater_power_interp(ForwardDiff.value(t)) / n_heated_cells
+    function bottom_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * heater_weight_1) / n_total_heated_cells
     end
 
-    return dry_run_properties, dry_run_config, thermocouple_data, measured_heater_wattage_per_cell
+    function middle_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * heater_weight_2) / n_total_heated_cells
+    end
+
+    function top_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - heater_weight_1 - heater_weight_2)) / n_total_heated_cells
+    end
+
+    return dry_run_config, dry_run_properties, thermocouple_data, bottom_measured_heater_wattage_per_cell, middle_measured_heater_wattage_per_cell, top_measured_heater_wattage_per_cell
 end
 
 Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_water_flow_trial", "hot_water_trial_properties.jl"))
@@ -552,8 +616,8 @@ function hot_water_trial()
     values_of_note = get_packed_bed_reactor_water_flow_trial_values_of_note()
     pump_shutoff_timestamp = ustrip(upreferred(values_of_note.pump_shut_off_time))
 
-    general_properties = get_hot_water_trial_properties(values_of_note)
-    hot_water_trial_properties = merge_properties(hot_water_trial_properties, general_properties)
+    general_trial_properties = get_hot_water_trial_properties(values_of_note)
+    hot_water_trial_properties = merge_properties(hot_water_trial_properties, general_trial_properties)
 
     water_properties = get_water_properties()
     hot_water_trial_properties = merge_properties(hot_water_trial_properties, water_properties)
@@ -563,9 +627,6 @@ function hot_water_trial()
 
     region_names = [hot_water_config.regions[i].name for i in eachindex(hot_water_config.regions)]
     regions = Dict(region_names .=> hot_water_config.regions)
-
-    regions["pipe_inlet"].initial_conditions.temperature = inlet_temp_interp(0.0u"s")
-    regions["pipe_inlet"].initial_conditions.mass_fractions = hot_water_trial_properties.inlet_mass_fractions
 
     function hot_water_inlet!(du, u, cell_id, vol)
         fluid_physics_functions!(du, u, cell_id, vol)
@@ -583,22 +644,42 @@ function hot_water_trial()
         end
     end
 
+    regions["pipe_inlet"].initial_conditions.temp = inlet_temp_interp(0.0)
+    regions["pipe_inlet"].initial_conditions.mass_fractions = hot_water_trial_properties.inlet_mass_fractions
     regions["pipe_inlet"].region_function = hot_water_inlet!
+    regions["pipe_inlet"].properties = merge_properties(regions["pipe_inlet"].properties, water_properties)
+    regions["pipe_inlet"].properties = merge_properties(regions["pipe_inlet"].properties, general_trial_properties)
+    update_region!(hot_water_config, "pipe_inlet")
 
     regions["silicon_carbide_preheater"].initial_conditions.temp = hot_water_trial_properties.room_temperature
     regions["silicon_carbide_preheater"].initial_conditions.mass_fractions = hot_water_trial_properties.empty_mass_fractions
+    regions["silicon_carbide_preheater"].properties = merge_properties(regions["silicon_carbide_preheater"].properties, water_properties)
+    regions["silicon_carbide_preheater"].properties = merge_properties(regions["silicon_carbide_preheater"].properties, general_trial_properties)
+    update_region!(hot_water_config, "silicon_carbide_preheater")
 
     regions["copper_mesh_reformer"].initial_conditions.temp = hot_water_trial_properties.room_temperature
     regions["copper_mesh_reformer"].initial_conditions.mass_fractions = hot_water_trial_properties.empty_mass_fractions
+    regions["copper_mesh_reformer"].properties = merge_properties(regions["copper_mesh_reformer"].properties, water_properties)
+    regions["copper_mesh_reformer"].properties = merge_properties(regions["copper_mesh_reformer"].properties, general_trial_properties)
+    update_region!(hot_water_config, "copper_mesh_reformer")
 
     regions["pipe_outlet"].initial_conditions.temp = hot_water_trial_properties.room_temperature
     regions["pipe_outlet"].initial_conditions.mass_fractions = hot_water_trial_properties.empty_mass_fractions
+    regions["pipe_outlet"].properties = merge_properties(regions["pipe_outlet"].properties, water_properties)
+    regions["pipe_outlet"].properties = merge_properties(regions["pipe_outlet"].properties, general_trial_properties)
+    update_region!(hot_water_config, "pipe_outlet")
 
     regions["steel_pipe_wall"].initial_conditions.temp = hot_water_trial_properties.room_temperature
+    regions["steel_pipe_wall"].properties = merge_properties(regions["steel_pipe_wall"].properties, general_trial_properties)
+    update_region!(hot_water_config, "steel_pipe_wall")
 
     regions["thermocouple_and_heating_wire"].initial_conditions.temp = hot_water_trial_properties.room_temperature
+    regions["thermocouple_and_heating_wire"].properties = merge_properties(regions["thermocouple_and_heating_wire"].properties, general_trial_properties)
+    update_region!(hot_water_config, "thermocouple_and_heating_wire")
 
     regions["insulation"].initial_conditions.temp = hot_water_trial_properties.room_temperature
+    regions["insulation"].properties = merge_properties(regions["insulation"].properties, general_trial_properties)
+    update_region!(hot_water_config, "insulation")
 
     inlet_cell_id = collect(grid.cellsets["pipe_inlet"])[1]
 
@@ -612,14 +693,21 @@ function hot_water_trial()
         end
     end
 
-    thermocouple_data_path = joinpath(@__DIR__, "..", "thermocouple_data_processing", "hot_water_flow_tc_temps.csv")
-    thermocouple_data = get_thermocouple_data(thermocouple_data_path)
+    thermocouple_data = get_hot_water_thermocouple_data()
 
-    function measured_heater_wattage_per_cell(t)
-        return thermocouple_data.heater_power_interp(ForwardDiff.value(t)) / n_heated_cells
+    function bottom_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * heater_weight_1) / n_total_heated_cells
     end
-    
-    return hot_water_config, hot_water_trial_properties, pump_shut_off, thermocouple_data, measured_heater_wattage_per_cell
+
+    function middle_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * heater_weight_2) / n_total_heated_cells
+    end
+
+    function top_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - heater_weight_1 - heater_weight_2)) / n_total_heated_cells
+    end
+
+    return hot_water_config, hot_water_trial_properties, pump_shut_off, thermocouple_data, bottom_measured_heater_wattage_per_cell, middle_measured_heater_wattage_per_cell, top_measured_heater_wattage_per_cell
 end
 
 #TODO: I think we could have an integrated way that allows for the properties of many trials to be sequentially added by doing something like in the initial conditions:
@@ -640,12 +728,6 @@ end
 
 fluid_regions = ["pipe_inlet", "silicon_carbide_preheater", "copper_mesh_reformer", "pipe_outlet"]
 advecting_fluid_cells = vcat(collect(grid.cellsets["pipe_inlet"]), collect(grid.cellsets["silicon_carbide_preheater"]), collect(grid.cellsets["copper_mesh_reformer"]), collect(grid.cellsets["pipe_outlet"]))
-
-heater_start = 1.0u"inch"
-heater_end = 11.0u"inch"
-
-heated_cells = findall(x -> heater_start <= x <= heater_end, [common_properties.cell_lengths_along_pipe[x] for x in collect(grid.cellsets["thermocouple_and_heating_wire"])])
-n_heated_cells = length(heated_cells)
 
 function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
     #VERY IMPORTANT: since most software uses 0-based indexing, you need to adjust the cell id by +1
@@ -679,6 +761,8 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
 
     for cell_id in eachindex(geo.cell_volumes)
         u.overall_heat_transfer_coefficient_to_environment[cell_id] = p.overall_heat_transfer_coefficient_to_environment[1]
+        u.heater_weight_1[cell_id] = p.heater_weight_1[1]
+        u.heater_weight_2[cell_id] = p.heater_weight_2[1]
     end
 
     for i in 1:length(advecting_fluid_cells) - 1 #we don't take mass out of the outlet
@@ -695,29 +779,49 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
     solve_region_groups!(du, u, geo, system) #this seems to be the culprit
 end
 
-dry_run_properties, dry_run_config, dry_run_thermocouple_data, dry_run_measured_heater_wattage_per_cell = dry_run_trial();
+dry_run_config, dry_run_properties, dry_run_thermocouple_data, dry_run_bottom_heater_wattage_per_cell, dry_run_middle_heater_wattage_per_cell, dry_run_top_heater_wattage_per_cell = dry_run_trial();
 dry_run_du0_vec, dry_run_u0_vec, dry_run_state_axes, dry_run_geo, dry_run_system = finish_fvm_config(dry_run_config, connection_map_function, check_units = false);
 
-hot_water_properties, hot_water_config, hot_water_pump_shut_off, hot_water_thermocouple_data, hot_water_measured_heater_wattage_per_cell = hot_water_trial();
+hot_water_config, hot_water_properties, hot_water_pump_shut_off, hot_water_thermocouple_data, hot_water_bottom_heater_wattage_per_cell, hot_water_middle_heater_wattage_per_cell, hot_water_top_heater_wattage_per_cell = hot_water_trial();
 hot_water_du0_vec, hot_water_u0_vec, hot_water_state_axes, hot_water_geo, hot_water_system = finish_fvm_config(hot_water_config, connection_map_function, check_units = false);
 
 p_axes = hot_water_system.p_axes
 
 function dry_run_solve_system!(du, u, p_vec, t, geo, system)
-    for cell_id in heated_cells
-        u.measured_heater_wattage_per_cell[cell_id] = dry_run_measured_heater_wattage_per_cell(t) 
+    p = ComponentVector(p_vec, p_axes)
+
+    for cell_id in bottom_heated_cells
+        du.heat[cell_id] += dry_run_bottom_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    end
+
+    for cell_id in middle_heated_cells
+        du.heat[cell_id] += dry_run_middle_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    end
+
+    for cell_id in top_heated_cells
+        du.heat[cell_id] += dry_run_top_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
     end
 
     trial_independent_solve_system!(du, u, p_vec, t, geo, system)
 end
 
 function hot_water_solve_system!(du, u, p_vec, t, geo, system)
+    p = ComponentVector(p_vec, p_axes)
+
     for cell_id in advecting_fluid_cells
         hot_water_pump_shut_off(du, u, cell_id, t)
     end
 
-    for cell_id in heated_cells
-        u.measured_heater_wattage_per_cell[cell_id] = hot_water_measured_heater_wattage_per_cell(t) 
+    for cell_id in bottom_heated_cells
+        du.heat[cell_id] += hot_water_bottom_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    end
+
+    for cell_id in middle_heated_cells
+        du.heat[cell_id] += hot_water_middle_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    end
+
+    for cell_id in top_heated_cells
+        du.heat[cell_id] += hot_water_top_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
     end
     
     trial_independent_solve_system!(du, u, p_vec, t, geo, system)
@@ -731,6 +835,8 @@ f_closure_hot_water = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solv
 #I'm just using them as a placeholder for now
 p_guess = ustrip.(Vector(ComponentVector(
     overall_heat_transfer_coefficient_to_environment = 9.612656359973201u"W/(m^2*K)", 
+    heater_weight_1 = 0.5u"1",
+    heater_weight_2 = 0.0u"1",
 )))
 
 function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data)
@@ -754,18 +860,29 @@ end
 dry_run_implicit_prob = built_trial_implicit_prob(f_closure_dry_run, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data)
 hot_water_implicit_prob = built_trial_implicit_prob(f_closure_hot_water, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data)
 
-@time sol = solve(dry_run_implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
-@time sol = solve(dry_run_implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
+#NOTE!!: since we use an interpolation for heater wattage and nothing else happens in dry_run_saveat, 
+#the solver will skip over times where the heater is on, resulting in no change
+#this obviously isn't a problem for the hot water trial because the solver has to slow down because of all the physics that do not rely on interpolated values
+desired_steps = 100
+dry_run_saveat = ustrip(upreferred(dry_run_thermocouple_data.timestamps[end])) / desired_steps
+hot_water_saveat = ustrip(upreferred(hot_water_thermocouple_data.timestamps[end])) / desired_steps
 
-#@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
+@time dry_run_test_sol = solve(dry_run_implicit_prob, FBDF(linsolve = SparspakFactorization()), dtmax = dry_run_saveat, callback = approximate_time_to_finish_cb)
+@time hot_water_test_sol = solve(hot_water_implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
 
-#u_named = [ComponentVector(sol.u[i], state_axes) for i in 1:length(sol.u)]
+#@time hot_water_krylov_sol = solve(hot_water_implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 
-#sim_file = @__FILE__
+dry_run_u_named = [ComponentVector(dry_run_test_sol.u[i], dry_run_state_axes) for i in 1:length(dry_run_test_sol.u)];
+hot_water_u_named = [ComponentVector(hot_water_test_sol.u[i], hot_water_state_axes) for i in 1:length(hot_water_test_sol.u)];
 
-#root_dir = "C:\\Users\\wille\\OneDrive\\Desktop\\Julia_cfd_output_files"
+sim_file = @__FILE__
 
-#sol_to_vtk(sol, u_named, grid, sim_file, root_dir)
+#root_dir = "C:\\Users\\wille\\OneDrive\\Desktop\\Julia_cfd_output_files" #FUCK YOU ONEDRIVE!!
+dry_run_root_dir = "C:\\Users\\wille\\Desktop\\Julia_cfd_output_files\\dry_run_trial_output"
+hot_water_root_dir = "C:\\Users\\wille\\Desktop\\Julia_cfd_output_files\\hot_water_flow_trial_output"
+
+sol_to_vtk(dry_run_test_sol, dry_run_u_named, grid, sim_file, dry_run_root_dir)
+sol_to_vtk(hot_water_test_sol, hot_water_u_named, grid, sim_file, hot_water_root_dir)
 
 dry_run_timestamps = ustrip.(dry_run_thermocouple_data.timestamps)
 hot_water_timestamps = ustrip.(hot_water_thermocouple_data.timestamps)
@@ -776,40 +893,73 @@ TC3_cell_id = Int(ustrip(thermocouple_and_heating_wire_properties.TC3_closest_ce
 TC4_cell_id = Int(ustrip(thermocouple_and_heating_wire_properties.TC4_closest_cell_id))
 TC5_cell_id = Int(ustrip(thermocouple_and_heating_wire_properties.TC5_closest_cell_id))
 
-n_trials = 2
 n_saves = 100
 dry_run_save_interval = ustrip(upreferred(dry_run_thermocouple_data.timestamps[end])) / n_saves
 hot_water_save_interval = ustrip(upreferred(hot_water_thermocouple_data.timestamps[end])) / n_saves
 
-function loss(θ)
-    #Dry Run
-    dry_run_loss_prob = remake(implicit_prob, p = θ)
+function dry_run_loss(θ)
+    dry_run_loss_prob = remake(dry_run_implicit_prob, p = θ)
 
-    sol = solve(
+    dry_run_sol = solve(
         dry_run_loss_prob, 
         FBDF(linsolve = SparspakFactorization(),), 
         sensealg = ForwardSensitivity(),
         #InterpolatingAdjoint(autodiff = AutoMooncake()),
         #callback = approximate_time_to_finish_cb
-        saveat = dry_run_save_interval
+        dtmax = dry_run_save_interval,
+        saveat = dry_run_save_interval,
     )
 
-    u_named = [ComponentVector(sol.u[i], state_axes) for i in eachindex(sol.u)]
+    @show length(dry_run_sol.t)
+
+    if length(dry_run_sol.t) < n_saves + 1
+        return nothing, nothing, 1e10
+    end
+
+    u_named = [ComponentVector(dry_run_sol.u[i], dry_run_state_axes) for i in eachindex(dry_run_sol.u)]
 
     mean_squared_error = 0.0
 
-    for i in eachindex(sol.t)
-        mean_squared_error += abs2(ustrip(u_named[i].temp[TC1_cell_id]) - ustrip(thermocouple_data.TC1_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].temp[TC2_cell_id]) - ustrip(thermocouple_data.TC2_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].temp[TC3_cell_id]) - ustrip(thermocouple_data.TC3_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].temp[TC4_cell_id]) - ustrip(thermocouple_data.TC4_temps_interp(sol.t[i])))
-        mean_squared_error += abs2(ustrip(u_named[i].temp[TC5_cell_id]) - ustrip(thermocouple_data.TC5_temps_interp(sol.t[i])))
+    for i in eachindex(dry_run_sol.t)
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC1_cell_id]) - ustrip(dry_run_thermocouple_data.TC1_temps_interp(dry_run_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC2_cell_id]) - ustrip(dry_run_thermocouple_data.TC2_temps_interp(dry_run_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC3_cell_id]) - ustrip(dry_run_thermocouple_data.TC3_temps_interp(dry_run_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC4_cell_id]) - ustrip(dry_run_thermocouple_data.TC4_temps_interp(dry_run_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC5_cell_id]) - ustrip(dry_run_thermocouple_data.TC5_temps_interp(dry_run_sol.t[i])))
         #mean_squared_error += abs2(ustrip(u_named[i].temp[end]) - ustrip(outlet_temp_interp(sol.t[i])))
         #I don't think using the measured outlet temperature is actually useful
     end
 
-    #Hot Water 
-    hot_water_loss_prob = remake(implicit_prob, p = θ)
+    loss = mean_squared_error / length(dry_run_sol.t)
+
+    return dry_run_sol.t, u_named, loss
+end
+
+function viewable_dry_run_loss(θ)
+    sol_t, u_named, loss = dry_run_loss(θ)
+
+    simulated_thermocouple_data = (
+        dry_run_times = sol_t,
+        dry_run_TC1 = [u_named[i].temp[TC1_cell_id] for i in eachindex(sol_t)],
+        dry_run_TC2 = [u_named[i].temp[TC2_cell_id] for i in eachindex(sol_t)],
+        dry_run_TC3 = [u_named[i].temp[TC3_cell_id] for i in eachindex(sol_t)],
+        dry_run_TC4 = [u_named[i].temp[TC4_cell_id] for i in eachindex(sol_t)],
+        dry_run_TC5 = [u_named[i].temp[TC5_cell_id] for i in eachindex(sol_t)],
+        loss = loss
+    )
+
+    return simulated_thermocouple_data
+end
+
+function pure_dry_run_loss(θ)
+    sol_t, u_named, loss = dry_run_loss(θ)
+
+    return loss 
+end
+
+function hot_water_loss(θ)
+    
+    hot_water_loss_prob = remake(hot_water_implicit_prob, p = θ)
 
     hot_water_sol = solve(
         hot_water_loss_prob, 
@@ -820,39 +970,110 @@ function loss(θ)
         saveat = hot_water_save_interval
     )
 
+    @show length(hot_water_sol.t)
+
     #this is to prevent the optimizer from crashing the simulation to get a lower mean_squared_error
-    if length(sol.t) + length(hot_water_sol.t) < n_trials * n_saves
-        return 1e10
+    if length(hot_water_sol.t) < n_saves + 1
+        return nothing, nothing, 1e10
     end
 
-    hot_water_u_named = [ComponentVector(hot_water_sol.u[i], state_axes) for i in eachindex(hot_water_sol.u)]
+    u_named = [ComponentVector(hot_water_sol.u[i], hot_water_state_axes) for i in eachindex(hot_water_sol.u)]
+
+    mean_squared_error = 0.0
 
     for i in eachindex(hot_water_sol.t)
-        mean_squared_error += abs2(ustrip(hot_water_u_named[i].temp[TC1_cell_id]) - ustrip(thermocouple_data.TC1_temps_interp(hot_water_sol.t[i])))
-        mean_squared_error += abs2(ustrip(hot_water_u_named[i].temp[TC2_cell_id]) - ustrip(thermocouple_data.TC2_temps_interp(hot_water_sol.t[i])))
-        mean_squared_error += abs2(ustrip(hot_water_u_named[i].temp[TC3_cell_id]) - ustrip(thermocouple_data.TC3_temps_interp(hot_water_sol.t[i])))
-        mean_squared_error += abs2(ustrip(hot_water_u_named[i].temp[TC4_cell_id]) - ustrip(thermocouple_data.TC4_temps_interp(hot_water_sol.t[i])))
-        mean_squared_error += abs2(ustrip(hot_water_u_named[i].temp[TC5_cell_id]) - ustrip(thermocouple_data.TC5_temps_interp(hot_water_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC1_cell_id]) - ustrip(hot_water_thermocouple_data.TC1_temps_interp(hot_water_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC2_cell_id]) - ustrip(hot_water_thermocouple_data.TC2_temps_interp(hot_water_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC3_cell_id]) - ustrip(hot_water_thermocouple_data.TC3_temps_interp(hot_water_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC4_cell_id]) - ustrip(hot_water_thermocouple_data.TC4_temps_interp(hot_water_sol.t[i])))
+        mean_squared_error += abs2(ustrip(u_named[i].temp[TC5_cell_id]) - ustrip(hot_water_thermocouple_data.TC5_temps_interp(hot_water_sol.t[i])))
         #mean_squared_error += abs2(ustrip(u_named[i].temp[end]) - ustrip(outlet_temp_interp(sol.t[i])))
         #I don't think using the measured outlet temperature is actually useful
     end
 
-    return mean_squared_error / (n_trials * n_saves)
+    loss = mean_squared_error / length(hot_water_sol.t)
+
+    return hot_water_sol.t, u_named, loss
+end
+
+function viewable_hot_water_loss(θ)
+    sol_t, u_named, loss = hot_water_loss(θ)
+
+    simulated_thermocouple_data = (
+        hot_water_times = sol_t,
+        hot_water_TC1 = [u_named[i].temp[TC1_cell_id] for i in eachindex(sol_t)],
+        hot_water_TC2 = [u_named[i].temp[TC2_cell_id] for i in eachindex(sol_t)],
+        hot_water_TC3 = [u_named[i].temp[TC3_cell_id] for i in eachindex(sol_t)],
+        hot_water_TC4 = [u_named[i].temp[TC4_cell_id] for i in eachindex(sol_t)],
+        hot_water_TC5 = [u_named[i].temp[TC5_cell_id] for i in eachindex(sol_t)],
+        loss = loss
+    )
+    
+    return simulated_thermocouple_data
+end
+
+function pure_hot_water_loss(θ)
+    sol_t, u_named, loss = hot_water_loss(θ)
+
+    return loss
+end
+
+function loss(θ)
+    return (pure_dry_run_loss(θ) + pure_hot_water_loss(θ)) / 2.0
 end
 
 p_guess_init = ComponentVector(
     overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)",
+    heater_weight_1 = 0.20,
+    heater_weight_2 = 0.40,
 )
 
 p_axes = getaxes(p_guess_init)
 p_guess = ustrip.(upreferred.(Vector(p_guess_init)))
 
-loss(p_guess)
-#why is getting the gradient take so much longer than just running the simulation
-#usually finding the gradient takes around 2x-5x longer than running the simulation once
-#while the Tsit5() solver does obey this rule of thumb, any kind of FBDF method takes forever
+ForwardDiff.gradient(pure_dry_run_loss, p_guess)
 
-@time grad = ForwardDiff.gradient(loss, p_guess)
+dry_run_simulated_thermocouple_data = viewable_dry_run_loss(p_guess)
+dry_run_simulated_thermocouple_data.loss
+#84243.06137568069
+#84243.06137568069
+
+dry_run_times = dry_run_simulated_thermocouple_data.dry_run_times
+plot(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC1, label="Sim TC1", linewidth=2)
+plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC1_temps_interp.(dry_run_times)), label="Exp TC1", linewidth=2)
+
+plot!(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC2, label="Sim TC2", linewidth=2)
+plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC2_temps_interp.(dry_run_times)), label="Exp TC2", linewidth=2)
+
+plot!(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC3, label="Sim TC3", linewidth=2)
+plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC3_temps_interp.(dry_run_times)), label="Exp TC3", linewidth=2)
+
+plot!(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC4, label="Sim TC4", linewidth=2)
+plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC4_temps_interp.(dry_run_times)), label="Exp TC4", linewidth=2)
+
+plot!(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC5, label="Sim TC5", linewidth=2)
+plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC5_temps_interp.(dry_run_times)), label="Exp TC5", linewidth=2)
+
+hot_water_simulated_thermocouple_data = viewable_hot_water_loss(p_guess)
+hot_water_times = hot_water_simulated_thermocouple_data.hot_water_times
+plot(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC1, label="Sim TC1", linewidth=2)
+plot!(hot_water_times, ustrip(hot_water_thermocouple_data.TC1_temps_interp.(hot_water_times)), label="Exp TC1", linewidth=2)
+
+plot!(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC2, label="Sim TC2", linewidth=2)
+plot!(hot_water_times, ustrip(hot_water_thermocouple_data.TC2_temps_interp.(hot_water_times)), label="Exp TC2", linewidth=2)
+
+plot!(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC3, label="Sim TC3", linewidth=2)
+plot!(hot_water_times, ustrip(hot_water_thermocouple_data.TC3_temps_interp.(hot_water_times)), label="Exp TC3", linewidth=2)
+
+plot!(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC4, label="Sim TC4", linewidth=2)
+plot!(hot_water_times, ustrip(hot_water_thermocouple_data.TC4_temps_interp.(hot_water_times)), label="Exp TC4", linewidth=2)
+
+plot!(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC5, label="Sim TC5", linewidth=2)
+plot!(hot_water_times, ustrip(hot_water_thermocouple_data.TC5_temps_interp.(hot_water_times)), label="Exp TC5", linewidth=2)
+
+#wow, these results are very interesting
+
+#@time grad = ForwardDiff.gradient(loss, p_guess)
 #1.967 s (1368576 allocations: 369.83 MiB)
 #that's great, it means that these types of 1D problems are not very computationally intensive for finding gradients
 
@@ -867,14 +1088,18 @@ loss(p_guess)
 #Logging.disable_logging(Logging.Warn - 1)  # enable all warnings
 
 adtype = Optimization.AutoForwardDiff()
-optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
+optf = Optimization.OptimizationFunction((x, p) -> pure_dry_run_loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     overall_heat_transfer_coefficient_to_environment = 0.001u"W/(m^2*K)",
+    heater_weight_1 = 0.0001u"1",
+    heater_weight_2 = 0.0001u"1",
 ))))
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     overall_heat_transfer_coefficient_to_environment = 1000.0u"W/(m^2*K)", 
+    heater_weight_1 = 0.9999u"1",
+    heater_weight_2 = 0.9999u"1",
 ))))
 
 optprob = Optimization.OptimizationProblem(optf, p_guess, lb=p_lower_bounds, ub=p_upper_bounds)
@@ -883,28 +1108,11 @@ function randomize(lower, upper)
     return lower + (upper - lower) * rand()
 end
 
-#p_ensemble = [[randomize(p_lower_bounds[i], p_upper_bounds[i]) for i in eachindex(p_lower_bounds)] for _ in 1:Sys.CPU_THREADS]
-
-p_ensemble = exp.(range(log(p_lower_bounds[1]), log(p_upper_bounds[1]), length = 100))
-#length=Sys.CPU_THREADS))
-
-for i in eachindex(p_ensemble)
-    println(i)
-    loss_i = loss([p_ensemble[i]])
-    println(loss_i)
-    push!(resulting_losses, loss_i)
+function randomize_list(lower, upper, length)
+    return [lower + (upper - lower) * rand() for _ in 1:length]
 end
 
-#resulting_losses = [loss([p_ensemble[i]]) for i in eachindex(p_ensemble)]
-
-plot(p_ensemble[1:80], resulting_losses[101:180])
-
-p_ensemble[67]
-resulting_losses[167]
-
-CSV.write("optimization_results_2026-05-11_09-01-04.csv", DataFrame(loss = resulting_losses[101:end], overall_heat_transfer_coefficient_to_environment = p_ensemble))
-
-#a heat transfer coefficient of 10.0  seems to give the lowest loss
+p_ensemble = [[randomize(p_lower_bounds[i], p_upper_bounds[i]) for i in eachindex(p_lower_bounds)] for _ in 1:Sys.CPU_THREADS]
 
 function prob_func(prob, i, repeat)
     return remake(prob, p = p_ensemble[i])  
@@ -948,8 +1156,8 @@ cb = function (state, l)
     false
 end
 
-#=
-@time res = Optimization.solve(
+
+#=@time res = Optimization.solve(
     ensembleprob,
     callback = cb,
     OptimizationOptimJL.LBFGS(),
@@ -960,10 +1168,9 @@ end
     #IPNewton works kinda fine
     #f_abstol=1e-8,
     #g_abstol=1e-8,
-)
-=#
+)=#
 
-@time res = Optimization.solve(
+#=@time res = Optimization.solve(
     optprob,
     callback = cb,
     OptimizationOptimJL.LBFGS(),
@@ -974,9 +1181,9 @@ end
     #IPNewton works kinda fine
     #f_abstol=1e-8,
     #g_abstol=1e-8,
-)
+)=#
 
-#=
+
 using OptimizationBBO #for BlackBoxOptim
 @time res = solve(
     ensembleprob, 
@@ -985,7 +1192,7 @@ using OptimizationBBO #for BlackBoxOptim
     trajectories = Sys.CPU_THREADS,
     callback = cb,
 )
-=#
+
 
 res.u0_vec
 
@@ -1020,5 +1227,3 @@ for i in eachindex(results_data.overall_heat_transfer_coefficient_to_environment
 
     push!(middle_thermocouple_temps, [u_named[j].temp[TC3_cell_id] for j in eachindex(u_named)])
 end
-
-

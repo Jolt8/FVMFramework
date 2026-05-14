@@ -16,8 +16,9 @@ function heater_power_interp(t)
     return 0.0
 end
     
-function get_thermocouple_data(experimental_data_path::String)
+function get_hot_water_thermocouple_data()
 
+experimental_data_path = joinpath(@__DIR__, "hot_water_flow_tc_temps.csv")
 trial = CSV.read(experimental_data_path, DataFrame)
 
 timestamps = (trial.Time_ms .* u"ms") .|> u"s"
@@ -50,8 +51,6 @@ TC2_temps_interp = LinearInterpolation(ustrip.(vcat(TC2_temps[1], TC2_temps)), u
 TC3_temps_interp = LinearInterpolation(ustrip.(vcat(TC3_temps[1], TC3_temps)), ustrip.(vcat(0.0, timestamps)))
 TC4_temps_interp = LinearInterpolation(ustrip.(vcat(TC4_temps[1], TC4_temps)), ustrip.(vcat(0.0, timestamps)))
 TC5_temps_interp = LinearInterpolation(ustrip.(vcat(TC5_temps[1], TC5_temps)), ustrip.(vcat(0.0, timestamps)))
-
-
 
 return (
     timestamps = timestamps,
