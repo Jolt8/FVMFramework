@@ -8,20 +8,20 @@ function get_empty_trial_properties()
         room_temperature = 14.5u"°C" |> u"K",
 
         inlet_mass_fractions = ComponentVector(
-            methanol = 1e-20u"kg/kg",
+            #methanol = 1e-20u"kg/kg",
             water = 1e-20u"kg/kg",
-            carbon_monoxide = 1e-20u"kg/kg",
-            hydrogen = 1e-6u"kg/kg",
-            carbon_dioxide = 1e-20u"kg/kg",
+            #carbon_monoxide = 1e-20u"kg/kg",
+            #hydrogen = 1e-6u"kg/kg",
+            #carbon_dioxide = 1e-20u"kg/kg",
             air = 1.0u"kg/kg"
         ),
 
         empty_mass_fractions = ComponentVector(
-            methanol = 1e-20u"kg/kg",
+            #methanol = 1e-20u"kg/kg",
             water = 1e-20u"kg/kg",
-            carbon_monoxide = 1e-20u"kg/kg",
-            hydrogen = 1e-6u"kg/kg",
-            carbon_dioxide = 1e-20u"kg/kg",
+            #carbon_monoxide = 1e-20u"kg/kg",
+            #hydrogen = 1e-6u"kg/kg",
+            #carbon_dioxide = 1e-20u"kg/kg",
             air = 1.0u"kg/kg"
         ),
     )
