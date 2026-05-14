@@ -70,6 +70,9 @@ getcellset(grid, "insulation")
 addfacetset!(grid, "insulation_to_air", xyz -> xyz[2] >= 4 * pipe_width)
 getfacetset(grid, "insulation_to_air")
 
+addfacetset!(grid, "pipe_endcaps_to_air", xyz -> xyz[2] >= pipe_width && xyz[2] <= 2 * pipe_width && (xyz[3] == 0.0 || xyz[3] == stripped_pipe_length))
+getfacetset(grid, "pipe_endcaps_to_air")
+
 n_cells = length(grid.cells)
 
 struct Fluid <: AbstractPhysics end
@@ -201,7 +204,8 @@ add_setup_syms!(config;
         k = u"W/(m*K)", #k and cp cause a dimsnion error for some reason
         cp = u"J/(kg*K)",
         rho = u"kg/m^3",
-        overall_heat_transfer_coefficient_to_environment = u"W/(m^2*K)",
+        insulation_to_air_overall_heat_transfer_coefficient_to_environment = u"W/(m^2*K)",
+        pipe_endcaps_to_air_thermal_conductance = u"W/K",
         heater_weight_1 = u"1",
         heater_weight_2 = u"1",
         wattage_received_per_m = u"W/m",
@@ -232,7 +236,8 @@ add_setup_syms!(config;
     ),
     second_order_syms = [],
     optimized_parameters = ComponentVector(
-        overall_heat_transfer_coefficient_to_environment = 0.0u"W/(m^2*K)",
+        insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.0u"W/(m^2*K)",
+        pipe_endcaps_to_air_thermal_conductance = 0.0u"W/K",
         heater_weight_1 = 0.0u"1",
         heater_weight_2 = 0.0u"1",
     )
@@ -424,7 +429,21 @@ add_patch!(
         cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
         cell_volumes
     )
-        du.heat[idx_a] += (u.overall_heat_transfer_coefficient_to_environment[idx_a] * u.insulation_to_environment_cell_areas[idx_a]) * (u.room_temperature[idx_a] - u.temp[idx_a])
+        du.heat[idx_a] += (u.insulation_to_air_overall_heat_transfer_coefficient_to_environment[idx_a] * u.insulation_to_environment_cell_areas[idx_a]) * (u.room_temperature[idx_a] - u.temp[idx_a])
+    end
+)
+
+add_patch!(
+    config, "pipe_endcaps_to_air";
+    properties = ComponentVector(), #no new properties here
+    patch_function =
+    function pipe_endcaps_to_air!(
+        du, u,
+        idx_a, idx_b, face_idx, #idx_b is not applicable here because it connects to nothing
+        cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+        cell_volumes
+    )
+        du.heat[idx_a] += (u.pipe_endcaps_to_air_thermal_conductance[idx_a]) * (u.room_temperature[idx_a] - u.temp[idx_a])
     end
 )
 
@@ -760,7 +779,8 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
     p = ComponentVector(p_vec, p_axes)
 
     for cell_id in eachindex(geo.cell_volumes)
-        u.overall_heat_transfer_coefficient_to_environment[cell_id] = p.overall_heat_transfer_coefficient_to_environment[1]
+        u.insulation_to_air_overall_heat_transfer_coefficient_to_environment[cell_id] = p.insulation_to_air_overall_heat_transfer_coefficient_to_environment[1]
+        u.pipe_endcaps_to_air_thermal_conductance[cell_id] = p.pipe_endcaps_to_air_thermal_conductance[1]
         u.heater_weight_1[cell_id] = p.heater_weight_1[1]
         u.heater_weight_2[cell_id] = p.heater_weight_2[1]
     end
@@ -834,9 +854,10 @@ f_closure_hot_water = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solv
 #NOTE: p is not actually being used in the dry run or hot water functions right now because I haven't set them up yet
 #I'm just using them as a placeholder for now
 p_guess = ustrip.(Vector(ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 9.612656359973201u"W/(m^2*K)", 
-    heater_weight_1 = 0.5u"1",
-    heater_weight_2 = 0.0u"1",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.001001988830602888u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 49.99956989686737u"W/K",
+    heater_weight_1 = 0.2466099462082544,
+    heater_weight_2 = 0.5729818200082505,
 )))
 
 function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data)
@@ -845,6 +866,8 @@ function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data
     jac_sparsity = ADTypes.jacobian_sparsity(
         (du, u) -> f_closure(du, u, p_guess, 0.0), du0_vec, u0_vec, detector
     )
+
+    @show jac_sparsity
 
     ode_func = ODEFunction(f_closure, jac_prototype = float.(jac_sparsity))
 
@@ -881,8 +904,8 @@ sim_file = @__FILE__
 dry_run_root_dir = "C:\\Users\\wille\\Desktop\\Julia_cfd_output_files\\dry_run_trial_output"
 hot_water_root_dir = "C:\\Users\\wille\\Desktop\\Julia_cfd_output_files\\hot_water_flow_trial_output"
 
-sol_to_vtk(dry_run_test_sol, dry_run_u_named, grid, sim_file, dry_run_root_dir)
-sol_to_vtk(hot_water_test_sol, hot_water_u_named, grid, sim_file, hot_water_root_dir)
+#sol_to_vtk(dry_run_test_sol, dry_run_u_named, grid, sim_file, dry_run_root_dir)
+#sol_to_vtk(hot_water_test_sol, hot_water_u_named, grid, sim_file, hot_water_root_dir)
 
 dry_run_timestamps = ustrip.(dry_run_thermocouple_data.timestamps)
 hot_water_timestamps = ustrip.(hot_water_thermocouple_data.timestamps)
@@ -897,6 +920,12 @@ n_saves = 100
 dry_run_save_interval = ustrip(upreferred(dry_run_thermocouple_data.timestamps[end])) / n_saves
 hot_water_save_interval = ustrip(upreferred(hot_water_thermocouple_data.timestamps[end])) / n_saves
 
+
+dry_run_heater_powers = dry_run_thermocouple_data.heater_power_interp.(ustrip.(dry_run_thermocouple_data.timestamps))
+
+dry_run_tstops = ustrip.(upreferred.(dry_run_thermocouple_data.timestamps[findall(!iszero, dry_run_heater_powers)]))
+
+
 function dry_run_loss(θ)
     dry_run_loss_prob = remake(dry_run_implicit_prob, p = θ)
 
@@ -906,8 +935,9 @@ function dry_run_loss(θ)
         sensealg = ForwardSensitivity(),
         #InterpolatingAdjoint(autodiff = AutoMooncake()),
         #callback = approximate_time_to_finish_cb
-        dtmax = dry_run_save_interval,
+        #dtmax = dry_run_save_interval,
         saveat = dry_run_save_interval,
+        tstops = dry_run_tstops,
     )
 
     @show length(dry_run_sol.t)
@@ -1023,9 +1053,10 @@ function loss(θ)
 end
 
 p_guess_init = ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 1.0u"W/(m^2*K)",
-    heater_weight_1 = 0.20,
-    heater_weight_2 = 0.40,
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.001001988830602888u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 49.99956989686737u"W/K",
+    heater_weight_1 = 0.2466099462082544,
+    heater_weight_2 = 0.5729818200082505,
 )
 
 p_axes = getaxes(p_guess_init)
@@ -1038,25 +1069,43 @@ dry_run_simulated_thermocouple_data.loss
 #84243.06137568069
 #84243.06137568069
 
+plot_output_dir = joinpath(@__DIR__, "graphs")
+
+plot(dry_run_thermocouple_data.timestamps[1:1000], dry_run_thermocouple_data.heater_power_interp.(ustrip.(dry_run_thermocouple_data.timestamps[1:1000])))
+
 dry_run_times = dry_run_simulated_thermocouple_data.dry_run_times
-plot(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC1, label="Sim TC1", linewidth=2)
-plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC1_temps_interp.(dry_run_times)), label="Exp TC1", linewidth=2)
+TC1_plt = plot(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC1, label="Sim TC1", linewidth=2)
+plot!(TC1_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC1_temps_interp.(dry_run_times)), label="Exp TC1", linewidth=2)
 
-plot!(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC2, label="Sim TC2", linewidth=2)
-plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC2_temps_interp.(dry_run_times)), label="Exp TC2", linewidth=2)
+savefig(TC1_plt, joinpath(plot_output_dir, "TC1_dry_run_loss.png"))
 
-plot!(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC3, label="Sim TC3", linewidth=2)
-plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC3_temps_interp.(dry_run_times)), label="Exp TC3", linewidth=2)
+TC2_plt = plot(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC2, label="Sim TC2", linewidth=2)
+plot!(TC2_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC2_temps_interp.(dry_run_times)), label="Exp TC2", linewidth=2)
 
-plot!(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC4, label="Sim TC4", linewidth=2)
-plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC4_temps_interp.(dry_run_times)), label="Exp TC4", linewidth=2)
+savefig(TC2_plt, joinpath(plot_output_dir, "TC2_dry_run_loss.png"))
 
-plot!(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC5, label="Sim TC5", linewidth=2)
-plot!(dry_run_times, ustrip(dry_run_thermocouple_data.TC5_temps_interp.(dry_run_times)), label="Exp TC5", linewidth=2)
+TC3_plt = plot(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC3, label="Sim TC3", linewidth=2)
+plot!(TC3_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC3_temps_interp.(dry_run_times)), label="Exp TC3", linewidth=2)
+
+savefig(TC3_plt, joinpath(plot_output_dir, "TC3_dry_run_loss.png"))
+
+TC4_plt = plot(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC4, label="Sim TC4", linewidth=2)
+plot!(TC4_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC4_temps_interp.(dry_run_times)), label="Exp TC4", linewidth=2)
+
+savefig(TC4_plt, joinpath(plot_output_dir, "TC4_dry_run_loss.png"))
+
+TC5_plt = plot(dry_run_times, dry_run_simulated_thermocouple_data.dry_run_TC5, label="Sim TC5", linewidth=2)
+plot!(TC5_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC5_temps_interp.(dry_run_times)), label="Exp TC5", linewidth=2)
+
+savefig(TC5_plt, joinpath(plot_output_dir, "TC5_dry_run_loss.png"))
+
+overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), size=(1000, 250*5), ylims=(250, 600))
+
+savefig(overall_plot, joinpath(plot_output_dir, "overall_dry_run_loss.png"))
 
 hot_water_simulated_thermocouple_data = viewable_hot_water_loss(p_guess)
 hot_water_times = hot_water_simulated_thermocouple_data.hot_water_times
-plot(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC1, label="Sim TC1", linewidth=2)
+plot!(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC1, label="Sim TC1", linewidth=2)
 plot!(hot_water_times, ustrip(hot_water_thermocouple_data.TC1_temps_interp.(hot_water_times)), label="Exp TC1", linewidth=2)
 
 plot!(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC2, label="Sim TC2", linewidth=2)
@@ -1091,13 +1140,15 @@ adtype = Optimization.AutoForwardDiff()
 optf = Optimization.OptimizationFunction((x, p) -> pure_dry_run_loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 0.001u"W/(m^2*K)",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.001u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 0.1u"W/K",
     heater_weight_1 = 0.0001u"1",
     heater_weight_2 = 0.0001u"1",
 ))))
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)", 
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)", 
+    pipe_endcaps_to_air_thermal_conductance = 100.0u"W/K",
     heater_weight_1 = 0.9999u"1",
     heater_weight_2 = 0.9999u"1",
 ))))
@@ -1170,7 +1221,7 @@ end
     #g_abstol=1e-8,
 )=#
 
-#=@time res = Optimization.solve(
+@time res = Optimization.solve(
     optprob,
     callback = cb,
     OptimizationOptimJL.LBFGS(),
@@ -1181,9 +1232,10 @@ end
     #IPNewton works kinda fine
     #f_abstol=1e-8,
     #g_abstol=1e-8,
-)=#
+)
 
 
+#=
 using OptimizationBBO #for BlackBoxOptim
 @time res = solve(
     ensembleprob, 
@@ -1192,9 +1244,20 @@ using OptimizationBBO #for BlackBoxOptim
     trajectories = Sys.CPU_THREADS,
     callback = cb,
 )
+=#
+
+using OptimizationBBO #for BlackBoxOptim
+@time res = solve(
+    optprob, 
+    BBO_adaptive_de_rand_1_bin_radiuslimited(),
+    callback = cb,
+    PoulationSize = 100,
+    #Method = :RandomSearcher
+    #Method = :SepReal
+)
 
 
-res.u0_vec
+res.u
 
 loss(ustrip.(upreferred.(Vector(p_vec_fitted))))
 
@@ -1209,12 +1272,12 @@ results_path = joinpath(@__DIR__, "optimization_results", "optimization_results_
 
 results_data = CSV.read(results_path, DataFrame)
 
-results_data.overall_heat_transfer_coefficient_to_environment
+results_data.insulation_to_air_overall_heat_transfer_coefficient_to_environment
 
 middle_thermocouple_temps = []
 
-for i in eachindex(results_data.overall_heat_transfer_coefficient_to_environment[1:20])
-    p_test = [results_data.overall_heat_transfer_coefficient_to_environment[i]]
+for i in eachindex(results_data.insulation_to_air_overall_heat_transfer_coefficient_to_environment[1:20])
+    p_test = [results_data.insulation_to_air_overall_heat_transfer_coefficient_to_environment[i]]
 
     test_prob = remake(implicit_prob, p = p_test)
     
