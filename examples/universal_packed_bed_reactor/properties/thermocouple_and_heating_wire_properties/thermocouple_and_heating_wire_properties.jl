@@ -1,28 +1,25 @@
 
 function get_cell_lengths_along_property_group(grid, cell_set_name, cell_lengths_along_pipe)
-    cell_set_cells = grid.cellsets[cell_set_name]
-    cell_set_cell_lengths = zeros(length(cell_set_cells)) .* u"m"
-
-    for (i, cell_id) in enumerate(cell_set_cells)
-        cell_set_cell_lengths[i] = cell_lengths_along_pipe[cell_id]
-    end 
-
-    return cell_set_cell_lengths
+    return cell_lengths_along_pipe[grid.cellsets[cell_set_name]]
 end 
 
-function get_heating_wire_and_thermocouple_properties(grid, pipe_length, n_cells_axial, cell_lengths_along_pipe)
+function get_thermocouple_closest_cell_id(grid, cell_lengths_along_pipe, axial_position_of_thermocouple)
+    cell_ids = grid.cellsets["thermocouple_and_heating_wire"]
+    return argmin(id -> abs(cell_lengths_along_pipe[id] - axial_position_of_thermocouple), cell_ids)
+end
+
+
+function get_new_heating_wire_and_thermocouple_properties(grid, pipe_length, n_cells_axial, cell_lengths_along_pipe)
     # ── Thermocouple axial positions (measured from inlet face) ──────────────
     # ⚠️ TODO: confirm exact axial positions of each TC bead from your physical build notes
 
-    thermocouple_region_cell_lengths_along_pipe = get_cell_lengths_along_property_group(grid, "thermocouple_and_heating_wire", cell_lengths_along_pipe)
-
     #note that cell_lengths_along_pipe contains the cell lenghts along the reactor for all 400 cells
     #thus, we have to index it with only the cells in this region to get the correct cell id
-    TC1_closest_cell_id = argmin(abs.(thermocouple_region_cell_lengths_along_pipe .- (1.5u"inch" |> u"m")))
-    TC2_closest_cell_id = argmin(abs.(thermocouple_region_cell_lengths_along_pipe .- (3.0u"inch" |> u"m")))
-    TC3_closest_cell_id = argmin(abs.(thermocouple_region_cell_lengths_along_pipe .- (5.0u"inch" |> u"m")))
-    TC4_closest_cell_id = argmin(abs.(thermocouple_region_cell_lengths_along_pipe .- (7.5u"inch" |> u"m")))
-    TC5_closest_cell_id = argmin(abs.(thermocouple_region_cell_lengths_along_pipe .- (10.0u"inch" |> u"m")))
+    TC1_closest_cell_id = get_thermocouple_closest_cell_id(grid, cell_lengths_along_pipe, 1.5u"inch" |> u"m")
+    TC2_closest_cell_id = get_thermocouple_closest_cell_id(grid, cell_lengths_along_pipe, 3.0u"inch" |> u"m")
+    TC3_closest_cell_id = get_thermocouple_closest_cell_id(grid, cell_lengths_along_pipe, 5.0u"inch" |> u"m")
+    TC4_closest_cell_id = get_thermocouple_closest_cell_id(grid, cell_lengths_along_pipe, 7.5u"inch" |> u"m")
+    TC5_closest_cell_id = get_thermocouple_closest_cell_id(grid, cell_lengths_along_pipe, 10.0u"inch" |> u"m")
     #note that cell_lenghts_along_pipe[region_cells] doesn't work here and returns the wrong index
 
     # ── Effective lumped properties for the TC+tape annular region ───────────
