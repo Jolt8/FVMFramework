@@ -1023,7 +1023,7 @@ function loss(θ)
 end
 
 p_guess_init = ComponentVector(
-    overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)",
+    overall_heat_transfer_coefficient_to_environment = 1.0u"W/(m^2*K)",
     heater_weight_1 = 0.20,
     heater_weight_2 = 0.40,
 )
