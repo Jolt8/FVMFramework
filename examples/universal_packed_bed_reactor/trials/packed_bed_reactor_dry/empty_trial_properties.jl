@@ -5,6 +5,8 @@ function get_empty_trial_properties()
     empty_trial_properties = ComponentVector(
         pipe_mass_flow = 0.0u"g/minute",
 
+        room_temperature = 14.5u"°C" |> u"K",
+
         inlet_mass_fractions = ComponentVector(
             methanol = 1e-20u"kg/kg",
             water = 1e-20u"kg/kg",
