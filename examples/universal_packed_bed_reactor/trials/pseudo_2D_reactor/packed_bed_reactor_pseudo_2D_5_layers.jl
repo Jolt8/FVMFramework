@@ -1001,13 +1001,13 @@ f_closure_hot_water = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solv
 #NOTE: p is not actually being used in the dry run or hot water functions right now because I haven't set them up yet
 #I'm just using them as a placeholder for now
 first_p_guess_init = ComponentVector(
-    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.0010350276291573024u"W/(m^2*K)",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.50350276291573024u"W/(m^2*K)",
     pipe_endcaps_to_air_thermal_conductance = 0.10211046718339412u"W/K",
-    heater_weight_1 = 0.2539732329337388,
+    heater_weight_1 = 0.18489915969386572,
     heater_weight_2 = 0.4543362998064088,
-    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 0.21638628606893434u"W/(m^2*K)",
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 500.0u"W/(m^2*K)",
     TC1_thermal_resistance = 9.915449578133705u"K/W",
-    TC2_thermal_resistance = 7.282172315094936u"K/W",
+    TC2_thermal_resistance = 4.594385265207739u"K/W",
     TC3_thermal_resistance = 8.302154500636501u"K/W",
     TC4_thermal_resistance = 7.940711757162081u"K/W",
     TC5_thermal_resistance = 3.006091646567366u"K/W",
@@ -1104,7 +1104,19 @@ dry_run_temperature_variance = get_trial_temperature_variance(dry_run_thermocoup
 hot_water_temperature_variance = get_trial_temperature_variance(hot_water_thermocouple_data)
 
 function dry_run_loss(θ)
-    dry_run_loss_prob = remake(dry_run_implicit_prob, p = θ)
+    prob = get!(task_local_storage(), :dry_run_implicit_prob) do
+        # Deepcopy the mutable state and geometry objects
+        system_copy = deepcopy(dry_run_system)
+        geo_copy = deepcopy(dry_run_geo)
+        
+        # Build a new closure bound to the thread-isolated copies
+        f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, dry_run_solve_system!, geo_copy, system_copy)
+        
+        # Re-generate the Jacobian sparsity and the implicit ODEProblem
+        built_trial_implicit_prob(f_closure, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data)
+    end
+    
+    dry_run_loss_prob = remake(prob, p = θ)
 
     dry_run_sol = solve(
         dry_run_loss_prob, 
@@ -1163,8 +1175,19 @@ function pure_dry_run_loss(θ)
 end
 
 function hot_water_loss(θ)
+    prob = get!(task_local_storage(), :hot_water_implicit_prob) do
+        # Deepcopy the mutable state and geometry objects
+        system_copy = deepcopy(hot_water_system)
+        geo_copy = deepcopy(hot_water_geo)
+        
+        # Build a new closure bound to the thread-isolated copies
+        f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solve_system!, geo_copy, system_copy)
+        
+        # Re-generate the Jacobian sparsity and the implicit ODEProblem
+        built_trial_implicit_prob(f_closure, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data)
+    end
     
-    hot_water_loss_prob = remake(hot_water_implicit_prob, p = θ)
+    hot_water_loss_prob = remake(prob, p = θ)
 
     hot_water_sol = solve(
         hot_water_loss_prob, 
@@ -1317,11 +1340,11 @@ adtype = Optimization.AutoForwardDiff()
 optf = Optimization.OptimizationFunction((x, p) -> pure_dry_run_loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.001u"W/(m^2*K)",
-    pipe_endcaps_to_air_thermal_conductance = 0.1u"W/K",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.01u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 0.01u"W/K",
     heater_weight_1 = 0.0001u"1",
     heater_weight_2 = 0.0001u"1",
-    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 0.1u"W/(m^2*K)",
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 1.0u"W/(m^2*K)",
     TC1_thermal_resistance = 0.005u"K/W",
     TC2_thermal_resistance = 0.005u"K/W",
     TC3_thermal_resistance = 0.005u"K/W",
@@ -1331,15 +1354,15 @@ p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     insulation_to_air_overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)", 
-    pipe_endcaps_to_air_thermal_conductance = 100.0u"W/K",
+    pipe_endcaps_to_air_thermal_conductance = 5.0u"W/K",
     heater_weight_1 = 0.9999u"1",
     heater_weight_2 = 0.9999u"1",
-    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 10000.0u"W/(m^2*K)",
-    TC1_thermal_resistance = 10.0u"K/W",
-    TC2_thermal_resistance = 10.0u"K/W",
-    TC3_thermal_resistance = 10.0u"K/W",
-    TC4_thermal_resistance = 10.0u"K/W",
-    TC5_thermal_resistance = 10.0u"K/W",
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 2000.0u"W/(m^2*K)",
+    TC1_thermal_resistance = 25.0u"K/W",
+    TC2_thermal_resistance = 25.0u"K/W",
+    TC3_thermal_resistance = 25.0u"K/W",
+    TC4_thermal_resistance = 25.0u"K/W",
+    TC5_thermal_resistance = 25.0u"K/W",
 ))))
 
 optprob = Optimization.OptimizationProblem(optf, p_guess, lb=p_lower_bounds, ub=p_upper_bounds)
@@ -1363,15 +1386,13 @@ ensembleprob = EnsembleProblem(optprob; prob_func)
 LOSS = Float64[]
 PARS = []
 
-
-
 # Ensure the directory exists and use a filename-safe date format (colons are invalid on Windows)
 mkpath(joinpath(@__DIR__, "optimization_results"))
 results_path = joinpath(@__DIR__, "optimization_results", "optimization_results_$(Dates.format(Dates.now(), "yyyy-mm-dd_HH-MM-SS")).csv")
 
 # Create the file and manually write the header string using propertynames
 open(results_path, "w") do io
-    header_str = "loss," * join(string.(propertynames(p_guess_init)), ",")
+    header_str = "loss," * join(string.(propertynames(first_p_guess_init)), ",")
     println(io, header_str)
 end
 
@@ -1426,22 +1447,24 @@ end
     =#
 
 
-#=
+
 @time res = solve(
     ensembleprob, 
     BBO_adaptive_de_rand_1_bin_radiuslimited(), 
     EnsembleThreads(),
     trajectories = Sys.CPU_THREADS,
+    PopulationSize = 100,
+    #Method = :RandomSearcher,
     callback = cb,
 )
-=#
+
 
 @time res = solve(
     optprob, 
     BBO_adaptive_de_rand_1_bin_radiuslimited(),
     callback = cb,
     PoulationSize = 100,
-    #Method = :RandomSearcher
+    Method = :RandomSearcher
     #Method = :SepReal
 )
 
