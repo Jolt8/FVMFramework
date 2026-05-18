@@ -12,7 +12,7 @@ function get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_c
 
     #Steel Pipe Wall 
     steel_pipe_wall_inside_diameter = 16u"mm"
-    steel_pipe_wall_outside_diameter = 18u"mm"
+    steel_pipe_wall_outside_diameter = 18u"mm" #this needs to be confirmed
     steel_pipe_wall_cell_volumes = pi * (steel_pipe_wall_outside_diameter / 2)^2 * (pipe_length / n_cells_axial) - pi * (steel_pipe_wall_inside_diameter / 2)^2 * (pipe_length / n_cells_axial)
 
     #Steel Pipe Wall to Thermocouple Region
@@ -21,7 +21,7 @@ function get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_c
 
     #Thermocouple Region
     thermocouple_region_inside_diameter = 18u"mm"
-    thermocouple_region_outside_diameter = 30u"mm"
+    thermocouple_region_outside_diameter = 20u"mm"
     thermocouple_region_cell_volumes = pi * (thermocouple_region_outside_diameter / 2)^2 * (pipe_length / n_cells_axial) - pi * (thermocouple_region_inside_diameter / 2)^2 * (pipe_length / n_cells_axial)
 
     #Thermocouple Region to Heating Wire
@@ -29,7 +29,7 @@ function get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_c
     thermocouple_region_to_heating_wire_cell_areas = thermocouple_region_to_heating_wire_area / n_cells_axial
 
     #Heating Wire Region
-    heating_wire_inside_diameter = 30u"mm"
+    heating_wire_inside_diameter = 20u"mm"
     heating_wire_outside_diameter = heating_wire_inside_diameter + 0.40u"mm"
     heating_wire_cell_volumes = pi * (heating_wire_outside_diameter / 2)^2 * (pipe_length / n_cells_axial) - pi * (heating_wire_inside_diameter / 2)^2 * (pipe_length / n_cells_axial)
 
