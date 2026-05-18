@@ -54,12 +54,27 @@ function get_common_properties(pipe_length, cell_lengths_along_pipe, n_cells_axi
         cell_lengths_along_pipe = cell_lengths_along_pipe,
         per_cell_pipe_length = cell_lengths_along_pipe / n_cells_axial,
 
+        reforming_area_ouside_diameter = reforming_area_ouside_diameter,
         reforming_area_cell_volumes = reforming_area_cell_volumes,
         reforming_area_to_steel_pipe_wall_cell_areas = reforming_area_to_steel_pipe_wall_cell_areas,
+
+        steel_pipe_wall_inside_diameter = steel_pipe_wall_inside_diameter,
+        steel_pipe_wall_outside_diameter = steel_pipe_wall_outside_diameter,
         steel_pipe_wall_cell_volumes = steel_pipe_wall_cell_volumes,
         steel_pipe_wall_to_thermocouple_cell_areas = steel_pipe_wall_to_thermocouple_cell_areas,
+
+        thermocouple_region_inside_diameter = thermocouple_region_inside_diameter,
+        thermocouple_region_outside_diameter = thermocouple_region_outside_diameter,
         thermocouple_region_cell_volumes = thermocouple_region_cell_volumes,
-        thermocouple_region_to_insulation_cell_areas = thermocouple_region_to_insulation_cell_areas,
+        thermocouple_region_to_heating_wire_cell_areas = thermocouple_region_to_heating_wire_cell_areas,
+
+        heating_wire_inside_diameter = heating_wire_inside_diameter,
+        heating_wire_outside_diameter = heating_wire_outside_diameter,
+        heating_wire_cell_volumes = heating_wire_cell_volumes,
+        heating_wire_to_insulation_cell_areas = heating_wire_to_insulation_cell_areas,
+
+        insulation_inside_diameter = insulation_inside_diameter,
+        insulation_outside_diameter = insulation_outside_diameter,
         insulation_cell_volumes = insulation_cell_volumes,
         insulation_to_environment_cell_areas = insulation_to_environment_cell_areas,
     )
