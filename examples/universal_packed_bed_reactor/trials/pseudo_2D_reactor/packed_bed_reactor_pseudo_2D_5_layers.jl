@@ -85,7 +85,9 @@ n_cells = length(grid.cells)
 
 struct Fluid <: AbstractPhysics end
 struct Solid <: AbstractPhysics end
-struct CustomFlux <: AbstractPhysics end #this is for when we want to only apply thermal resistance to some interfaces
+#struct CustomFlux <: AbstractPhysics end #this is for when we want to only apply thermal resistance to some interfaces
+struct ThermocoupleAndJacket <: AbstractPhysics end
+struct HeatingWire <: AbstractPhysics end
 
 Revise.includet(joinpath(@__DIR__, "..", "..", "physics", "multiphase.jl")) #the .. makes it go up one directory
 Revise.includet(joinpath(@__DIR__, "..", "..", "physics", "energy.jl"))
@@ -404,7 +406,7 @@ add_region!(
 
 add_region!(
     config, "thermocouple_and_jacket";
-    type = CustomFlux(),
+    type = ThermocoupleAndJacket(),
     initial_conditions = ComponentVector(
         mass_fractions = placeholder_mass_fractions,
         pressure = 1.0u"atm",
@@ -438,7 +440,7 @@ add_patch!(
 
 add_region!(
     config, "heating_wire";
-    type = CustomFlux(),
+    type = HeatingWire(),
     initial_conditions = ComponentVector(
         mass_fractions = placeholder_mass_fractions,
         pressure = 1.0u"atm",
@@ -566,7 +568,7 @@ function solid_solid_flux!(
     )
 end
 
-function custom_custom_flux!(
+function no_flux!(
     du, u,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
@@ -577,11 +579,22 @@ end
 function connection_map_function(phys_a, phys_b)
     typeof(phys_a) <: Fluid && typeof(phys_b) <: Fluid && return fluid_fluid_flux!
     typeof(phys_a) <: Fluid && typeof(phys_b) <: Solid && return fluid_solid_flux!
+
     typeof(phys_a) <: Solid && typeof(phys_b) <: Fluid && return fluid_solid_flux!
     typeof(phys_a) <: Solid && typeof(phys_b) <: Solid && return solid_solid_flux!
-    typeof(phys_a) <: CustomFlux && typeof(phys_b) <: CustomFlux && return custom_custom_flux!
-    typeof(phys_a) <: Solid && typeof(phys_b) <: CustomFlux && return solid_solid_flux!
-    typeof(phys_a) <: CustomFlux && typeof(phys_b) <: Solid && return solid_solid_flux!
+
+    typeof(phys_a) <: ThermocoupleAndJacket && typeof(phys_b) <: Solid && return solid_solid_flux!
+    typeof(phys_a) <: Solid && typeof(phys_b) <: ThermocoupleAndJacket && return solid_solid_flux!
+    typeof(phys_a) <: ThermocoupleAndJacket && typeof(phys_b) <: ThermocoupleAndJacket && return no_flux! 
+    #this is made almost completely of fiberglass tape, so axial heat transfer along the pipe between thermocouple cells can be ignored
+    
+    typeof(phys_a) <: HeatingWire && typeof(phys_b) <: Solid && return solid_solid_flux!
+    typeof(phys_a) <: Solid && typeof(phys_b) <: HeatingWire && return solid_solid_flux!
+    typeof(phys_a) <: HeatingWire && typeof(phys_b) <: HeatingWire && return no_flux!
+    #this is made of heating wire covered with ceramic fiber, so axial heat transfer along the pipe between thermocouple cells can be ignored
+    
+    typeof(phys_a) <: HeatingWire && typeof(phys_b) <: ThermocoupleAndJacket && return no_flux! #we apply custom thermal resistances between these two, so no flux should occur
+    typeof(phys_a) <: ThermocoupleAndJacket && typeof(phys_b) <: HeatingWire && return no_flux!
 end
 
 #heated cells
@@ -1316,7 +1329,7 @@ plot!(TC5_plt, hot_water_times, ustrip(hot_water_thermocouple_data.TC5_temps_int
 
 savefig(TC5_plt, joinpath(plot_output_dir, "TC5_hot_water_loss.png"))
 
-overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), size=(1000, 250*5), ylims=(290, 325))
+overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), size=(1000, 250*5), ylims=(290, 340))
 
 savefig(overall_plot, joinpath(plot_output_dir, "overall_hot_water_loss.png"))
 
@@ -1337,7 +1350,7 @@ savefig(overall_plot, joinpath(plot_output_dir, "overall_hot_water_loss.png"))
 #Logging.disable_logging(Logging.Warn - 1)  # enable all warnings
 
 adtype = Optimization.AutoForwardDiff()
-optf = Optimization.OptimizationFunction((x, p) -> pure_dry_run_loss(x), adtype)
+optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.01u"W/(m^2*K)",
@@ -1353,7 +1366,7 @@ p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
 ))))
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)", 
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)",
     pipe_endcaps_to_air_thermal_conductance = 5.0u"W/K",
     heater_weight_1 = 0.9999u"1",
     heater_weight_2 = 0.9999u"1",
@@ -1447,7 +1460,6 @@ end
     =#
 
 
-
 @time res = solve(
     ensembleprob, 
     BBO_adaptive_de_rand_1_bin_radiuslimited(), 
@@ -1458,7 +1470,7 @@ end
     callback = cb,
 )
 
-
+#=
 @time res = solve(
     optprob, 
     BBO_adaptive_de_rand_1_bin_radiuslimited(),
@@ -1467,6 +1479,7 @@ end
     Method = :RandomSearcher
     #Method = :SepReal
 )
+    =#
 
 #NOTE: the default MaxIters is 10000, if you want to let something run for like 6 hours (like I did)
 #increase it to something higher
