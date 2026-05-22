@@ -21,21 +21,6 @@ using Dates
 
 using FVMFramework
 
-dry_run_optimization_results_path = joinpath(@__DIR__, "optimization_results", "dry_run_optimization_results.csv")
-dry_run_df = CSV.read(dry_run_optimization_results_path, DataFrame)
-
-min_dry_run_loss_idx = argmin(dry_run_df.loss)
-min_dry_run_loss = dry_run_df.loss[min_dry_run_loss_idx]
-dry_run_best_params = Vector(dry_run_df[min_dry_run_loss_idx, 2:end])
-
-hot_water_optimization_results_path = joinpath(@__DIR__, "optimization_results", "hot_water_optimization_results.csv")
-hot_water_df = CSV.read(hot_water_optimization_results_path, DataFrame)
-
-min_hot_water_loss_idx = argmin(hot_water_df.loss)
-min_hot_water_loss = hot_water_df.loss[min_hot_water_loss_idx]
-hot_water_best_params = Vector(hot_water_df[min_hot_water_loss_idx, 2:end])
-
-
 
 #to see an explanation of the physical build of this reactor check out:
 joinpath(@__DIR__, "..", "..", "..", "notes", "reactor_design.md")
@@ -1099,19 +1084,19 @@ f_closure_hot_water = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solv
 #NOTE: p is not actually being used in the dry run or hot water functions right now because I haven't set them up yet
 #I'm just using them as a placeholder for now
 first_p_guess_init = ComponentVector(
-    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.6324104503001076u"W/(m^2*K)",
-    pipe_endcaps_to_air_thermal_conductance = 0.12288648007593796u"W/K",
-    heater_weight_1 = 0.09529643474717908,
-    heater_weight_2 = 0.8111035152253958,
-    heater_weight_3 = 0.020605081499871152,
-    heater_weight_4 = 0.217808828803388,
-    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 776.7282585999191u"W/(m^2*K)",
-    steel_thermal_mass_multiplier = 5.280103768647053,
-    TC1_thermal_resistance = 27.298060987207375u"K/W",
-    TC2_thermal_resistance = 89.55239850039543u"K/W",
-    TC3_thermal_resistance = 25.329306306289762u"K/W",
-    TC4_thermal_resistance = 81.77899815643448u"K/W",
-    TC5_thermal_resistance = 16.21039962342885u"K/W",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 3.9215249544953634u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 0.21843778568123667u"W/K",
+    heater_weight_1 = 0.04233643564131222,
+    heater_weight_2 = 0.6599848372698764,
+    heater_weight_3 = 0.4480116180759421,
+    heater_weight_4 = 0.007962092313654773,
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 61.49737866475787u"W/(m^2*K)",
+    steel_thermal_mass_multiplier = 3.7753230723789706,
+    TC1_thermal_resistance = 28.129313413301414u"K/W",
+    TC2_thermal_resistance = 97.1810904949918u"K/W",
+    TC3_thermal_resistance = 91.60608551471157u"K/W",
+    TC4_thermal_resistance = 57.90696805772799u"K/W",
+    TC5_thermal_resistance = 67.15056955503321u"K/W",
 )
 
 dry_run_best_params = ComponentVector(
@@ -1138,12 +1123,12 @@ hot_water_best_params = ComponentVector(
     heater_weight_3 = 0.6840217991331898,
     heater_weight_4 = 0.9984762651258827,
     fluid_to_steel_pipe_convective_heat_transfer_coefficient = 61.49737866475787u"W/(m^2*K)",
-    steel_thermal_mass_multiplier = 3.7753230723789706u"K/W",
+    steel_thermal_mass_multiplier = 3.7753230723789706,
     TC1_thermal_resistance = 31.29201644638937u"K/W",
     TC2_thermal_resistance = 2.204398102203747u"K/W",
     TC3_thermal_resistance = 4.116298695255978u"K/W",
-    TC4_thermal_resistance = 77.00345471983348u"K/W",
-    TC5_thermal_resistance = 96.44035780712828u"K/W"
+    TC4_thermal_resistance = 89.06507428995272u"K/W",
+    TC5_thermal_resistance = 185.05463278797103u"K/W"
 )
 
 p_axes = getaxes(first_p_guess_init)
@@ -1152,7 +1137,7 @@ p_guess = ustrip.(upreferred.(Vector(first_p_guess_init)))
 dry_run_p_best = ustrip.(upreferred.(Vector(dry_run_best_params)))
 hot_water_p_best = ustrip.(upreferred.(Vector(hot_water_best_params)))
 
-function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data)
+function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data, p_guess)
     detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 
     jac_sparsity = ADTypes.jacobian_sparsity(
@@ -1170,8 +1155,8 @@ function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data
     return implicit_prob
 end
 
-dry_run_implicit_prob = built_trial_implicit_prob(f_closure_dry_run, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data);
-hot_water_implicit_prob = built_trial_implicit_prob(f_closure_hot_water, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data);
+dry_run_implicit_prob = built_trial_implicit_prob(f_closure_dry_run, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data, dry_run_p_best);
+hot_water_implicit_prob = built_trial_implicit_prob(f_closure_hot_water, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data, hot_water_p_best);
 
 #NOTE!!: since we use an interpolation for heater wattage and nothing else happens in dry_run_saveat, 
 #the solver will skip over times where the heater is on, resulting in no change
@@ -1249,7 +1234,7 @@ function dry_run_loss(θ)
         f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, dry_run_solve_system!, geo_copy, system_copy)
         
         # Re-generate the Jacobian sparsity and the implicit ODEProblem
-        built_trial_implicit_prob(f_closure, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data)
+        built_trial_implicit_prob(f_closure, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data, θ)
     end
     
     dry_run_loss_prob = remake(prob, p = θ)
@@ -1311,6 +1296,7 @@ function pure_dry_run_loss(θ)
 end
 
 function hot_water_loss(θ)
+    #TODO: for some reason gradient based optimization methods keep trying to use the same cache and get mixed up, need to fix this
     prob = get!(task_local_storage(), :hot_water_implicit_prob) do
         # Deepcopy the mutable state and geometry objects
         system_copy = deepcopy(hot_water_system)
@@ -1320,10 +1306,12 @@ function hot_water_loss(θ)
         f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solve_system!, geo_copy, system_copy)
         
         # Re-generate the Jacobian sparsity and the implicit ODEProblem
-        built_trial_implicit_prob(f_closure, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data)
+        built_trial_implicit_prob(f_closure, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data, θ)
     end
     
     hot_water_loss_prob = remake(prob, p = θ)
+
+    #hot_water_loss_prob = remake(hot_water_implicit_prob, p = θ)
 
     hot_water_sol = solve(
         hot_water_loss_prob, 
@@ -1384,9 +1372,25 @@ function loss(θ)
     return (pure_dry_run_loss(θ) + pure_hot_water_loss(θ)) / 2.0
 end
 
-ForwardDiff.gradient(pure_dry_run_loss, dry_run_p_best)
+dry_run_test_vec = [
+    0.015542736453914094,
+    0.09702112223146987,
+    0.03448826927361507,
+    0.436272366977129,
+    0.24505165562002032,
+    0.513096371774764,
+    1194.6511435575815,
+    3.267805909712385,
+    28.129583589734363,
+    97.1714528100795,
+    91.61842345273315,
+    57.948896483323466,
+    67.16811717328089
+]
 
-dry_run_simulated_thermocouple_data = viewable_dry_run_loss(dry_run_p_best)
+ForwardDiff.gradient(pure_dry_run_loss, dry_run_test_vec)
+
+dry_run_simulated_thermocouple_data = viewable_dry_run_loss(dry_run_test_vec)
 dry_run_simulated_thermocouple_data.loss
 
 plot_output_dir = joinpath(@__DIR__, "..", "graphs")
@@ -1422,6 +1426,22 @@ savefig(TC5_plt, joinpath(plot_output_dir, "TC5_dry_run_loss.png"))
 overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), size=(1000, 250*5), ylims=(250, 600))
 
 savefig(overall_plot, joinpath(plot_output_dir, "overall_dry_run_loss.png"))
+
+test_vec = [
+    5.352570840810584,
+    0.09719553687770872,
+    0.321184636376177,
+    0.14553005462962668,
+    0.6839683778370331,
+    0.9882697375820565,
+    61.58210838046531,
+    4.447944360548434,
+    31.28401504996796,
+    2.189880678341446,
+    4.109751373051989,
+    77.01172526551699,
+    96.45737145739767
+]
 
 hot_water_simulated_thermocouple_data = viewable_hot_water_loss(hot_water_p_best)
 hot_water_simulated_thermocouple_data.loss
@@ -1472,7 +1492,7 @@ savefig(overall_plot, joinpath(plot_output_dir, "overall_hot_water_loss.png"))
 #Logging.disable_logging(Logging.Warn - 1)  # enable all warnings
 
 adtype = Optimization.AutoForwardDiff()
-optf = Optimization.OptimizationFunction((x, p) -> pure_hot_water_loss(x), adtype)
+optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.01u"W/(m^2*K)",
@@ -1491,14 +1511,14 @@ p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
 ))))
 
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
-    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 100.0u"W/(m^2*K)",
     pipe_endcaps_to_air_thermal_conductance = 5.0u"W/K",
     heater_weight_1 = 0.999u"1",
     heater_weight_2 = 0.999u"1",
     heater_weight_3 = 0.999u"1",
     heater_weight_4 = 0.999u"1",
     fluid_to_steel_pipe_convective_heat_transfer_coefficient = 2000.0u"W/(m^2*K)",
-    steel_thermal_mass_multiplier = 5.0,
+    steel_thermal_mass_multiplier = 10.0,
     TC1_thermal_resistance = 200.0u"K/W",
     TC2_thermal_resistance = 200.0u"K/W",
     TC3_thermal_resistance = 200.0u"K/W",
@@ -1506,7 +1526,7 @@ p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     TC5_thermal_resistance = 200.0u"K/W",
 ))))
 
-optprob = Optimization.OptimizationProblem(optf, hot_water_p_best, lb = p_lower_bounds, ub=p_upper_bounds)
+optprob = Optimization.OptimizationProblem(optf, p_guess, lb = p_lower_bounds, ub=p_upper_bounds)
 
 function randomize(lower, upper)
     return lower + (upper - lower) * rand()
@@ -1516,7 +1536,7 @@ function randomize_list(lower, upper, length)
     return [lower + (upper - lower) * rand() for _ in 1:length]
 end
 
-p_ensemble = [[randomize(p_lower_bounds[i], p_upper_bounds[i]) for i in eachindex(p_lower_bounds)] for _ in 1:Sys.CPU_THREADS]
+p_ensemble = [vcat(optprob.u0, [randomize(p_lower_bounds[i], p_upper_bounds[i]) for i in eachindex(p_lower_bounds)]) for _ in 1:Sys.CPU_THREADS]
 
 function prob_func(prob, i, repeat)
     return remake(prob, p = p_ensemble[i])  
@@ -1558,10 +1578,10 @@ cb = function (state, l)
     false
 end
 
-@time loss(p_guess)
+#@time loss(p_guess)
 
-@time pure_dry_run_loss(dry_run_p_best) 
-@time pure_hot_water_loss(hot_water_p_best) #returns 0.7068508759916174
+#@time pure_dry_run_loss(dry_run_p_best) 
+#@time pure_hot_water_loss(hot_water_p_best) #returns 0.7068508759916174
 
 #=
 @time res = Optimization.solve(
@@ -1577,7 +1597,7 @@ end
     #g_abstol=1e-8,
 )=#
 
-
+#=
 @time res = Optimization.solve(
     optprob,
     callback = cb,
@@ -1589,9 +1609,8 @@ end
     #IPNewton works kinda fine
     #f_abstol=1e-8,
     #g_abstol=1e-8,
-)
+)=#
 
-#=
 @time res = solve(
     ensembleprob, 
     BBO_adaptive_de_rand_1_bin_radiuslimited(), 
@@ -1601,7 +1620,6 @@ end
     #Method = :RandomSearcher,
     callback = cb,
 )
-    =#
 
 #=
 @time res = solve(
@@ -1628,3 +1646,20 @@ end
 #but I guess people have used computers for way more useless things.
 #also, energy is only $0.1548 per kWh, so you're only consuming around $0.031 worth of energy per hour, which is very cheap! 
 #I just really hope that some change later on doesn't make all of these numbers invalid 
+
+
+#=
+dry_run_optimization_results_path = joinpath(@__DIR__, "optimization_results", "dry_run_optimization_results.csv")
+dry_run_df = CSV.read(dry_run_optimization_results_path, DataFrame)
+
+min_dry_run_loss_idx = argmin(dry_run_df.loss)
+min_dry_run_loss = dry_run_df.loss[min_dry_run_loss_idx]
+dry_run_best_params = Vector(dry_run_df[min_dry_run_loss_idx, 2:end])
+
+hot_water_optimization_results_path = joinpath(@__DIR__, "optimization_results", "hot_water_optimization_results.csv")
+hot_water_df = CSV.read(hot_water_optimization_results_path, DataFrame)
+
+min_hot_water_loss_idx = argmin(hot_water_df.loss)
+min_hot_water_loss = hot_water_df.loss[min_hot_water_loss_idx]
+hot_water_best_params = Vector(hot_water_df[min_hot_water_loss_idx, 2:end])
+=#
