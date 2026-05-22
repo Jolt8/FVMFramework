@@ -1423,7 +1423,8 @@ overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), 
 
 savefig(overall_plot, joinpath(plot_output_dir, "overall_dry_run_loss.png"))
 
-hot_water_simulated_thermocouple_data = viewable_hot_water_loss(dry_run_p_best)
+hot_water_simulated_thermocouple_data = viewable_hot_water_loss(hot_water_p_best)
+hot_water_simulated_thermocouple_data.loss
 hot_water_times = hot_water_simulated_thermocouple_data.hot_water_times
 TC1_plt = plot(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC1, label="Sim TC1", linewidth=2)
 plot!(TC1_plt, hot_water_times, ustrip(hot_water_thermocouple_data.TC1_temps_interp.(hot_water_times)), label="Exp TC1", linewidth=2)
@@ -1453,7 +1454,7 @@ savefig(TC5_plt, joinpath(plot_output_dir, "TC5_hot_water_loss.png"))
 overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), size=(1000, 250*5), ylims=(290, 340))
 
 savefig(overall_plot, joinpath(plot_output_dir, "overall_hot_water_loss.png"))
-#=
+
 #wow, these results are very interesting
 
 #@time grad = ForwardDiff.gradient(loss, p_guess)
@@ -1481,7 +1482,7 @@ p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     heater_weight_3 = 0.001u"1",
     heater_weight_4 = 0.001u"1",
     fluid_to_steel_pipe_convective_heat_transfer_coefficient = 1.0u"W/(m^2*K)",
-    steel_thermal_mass_multiplier = 0.001,
+    steel_thermal_mass_multiplier = 0.1,
     TC1_thermal_resistance = 0.001u"K/W",
     TC2_thermal_resistance = 0.005u"K/W",
     TC3_thermal_resistance = 0.005u"K/W",
@@ -1497,15 +1498,15 @@ p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     heater_weight_3 = 0.999u"1",
     heater_weight_4 = 0.999u"1",
     fluid_to_steel_pipe_convective_heat_transfer_coefficient = 2000.0u"W/(m^2*K)",
-    steel_thermal_mass_multiplier = 20.0,
-    TC1_thermal_resistance = 100.0u"K/W",
-    TC2_thermal_resistance = 100.0u"K/W",
-    TC3_thermal_resistance = 100.0u"K/W",
-    TC4_thermal_resistance = 100.0u"K/W",
-    TC5_thermal_resistance = 100.0u"K/W",
+    steel_thermal_mass_multiplier = 5.0,
+    TC1_thermal_resistance = 200.0u"K/W",
+    TC2_thermal_resistance = 200.0u"K/W",
+    TC3_thermal_resistance = 200.0u"K/W",
+    TC4_thermal_resistance = 200.0u"K/W",
+    TC5_thermal_resistance = 200.0u"K/W",
 ))))
 
-optprob = Optimization.OptimizationProblem(optf, p_guess, lb=p_lower_bounds, ub=p_upper_bounds)
+optprob = Optimization.OptimizationProblem(optf, hot_water_p_best, lb = p_lower_bounds, ub=p_upper_bounds)
 
 function randomize(lower, upper)
     return lower + (upper - lower) * rand()
@@ -1559,8 +1560,11 @@ end
 
 @time loss(p_guess)
 
+@time pure_dry_run_loss(dry_run_p_best) 
+@time pure_hot_water_loss(hot_water_p_best) #returns 0.7068508759916174
 
-#=@time res = Optimization.solve(
+#=
+@time res = Optimization.solve(
     ensembleprob,
     callback = cb,
     OptimizationOptimJL.LBFGS(),
@@ -1573,7 +1577,7 @@ end
     #g_abstol=1e-8,
 )=#
 
-#=
+
 @time res = Optimization.solve(
     optprob,
     callback = cb,
@@ -1586,9 +1590,8 @@ end
     #f_abstol=1e-8,
     #g_abstol=1e-8,
 )
-    =#
 
-
+#=
 @time res = solve(
     ensembleprob, 
     BBO_adaptive_de_rand_1_bin_radiuslimited(), 
@@ -1598,6 +1601,7 @@ end
     #Method = :RandomSearcher,
     callback = cb,
 )
+    =#
 
 #=
 @time res = solve(
@@ -1624,32 +1628,3 @@ end
 #but I guess people have used computers for way more useless things.
 #also, energy is only $0.1548 per kWh, so you're only consuming around $0.031 worth of energy per hour, which is very cheap! 
 #I just really hope that some change later on doesn't make all of these numbers invalid 
-
-res.u
-
-loss(ustrip.(upreferred.(Vector(p_vec_fitted))))
-
-p_fitted = ComponentVector(res.u, p_axes)
-
-results_path = joinpath(@__DIR__, "optimization_results", "optimization_results_2026-05-10_14-09-03.csv")
-
-results_data = CSV.read(results_path, DataFrame)
-
-results_data.insulation_to_air_overall_heat_transfer_coefficient_to_environment
-
-middle_thermocouple_temps = []
-
-for i in eachindex(results_data.insulation_to_air_overall_heat_transfer_coefficient_to_environment[1:20])
-    p_test = [results_data.insulation_to_air_overall_heat_transfer_coefficient_to_environment[i]]
-
-    test_prob = remake(implicit_prob, p = p_test)
-    
-    sol = solve(
-        test_prob,
-        FBDF(linsolve = SparspakFactorization(),), 
-    )
-
-    u_named = [ComponentVector(sol.u[i], state_axes) for i in eachindex(sol.u)]
-
-    push!(middle_thermocouple_temps, [u_named[j].temp[TC3_cell_id] for j in eachindex(u_named)])
-end
