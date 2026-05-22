@@ -22,7 +22,7 @@ using Dates
 using FVMFramework
 
 #to see an explanation of the physical build of this reactor check out:
-joinpath(@__DIR__, "..", "..", "notes", "reactor_design.md")
+joinpath(@__DIR__, "..", "..", "..", "notes", "reactor_design.md")
 
 #plan for mapping layering to FVM groups:
     #cell group 1: fluid 
@@ -89,15 +89,15 @@ struct Solid <: AbstractPhysics end
 struct ThermocoupleAndJacket <: AbstractPhysics end
 struct HeatingWire <: AbstractPhysics end
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "physics", "multiphase.jl")) #the .. makes it go up one directory
-Revise.includet(joinpath(@__DIR__, "..", "..", "physics", "energy.jl"))
-Revise.includet(joinpath(@__DIR__, "..", "..", "physics", "momentum.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "multiphase.jl")) #the .. makes it go up one directory
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "energy.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "momentum.jl"))
 
 #we use a polynomial due to the fact that the endcaps allow for a lot more heat to escape the ends of the reactor 
 #than the cells closer to the center of the reactor 
 #we don't need p1
 
-Revise.includet(joinpath(@__DIR__, "packing_and_fluid_property_merging.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "packing_and_fluid_property_merging.jl"))
 
 function update_copper_mesh_properties!(du, u, cell_id, vol, system)
     mw_avg!(u, cell_id)
@@ -140,6 +140,14 @@ function update_solid_properties!(du, u, cell_id, vol, system)
     #I checked and this is working for now
 end
 
+function update_steel_pipe_properties!(du, u, cell_id, vol, system)
+    properties = ComponentVector(system.properties_vec, system.properties_axes)
+
+    u.k[cell_id] = properties.k[cell_id]
+    u.cp[cell_id] = properties.cp[cell_id] * u.steel_thermal_mass_multiplier[cell_id]
+    u.rho[cell_id] = properties.rho[cell_id]
+end
+
 #you could also add any of these functions individually
 
 function fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
@@ -151,7 +159,7 @@ function fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
 
     #cap_evaporation_rate_to_phase_holdup!(du, u, cell_id, vol)
-    #HAHA, I foud it, this function above causes the solver to dt_nan after the first time step!
+    #HAHA, I found it, this function above causes the solver to dt_nan after the first time step!
 end
 
 function solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
@@ -177,30 +185,30 @@ config = create_fvm_config(grid, u_proto);
 
 cell_lengths_along_pipe = [config.geo.cell_centroids[i][3]u"m" for i in 1:length(config.geo.cell_centroids)]
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "5_layer_common_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "5_layer_common_properties.jl"))
 common_properties = get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_cells_axial)
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "packed_media_properties", "copper_mesh_reformer_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "packed_media_properties", "copper_mesh_reformer_properties.jl"))
 pre_copper_mesh_reformer_properties = get_copper_mesh_reformer_properties(pipe_length, n_cells_axial, grid.cellsets["copper_mesh_reformer"], cell_lengths_along_pipe)
 copper_mesh_reformer_properties = merge_properties(pre_copper_mesh_reformer_properties, common_properties)
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "packed_media_properties", "silicon_carbide_sand_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "packed_media_properties", "silicon_carbide_sand_properties.jl"))
 pre_silicon_carbide_sand_properties = get_silicon_carbide_sand_properties()
 silicon_carbide_sand_properties = merge_properties(pre_silicon_carbide_sand_properties, common_properties)
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "steel_pipe_wall_properties", "steel_pipe_wall_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "steel_pipe_wall_properties", "steel_pipe_wall_properties.jl"))
 pre_steel_pipe_wall_properties = get_steel_pipe_wall_properties()
 steel_pipe_wall_properties = merge_properties(pre_steel_pipe_wall_properties, common_properties)
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "thermocouple_and_heating_wire_properties", "divided_thermocouple_and_heating_wire_properties", "thermocouple_and_jacket_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "thermocouple_and_heating_wire_properties", "divided_thermocouple_and_heating_wire_properties", "thermocouple_and_jacket_properties.jl"))
 pre_thermocouple_and_jacket_properties = get_thermocouple_and_jacket_properties(grid, pipe_length, n_cells_axial, cell_lengths_along_pipe)
 thermocouple_and_jacket_properties = merge_properties(pre_thermocouple_and_jacket_properties, common_properties)
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "thermocouple_and_heating_wire_properties", "divided_thermocouple_and_heating_wire_properties", "heating_wire_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "thermocouple_and_heating_wire_properties", "divided_thermocouple_and_heating_wire_properties", "heating_wire_properties.jl"))
 pre_heating_wire_properties = get_heating_wire_properties(grid, pipe_length, common_properties)
 heating_wire_properties = merge_properties(pre_heating_wire_properties, common_properties)
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "properties", "insulation_properties", "insulation_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "insulation_properties", "insulation_properties.jl"))
 pre_insulation_properties = get_insulation_properties()
 insulation_properties = merge_properties(pre_insulation_properties, common_properties)
 
@@ -223,7 +231,10 @@ add_setup_syms!(config;
         pipe_endcaps_to_air_thermal_conductance = u"W/K",
         heater_weight_1 = u"1",
         heater_weight_2 = u"1",
+        heater_weight_3 = u"1",
+        heater_weight_4 = u"1",
         fluid_to_steel_pipe_convective_heat_transfer_coefficient = u"W/(m^2*K)",
+        steel_thermal_mass_multiplier = u"1",
         thermocouple_to_heating_wire_thermal_resistance = u"K/W",
         wattage_received_per_m = u"W/m",
         molar_concentrations = u"mol/m^3",
@@ -257,7 +268,10 @@ add_setup_syms!(config;
         pipe_endcaps_to_air_thermal_conductance = 0.0u"W/K",
         heater_weight_1 = 0.0u"1",
         heater_weight_2 = 0.0u"1",
+        heater_weight_3 = 0.0u"1",
+        heater_weight_4 = 0.0u"1",
         fluid_to_steel_pipe_convective_heat_transfer_coefficient = 0.0u"W/(m^2*K)",
+        steel_thermal_mass_multiplier = 0.0,
         TC1_thermal_resistance = 0.0u"K/W",
         TC2_thermal_resistance = 0.0u"K/W",
         TC3_thermal_resistance = 0.0u"K/W",
@@ -542,7 +556,7 @@ function fluid_fluid_flux!(
     )=#
 end
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "physics", "convective_heat_transfer.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "convective_heat_transfer.jl"))
 
 function fluid_solid_flux!(
     du, u,
@@ -616,26 +630,39 @@ end
 
 total_heater_length = 10u"inch"
 heater_start = 1u"inch"
+n_heater_regions = 5
 
-bottom_heater_start = heater_start + (total_heater_length / 3) * 0
-bottom_heater_end = heater_start + (total_heater_length / 3) * 1
+heater_1_start = heater_start + (total_heater_length / n_heater_regions) * 0
+heater_1_end = heater_start + (total_heater_length / n_heater_regions) * 1
 
-middle_heater_start = heater_start + (total_heater_length / 3) * 1
-middle_heater_end = heater_start + (total_heater_length / 3) * 2
+heater_2_start = heater_start + (total_heater_length / n_heater_regions) * 1
+heater_2_end = heater_start + (total_heater_length / n_heater_regions) * 2
 
-top_heater_start = heater_start + (total_heater_length / 3) * 2
-top_heater_end = heater_start + (total_heater_length / 3) * 3
+heater_3_start = heater_start + (total_heater_length / n_heater_regions) * 2
+heater_3_end = heater_start + (total_heater_length / n_heater_regions) * 3
 
-bottom_heated_cells = get_heated_cells(bottom_heater_start, bottom_heater_end)
-n_bottom_heated_cells = length(bottom_heated_cells)
+heater_4_start = heater_start + (total_heater_length / n_heater_regions) * 3
+heater_4_end = heater_start + (total_heater_length / n_heater_regions) * 4
 
-middle_heated_cells = get_heated_cells(middle_heater_start, middle_heater_end)
-n_middle_heated_cells = length(middle_heated_cells)
+heater_5_start = heater_start + (total_heater_length / n_heater_regions) * 4
+heater_5_end = heater_start + (total_heater_length / n_heater_regions) * 5
 
-top_heated_cells = get_heated_cells(top_heater_start, top_heater_end)
-n_top_heated_cells = length(top_heated_cells)
+heater_1_cells = get_heated_cells(heater_1_start, heater_1_end)
+n_heater_1_cells = length(heater_1_cells)
 
-n_total_heated_cells = n_bottom_heated_cells + n_middle_heated_cells + n_top_heated_cells
+heater_2_cells = get_heated_cells(heater_2_start, heater_2_end)
+n_heater_2_cells = length(heater_2_cells)
+
+heater_3_cells = get_heated_cells(heater_3_start, heater_3_end)
+n_heater_3_cells = length(heater_3_cells)
+
+heater_4_cells = get_heated_cells(heater_4_start, heater_4_end)
+n_heater_4_cells = length(heater_4_cells)
+
+heater_5_cells = get_heated_cells(heater_5_start, heater_5_end)
+n_heater_5_cells = length(heater_5_cells)
+
+n_total_heated_cells = n_heater_1_cells + n_heater_2_cells + n_heater_3_cells + n_heater_4_cells + n_heater_5_cells
 
 
 #thermal reistance interp
@@ -680,9 +707,9 @@ TC3_cells = get_cells_along_pipe_range(common_properties, ["thermocouple_and_jac
 TC4_cells = get_cells_along_pipe_range(common_properties, ["thermocouple_and_jacket", "heating_wire"], TC4_area_start, TC4_area_end)
 TC5_cells = get_cells_along_pipe_range(common_properties, ["thermocouple_and_jacket", "heating_wire"], TC5_area_start, TC5_area_end)
 
-Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_dry", "empty_trial_properties.jl"))
-Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_dry", "air_properties.jl"))
-Revise.includet(joinpath(@__DIR__, "..", "thermocouple_data_processing", "thermocouple_data_with_wattage.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "packed_bed_reactor_dry", "empty_trial_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "packed_bed_reactor_dry", "air_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "thermocouple_data_processing", "thermocouple_data_with_wattage.jl"))
 
 function dry_run_trial()
     dry_run_config = deepcopy(config)
@@ -746,26 +773,34 @@ function dry_run_trial()
 
     thermocouple_data = get_dry_run_thermocouple_data()
 
-    function bottom_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
-        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * heater_weight_1) / n_total_heated_cells
+    function heater_1_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * p.heater_weight_1[1]) / n_heater_1_cells
     end
 
-    function middle_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
-        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * heater_weight_2) / n_total_heated_cells
+    function heater_2_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - p.heater_weight_1[1]) * p.heater_weight_2[1]) / n_heater_2_cells
     end
 
-    function top_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
-        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - heater_weight_1 - heater_weight_2)) / n_total_heated_cells
+    function heater_3_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - p.heater_weight_1[1]) * (1 - p.heater_weight_2[1]) * p.heater_weight_3[1]) / n_heater_3_cells
     end
 
-    return dry_run_config, dry_run_properties, thermocouple_data, bottom_measured_heater_wattage_per_cell, middle_measured_heater_wattage_per_cell, top_measured_heater_wattage_per_cell
+    function heater_4_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - p.heater_weight_1[1]) * (1 - p.heater_weight_2[1]) * (1 - p.heater_weight_3[1]) * p.heater_weight_4[1]) / n_heater_4_cells
+    end
+
+    function heater_5_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - p.heater_weight_1[1]) * (1 - p.heater_weight_2[1]) * (1 - p.heater_weight_3[1]) * (1 - p.heater_weight_4[1])) / n_heater_5_cells
+    end
+
+    return dry_run_config, dry_run_properties, thermocouple_data, heater_1_wattage_per_cell, heater_2_wattage_per_cell, heater_3_wattage_per_cell, heater_4_wattage_per_cell, heater_5_wattage_per_cell
 end
 
-Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_water_flow_trial", "hot_water_trial_properties.jl"))
-Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_water_flow_trial", "water_properties.jl"))
-Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_water_flow_trial", "recorded_data_processing", "inlet_and_outlet_temperatures.jl"))
-Revise.includet(joinpath(@__DIR__, "..", "packed_bed_reactor_water_flow_trial", "recorded_data_processing", "values_of_note.jl"))
-Revise.includet(joinpath(@__DIR__, "..", "thermocouple_data_processing", "thermocouple_data.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "packed_bed_reactor_water_flow_trial", "hot_water_trial_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "packed_bed_reactor_water_flow_trial", "water_properties.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "packed_bed_reactor_water_flow_trial", "recorded_data_processing", "inlet_and_outlet_temperatures.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "packed_bed_reactor_water_flow_trial", "recorded_data_processing", "values_of_note.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "..", "thermocouple_data_processing", "thermocouple_data.jl"))
 
 function hot_water_trial()
     hot_water_config = deepcopy(config)
@@ -847,7 +882,9 @@ function hot_water_trial()
 
     function pump_shut_off(du, u, cell_id, t)
         if t <= pump_shutoff_timestamp #pump on
-            u.temp[inlet_cell_id] = inlet_temp_interp(ForwardDiff.value(t))
+            #u.temp[inlet_cell_id] = inlet_temp_interp(ForwardDiff.value(t)) #this is a lot slower
+            du.temp[inlet_cell_id] *= 0.0
+            du.temp[inlet_cell_id] += DataInterpolations.derivative(inlet_temp_interp, ForwardDiff.value(t))
 
             u.pipe_mass_flow[cell_id] = ustrip(upreferred(hot_water_trial_properties.pipe_mass_flow))
         else #pump shut off
@@ -857,19 +894,27 @@ function hot_water_trial()
 
     thermocouple_data = get_hot_water_thermocouple_data()
 
-    function bottom_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
-        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * heater_weight_1) / n_total_heated_cells
+    function heater_1_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * p.heater_weight_1[1]) / n_heater_1_cells
     end
 
-    function middle_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
-        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * heater_weight_2) / n_total_heated_cells
+    function heater_2_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - p.heater_weight_1[1]) * p.heater_weight_2[1]) / n_heater_2_cells
     end
 
-    function top_measured_heater_wattage_per_cell(t, heater_weight_1, heater_weight_2)
-        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - heater_weight_1 - heater_weight_2)) / n_total_heated_cells
+    function heater_3_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - p.heater_weight_1[1]) * (1 - p.heater_weight_2[1]) * p.heater_weight_3[1]) / n_heater_3_cells
     end
 
-    return hot_water_config, hot_water_trial_properties, pump_shut_off, thermocouple_data, bottom_measured_heater_wattage_per_cell, middle_measured_heater_wattage_per_cell, top_measured_heater_wattage_per_cell
+    function heater_4_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - p.heater_weight_1[1]) * (1 - p.heater_weight_2[1]) * (1 - p.heater_weight_3[1]) * p.heater_weight_4[1]) / n_heater_4_cells
+    end
+
+    function heater_5_wattage_per_cell(p, t)
+        return (thermocouple_data.heater_power_interp(ForwardDiff.value(t)) * (1 - p.heater_weight_1[1]) * (1 - p.heater_weight_2[1]) * (1 - p.heater_weight_3[1]) * (1 - p.heater_weight_4[1])) / n_heater_5_cells
+    end
+
+    return hot_water_config, hot_water_trial_properties, pump_shut_off, thermocouple_data, heater_1_wattage_per_cell, heater_2_wattage_per_cell, heater_3_wattage_per_cell, heater_4_wattage_per_cell, heater_5_wattage_per_cell
 end
 
 #TODO: I think we could have an integrated way that allows for the properties of many trials to be sequentially added by doing something like in the initial conditions:
@@ -892,6 +937,15 @@ fluid_regions = ["pipe_inlet", "silicon_carbide_preheater", "copper_mesh_reforme
 advecting_fluid_cells = vcat(collect(grid.cellsets["pipe_inlet"]), collect(grid.cellsets["silicon_carbide_preheater"]), collect(grid.cellsets["copper_mesh_reformer"]), collect(grid.cellsets["pipe_outlet"]))
 
 function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
+    p = ComponentVector(p_vec, system.p_axes)
+
+    for cell_id in eachindex(geo.cell_volumes)
+        u.insulation_to_air_overall_heat_transfer_coefficient_to_environment[cell_id] = p.insulation_to_air_overall_heat_transfer_coefficient_to_environment[1]
+        u.pipe_endcaps_to_air_thermal_conductance[cell_id] = p.pipe_endcaps_to_air_thermal_conductance[1]
+        u.fluid_to_steel_pipe_convective_heat_transfer_coefficient[cell_id] = p.fluid_to_steel_pipe_convective_heat_transfer_coefficient[1]
+        u.steel_thermal_mass_multiplier[cell_id] = p.steel_thermal_mass_multiplier[1]
+    end
+
     #VERY IMPORTANT: since most software uses 0-based indexing, you need to adjust the cell id by +1
     #for example, if you mouse over cell_id 5161 in ParaView, you need to use 5162 in the code because julia uses 1-based indexing 
 
@@ -912,21 +966,15 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
             for cell_id in reg.region_cells
                 update_fluid_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
             end
+        elseif reg.name == "steel_pipe_wall"
+            for cell_id in reg.region_cells
+                update_steel_pipe_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
+            end
         else
             for cell_id in reg.region_cells
                 update_solid_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
             end
         end
-    end
-
-    p = ComponentVector(p_vec, p_axes)
-
-    for cell_id in eachindex(geo.cell_volumes)
-        u.insulation_to_air_overall_heat_transfer_coefficient_to_environment[cell_id] = p.insulation_to_air_overall_heat_transfer_coefficient_to_environment[1]
-        u.pipe_endcaps_to_air_thermal_conductance[cell_id] = p.pipe_endcaps_to_air_thermal_conductance[1]
-        u.heater_weight_1[cell_id] = p.heater_weight_1[1]
-        u.heater_weight_2[cell_id] = p.heater_weight_2[1]
-        u.fluid_to_steel_pipe_convective_heat_transfer_coefficient[cell_id] = p.fluid_to_steel_pipe_convective_heat_transfer_coefficient[1]
     end
 
     for i in 1:length(advecting_fluid_cells) - 1 #we don't take mass out of the outlet
@@ -959,10 +1007,15 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
     solve_region_groups!(du, u, geo, system) #this seems to be the culprit
 end
 
-dry_run_config, dry_run_properties, dry_run_thermocouple_data, dry_run_bottom_heater_wattage_per_cell, dry_run_middle_heater_wattage_per_cell, dry_run_top_heater_wattage_per_cell = dry_run_trial();
+dry_run_config, dry_run_properties, dry_run_thermocouple_data, 
+dry_run_heater_1_wattage_per_cell, dry_run_heater_2_wattage_per_cell, dry_run_heater_3_wattage_per_cell, 
+dry_run_heater_4_wattage_per_cell, dry_run_heater_5_wattage_per_cell = dry_run_trial();
 dry_run_du0_vec, dry_run_u0_vec, dry_run_state_axes, dry_run_geo, dry_run_system = finish_fvm_config(dry_run_config, connection_map_function, check_units = false);
+#TODO: the time finish_fvm_config(...) takes to complete needs to be reduced
 
-hot_water_config, hot_water_properties, hot_water_pump_shut_off, hot_water_thermocouple_data, hot_water_bottom_heater_wattage_per_cell, hot_water_middle_heater_wattage_per_cell, hot_water_top_heater_wattage_per_cell = hot_water_trial();
+hot_water_config, hot_water_properties, hot_water_pump_shut_off, hot_water_thermocouple_data, 
+hot_water_heater_1_wattage_per_cell, hot_water_heater_2_wattage_per_cell, hot_water_heater_3_wattage_per_cell, 
+hot_water_heater_4_wattage_per_cell, hot_water_heater_5_wattage_per_cell = hot_water_trial();
 hot_water_du0_vec, hot_water_u0_vec, hot_water_state_axes, hot_water_geo, hot_water_system = finish_fvm_config(hot_water_config, connection_map_function, check_units = false);
 
 p_axes = hot_water_system.p_axes
@@ -970,16 +1023,24 @@ p_axes = hot_water_system.p_axes
 function dry_run_solve_system!(du, u, p_vec, t, geo, system)
     p = ComponentVector(p_vec, p_axes)
 
-    for cell_id in bottom_heated_cells
-        du.heat[cell_id] += dry_run_bottom_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    for cell_id in heater_1_cells
+        du.heat[cell_id] += dry_run_heater_1_wattage_per_cell(p, t)
     end
 
-    for cell_id in middle_heated_cells
-        du.heat[cell_id] += dry_run_middle_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    for cell_id in heater_2_cells
+        du.heat[cell_id] += dry_run_heater_2_wattage_per_cell(p, t)
     end
 
-    for cell_id in top_heated_cells
-        du.heat[cell_id] += dry_run_top_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    for cell_id in heater_3_cells
+        du.heat[cell_id] += dry_run_heater_3_wattage_per_cell(p, t)
+    end
+
+    for cell_id in heater_4_cells
+        du.heat[cell_id] += dry_run_heater_4_wattage_per_cell(p, t)
+    end
+
+    for cell_id in heater_5_cells
+        du.heat[cell_id] += dry_run_heater_5_wattage_per_cell(p, t)
     end
 
     trial_independent_solve_system!(du, u, p_vec, t, geo, system)
@@ -992,16 +1053,24 @@ function hot_water_solve_system!(du, u, p_vec, t, geo, system)
         hot_water_pump_shut_off(du, u, cell_id, t)
     end
 
-    for cell_id in bottom_heated_cells
-        du.heat[cell_id] += hot_water_bottom_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    for cell_id in heater_1_cells
+        du.heat[cell_id] += hot_water_heater_1_wattage_per_cell(p, t)
     end
 
-    for cell_id in middle_heated_cells
-        du.heat[cell_id] += hot_water_middle_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    for cell_id in heater_2_cells
+        du.heat[cell_id] += hot_water_heater_2_wattage_per_cell(p, t)
     end
 
-    for cell_id in top_heated_cells
-        du.heat[cell_id] += hot_water_top_heater_wattage_per_cell(t, p.heater_weight_1[1], p.heater_weight_2[1])
+    for cell_id in heater_3_cells
+        du.heat[cell_id] += hot_water_heater_3_wattage_per_cell(p, t)
+    end
+
+    for cell_id in heater_4_cells
+        du.heat[cell_id] += hot_water_heater_4_wattage_per_cell(p, t)
+    end
+
+    for cell_id in heater_5_cells
+        du.heat[cell_id] += hot_water_heater_5_wattage_per_cell(p, t)
     end
     
     trial_independent_solve_system!(du, u, p_vec, t, geo, system)
@@ -1014,16 +1083,19 @@ f_closure_hot_water = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solv
 #NOTE: p is not actually being used in the dry run or hot water functions right now because I haven't set them up yet
 #I'm just using them as a placeholder for now
 first_p_guess_init = ComponentVector(
-    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.50350276291573024u"W/(m^2*K)",
-    pipe_endcaps_to_air_thermal_conductance = 0.10211046718339412u"W/K",
-    heater_weight_1 = 0.18489915969386572,
-    heater_weight_2 = 0.4543362998064088,
-    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 500.0u"W/(m^2*K)",
-    TC1_thermal_resistance = 9.915449578133705u"K/W",
-    TC2_thermal_resistance = 4.594385265207739u"K/W",
-    TC3_thermal_resistance = 8.302154500636501u"K/W",
-    TC4_thermal_resistance = 7.940711757162081u"K/W",
-    TC5_thermal_resistance = 3.006091646567366u"K/W",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.6324104503001076u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 0.12288648007593796u"W/K",
+    heater_weight_1 = 0.09529643474717908,
+    heater_weight_2 = 0.8111035152253958,
+    heater_weight_3 = 0.020605081499871152,
+    heater_weight_4 = 0.217808828803388,
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 776.7282585999191u"W/(m^2*K)",
+    steel_thermal_mass_multiplier = 5.280103768647053,
+    TC1_thermal_resistance = 27.298060987207375u"K/W",
+    TC2_thermal_resistance = 89.55239850039543u"K/W",
+    TC3_thermal_resistance = 25.329306306289762u"K/W",
+    TC4_thermal_resistance = 81.77899815643448u"K/W",
+    TC5_thermal_resistance = 16.21039962342885u"K/W",
 )
 
 p_axes = getaxes(first_p_guess_init)
@@ -1268,7 +1340,7 @@ dry_run_simulated_thermocouple_data.loss
 #84243.06137568069
 #84243.06137568069
 
-plot_output_dir = joinpath(@__DIR__, "graphs")
+plot_output_dir = joinpath(@__DIR__, "..", "graphs")
 
 plot(dry_run_thermocouple_data.timestamps[1:1000], dry_run_thermocouple_data.heater_power_interp.(ustrip.(dry_run_thermocouple_data.timestamps[1:1000])))
 
@@ -1350,15 +1422,18 @@ savefig(overall_plot, joinpath(plot_output_dir, "overall_hot_water_loss.png"))
 #Logging.disable_logging(Logging.Warn - 1)  # enable all warnings
 
 adtype = Optimization.AutoForwardDiff()
-optf = Optimization.OptimizationFunction((x, p) -> loss(x), adtype)
+optf = Optimization.OptimizationFunction((x, p) -> pure_hot_water_loss(x), adtype)
 
 p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.01u"W/(m^2*K)",
     pipe_endcaps_to_air_thermal_conductance = 0.01u"W/K",
-    heater_weight_1 = 0.0001u"1",
-    heater_weight_2 = 0.0001u"1",
+    heater_weight_1 = 0.001u"1",
+    heater_weight_2 = 0.001u"1",
+    heater_weight_3 = 0.001u"1",
+    heater_weight_4 = 0.001u"1",
     fluid_to_steel_pipe_convective_heat_transfer_coefficient = 1.0u"W/(m^2*K)",
-    TC1_thermal_resistance = 0.005u"K/W",
+    steel_thermal_mass_multiplier = 0.001,
+    TC1_thermal_resistance = 0.001u"K/W",
     TC2_thermal_resistance = 0.005u"K/W",
     TC3_thermal_resistance = 0.005u"K/W",
     TC4_thermal_resistance = 0.005u"K/W",
@@ -1368,14 +1443,17 @@ p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
 p_upper_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     insulation_to_air_overall_heat_transfer_coefficient_to_environment = 10.0u"W/(m^2*K)",
     pipe_endcaps_to_air_thermal_conductance = 5.0u"W/K",
-    heater_weight_1 = 0.9999u"1",
-    heater_weight_2 = 0.9999u"1",
+    heater_weight_1 = 0.999u"1",
+    heater_weight_2 = 0.999u"1",
+    heater_weight_3 = 0.999u"1",
+    heater_weight_4 = 0.999u"1",
     fluid_to_steel_pipe_convective_heat_transfer_coefficient = 2000.0u"W/(m^2*K)",
-    TC1_thermal_resistance = 25.0u"K/W",
-    TC2_thermal_resistance = 25.0u"K/W",
-    TC3_thermal_resistance = 25.0u"K/W",
-    TC4_thermal_resistance = 25.0u"K/W",
-    TC5_thermal_resistance = 25.0u"K/W",
+    steel_thermal_mass_multiplier = 20.0,
+    TC1_thermal_resistance = 100.0u"K/W",
+    TC2_thermal_resistance = 100.0u"K/W",
+    TC3_thermal_resistance = 100.0u"K/W",
+    TC4_thermal_resistance = 100.0u"K/W",
+    TC5_thermal_resistance = 100.0u"K/W",
 ))))
 
 optprob = Optimization.OptimizationProblem(optf, p_guess, lb=p_lower_bounds, ub=p_upper_bounds)
@@ -1430,6 +1508,8 @@ cb = function (state, l)
     false
 end
 
+@time loss(p_guess)
+
 
 #=@time res = Optimization.solve(
     ensembleprob,
@@ -1465,7 +1545,7 @@ end
     BBO_adaptive_de_rand_1_bin_radiuslimited(), 
     EnsembleThreads(),
     trajectories = Sys.CPU_THREADS,
-    PopulationSize = 100,
+    #PopulationSize = 100,
     #Method = :RandomSearcher,
     callback = cb,
 )
@@ -1498,27 +1578,9 @@ end
 
 res.u
 
-#=
-0.0010350276291573024
-0.10211046718339412
-0.2539732329337388
-0.4543362998064088
-0.21638628606893434
-9.915449578133705
-7.282172315094936
-8.302154500636501
-7.940711757162081
-3.006091646567366
-=#
-
 loss(ustrip.(upreferred.(Vector(p_vec_fitted))))
 
 p_fitted = ComponentVector(res.u, p_axes)
-
-#0.41741
-#0.045
-#7050
-#8.71
 
 results_path = joinpath(@__DIR__, "optimization_results", "optimization_results_2026-05-10_14-09-03.csv")
 

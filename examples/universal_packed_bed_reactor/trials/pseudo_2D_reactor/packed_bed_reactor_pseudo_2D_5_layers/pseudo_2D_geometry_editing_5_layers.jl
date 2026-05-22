@@ -18,14 +18,40 @@ region_cell_areas = Dict(
     #in with the area of the insulation that's exposed to the environment
 )
 
+region_cell_distances = Dict(
+    ("pipe_inlet", "steel_pipe_wall") => ((common_properties.steel_pipe_wall_outside_diameter / 2) + (common_properties.steel_pipe_wall_inside_diameter / 2)) / 2 - 
+    ((common_properties.reforming_area_outside_diameter / 2) + 0.0u"m") / 2,
+    ("silicon_carbide_preheater", "steel_pipe_wall") => ((common_properties.steel_pipe_wall_outside_diameter / 2) + (common_properties.steel_pipe_wall_inside_diameter / 2)) / 2 - 
+    ((common_properties.reforming_area_outside_diameter / 2) + 0.0u"m") / 2,
+    ("copper_mesh_reformer", "steel_pipe_wall") => ((common_properties.steel_pipe_wall_outside_diameter / 2) + (common_properties.steel_pipe_wall_inside_diameter / 2)) / 2 - 
+    ((common_properties.reforming_area_outside_diameter / 2) + 0.0u"m") / 2,
+    ("pipe_outlet", "steel_pipe_wall") => ((common_properties.steel_pipe_wall_outside_diameter / 2) + (common_properties.steel_pipe_wall_inside_diameter / 2)) / 2 - 
+    ((common_properties.reforming_area_outside_diameter / 2) + 0.0u"m") / 2,
+    ("steel_pipe_wall", "thermocouple_and_jacket") => ((common_properties.thermocouple_region_outside_diameter / 2) + (common_properties.thermocouple_region_inside_diameter / 2)) / 2 - 
+    ((common_properties.steel_pipe_wall_outside_diameter / 2) + (common_properties.steel_pipe_wall_inside_diameter / 2)) / 2,
+    ("thermocouple_and_jacket", "heating_wire") => ((common_properties.heating_wire_outside_diameter / 2) + (common_properties.heating_wire_inside_diameter / 2)) / 2 - 
+    ((common_properties.thermocouple_region_outside_diameter / 2) + (common_properties.thermocouple_region_inside_diameter / 2)) / 2,
+    ("heating_wire", "insulation") => ((common_properties.insulation_outside_diameter / 2) + (common_properties.insulation_inside_diameter / 2)) / 2 - 
+    ((common_properties.heating_wire_outside_diameter / 2) + (common_properties.heating_wire_inside_diameter / 2)) / 2
+    #("insulation", "environment") => insulation_to_environment_cell_distances #the parameter that we're using to fit heat transfer to the environment is lumped 
+    #in with the area of the insulation that's exposed to the environment
+)
+
+#the way this works is that we find the "centroid"/average radius of a region like the insulation by taking the (outside radius + inside radius) / 2
+#then we find the same for the region adjacent to it (like the heating wire) by taking the (outside radius + inside radius) / 2
+#we then take the difference between these two values to get teh distance between the average radii
+
 for (region_a, region_b) in keys(region_cell_areas)
     region_a_cells = collect(grid.cellsets[region_a])
     region_b_cells = collect(grid.cellsets[region_b])
+    
     for (idx_a, neighbor_list) in geo.cell_neighbors[region_a_cells]
         for (idx_b, face_idx) in neighbor_list
             if idx_b in region_b_cells
                 geo.cell_neighbor_areas[idx_a][face_idx] = ustrip(upreferred(region_cell_areas[(region_a, region_b)]))
                 geo.cell_face_areas[idx_a][face_idx] = ustrip(upreferred(region_cell_areas[(region_a, region_b)]))
+
+                geo.cell_neighbor_distances[idx_a][face_idx] = ustrip(upreferred(region_cell_distances[(region_a, region_b)]))
             end
         end
     end
@@ -35,6 +61,8 @@ for (region_a, region_b) in keys(region_cell_areas)
             if idx_b in region_a_cells
                 geo.cell_neighbor_areas[idx_a][face_idx] = ustrip(upreferred(region_cell_areas[(region_a, region_b)]))
                 geo.cell_face_areas[idx_a][face_idx] = ustrip(upreferred(region_cell_areas[(region_a, region_b)]))
+
+                geo.cell_neighbor_distances[idx_a][face_idx] = ustrip(upreferred(region_cell_distances[(region_a, region_b)]))
             end
         end
     end

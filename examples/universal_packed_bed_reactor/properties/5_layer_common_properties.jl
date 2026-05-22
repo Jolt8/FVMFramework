@@ -3,11 +3,11 @@
 
 function get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_cells_axial)
     #Reforming Area
-    reforming_area_ouside_diameter = 16u"mm"
-    reforming_area_cell_volumes = pi * (reforming_area_ouside_diameter / 2)^2 * (pipe_length / n_cells_axial)
+    reforming_area_outside_diameter = 16u"mm"
+    reforming_area_cell_volumes = pi * (reforming_area_outside_diameter / 2)^2 * (pipe_length / n_cells_axial)
 
     #Reforming Area to Steel Pipe Wall 
-    reforming_area_to_steel_pipe_wall_area = pi * reforming_area_ouside_diameter * pipe_length
+    reforming_area_to_steel_pipe_wall_area = pi * reforming_area_outside_diameter * pipe_length
     reforming_area_to_steel_pipe_wall_cell_areas = reforming_area_to_steel_pipe_wall_area / n_cells_axial
 
     #Steel Pipe Wall 
@@ -63,7 +63,7 @@ function get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_c
         cell_lengths_along_pipe = cell_lengths_along_pipe,
         per_cell_pipe_length = cell_lengths_along_pipe / n_cells_axial,
 
-        reforming_area_ouside_diameter = reforming_area_ouside_diameter,
+        reforming_area_outside_diameter = reforming_area_outside_diameter,
         reforming_area_cell_volumes = reforming_area_cell_volumes,
         reforming_area_to_steel_pipe_wall_cell_areas = reforming_area_to_steel_pipe_wall_cell_areas,
 
