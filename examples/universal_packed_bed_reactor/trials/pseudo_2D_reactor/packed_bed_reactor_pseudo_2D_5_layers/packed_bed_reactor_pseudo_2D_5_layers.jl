@@ -21,6 +21,22 @@ using Dates
 
 using FVMFramework
 
+dry_run_optimization_results_path = joinpath(@__DIR__, "optimization_results", "dry_run_optimization_results.csv")
+dry_run_df = CSV.read(dry_run_optimization_results_path, DataFrame)
+
+min_dry_run_loss_idx = argmin(dry_run_df.loss)
+min_dry_run_loss = dry_run_df.loss[min_dry_run_loss_idx]
+dry_run_best_params = Vector(dry_run_df[min_dry_run_loss_idx, 2:end])
+
+hot_water_optimization_results_path = joinpath(@__DIR__, "optimization_results", "hot_water_optimization_results.csv")
+hot_water_df = CSV.read(hot_water_optimization_results_path, DataFrame)
+
+min_hot_water_loss_idx = argmin(hot_water_df.loss)
+min_hot_water_loss = hot_water_df.loss[min_hot_water_loss_idx]
+hot_water_best_params = Vector(hot_water_df[min_hot_water_loss_idx, 2:end])
+
+
+
 #to see an explanation of the physical build of this reactor check out:
 joinpath(@__DIR__, "..", "..", "..", "notes", "reactor_design.md")
 
@@ -1098,8 +1114,43 @@ first_p_guess_init = ComponentVector(
     TC5_thermal_resistance = 16.21039962342885u"K/W",
 )
 
+dry_run_best_params = ComponentVector(
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 1.3613733508973453u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 0.046224916624426536u"W/K",
+    heater_weight_1 = 0.04233643564131222,
+    heater_weight_2 = 0.6599848372698764,
+    heater_weight_3 = 0.4480116180759421,
+    heater_weight_4 = 0.007962092313654773,
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 1194.6515661535152u"W/(m^2*K)",
+    steel_thermal_mass_multiplier = 2.1703947052768693,
+    TC1_thermal_resistance = 28.129313413301414u"K/W",
+    TC2_thermal_resistance = 97.1810904949918u"K/W",
+    TC3_thermal_resistance = 91.60608551471157u"K/W",
+    TC4_thermal_resistance = 57.90696805772799u"K/W",
+    TC5_thermal_resistance = 67.15056955503321u"K/W",
+)
+
+hot_water_best_params = ComponentVector(
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 3.9215249544953634u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 0.21843778568123667u"W/K",
+    heater_weight_1 = 0.3211331590638462,
+    heater_weight_2 = 0.14535035339598748,
+    heater_weight_3 = 0.6840217991331898,
+    heater_weight_4 = 0.9984762651258827,
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 61.49737866475787u"W/(m^2*K)",
+    steel_thermal_mass_multiplier = 3.7753230723789706u"K/W",
+    TC1_thermal_resistance = 31.29201644638937u"K/W",
+    TC2_thermal_resistance = 2.204398102203747u"K/W",
+    TC3_thermal_resistance = 4.116298695255978u"K/W",
+    TC4_thermal_resistance = 77.00345471983348u"K/W",
+    TC5_thermal_resistance = 96.44035780712828u"K/W"
+)
+
 p_axes = getaxes(first_p_guess_init)
 p_guess = ustrip.(upreferred.(Vector(first_p_guess_init)))
+
+dry_run_p_best = ustrip.(upreferred.(Vector(dry_run_best_params)))
+hot_water_p_best = ustrip.(upreferred.(Vector(hot_water_best_params)))
 
 function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data)
     detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
@@ -1333,12 +1384,10 @@ function loss(θ)
     return (pure_dry_run_loss(θ) + pure_hot_water_loss(θ)) / 2.0
 end
 
-ForwardDiff.gradient(pure_dry_run_loss, p_guess)
+ForwardDiff.gradient(pure_dry_run_loss, dry_run_p_best)
 
-dry_run_simulated_thermocouple_data = viewable_dry_run_loss(p_guess)
+dry_run_simulated_thermocouple_data = viewable_dry_run_loss(dry_run_p_best)
 dry_run_simulated_thermocouple_data.loss
-#84243.06137568069
-#84243.06137568069
 
 plot_output_dir = joinpath(@__DIR__, "..", "graphs")
 
@@ -1374,7 +1423,7 @@ overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), 
 
 savefig(overall_plot, joinpath(plot_output_dir, "overall_dry_run_loss.png"))
 
-hot_water_simulated_thermocouple_data = viewable_hot_water_loss(p_guess)
+hot_water_simulated_thermocouple_data = viewable_hot_water_loss(dry_run_p_best)
 hot_water_times = hot_water_simulated_thermocouple_data.hot_water_times
 TC1_plt = plot(hot_water_times, hot_water_simulated_thermocouple_data.hot_water_TC1, label="Sim TC1", linewidth=2)
 plot!(TC1_plt, hot_water_times, ustrip(hot_water_thermocouple_data.TC1_temps_interp.(hot_water_times)), label="Exp TC1", linewidth=2)
@@ -1404,7 +1453,7 @@ savefig(TC5_plt, joinpath(plot_output_dir, "TC5_hot_water_loss.png"))
 overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), size=(1000, 250*5), ylims=(290, 340))
 
 savefig(overall_plot, joinpath(plot_output_dir, "overall_hot_water_loss.png"))
-
+#=
 #wow, these results are very interesting
 
 #@time grad = ForwardDiff.gradient(loss, p_guess)
