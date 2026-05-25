@@ -8,6 +8,7 @@ import ADTypes
 using NonlinearSolve
 using Sparspak
 
+#=
 using XLSX
 using SciMLSensitivity
 using Optimization
@@ -17,6 +18,7 @@ using ForwardDiff
 using DataFrames
 using CSV
 using DataInterpolations
+=#
 using Dates
 
 using FVMFramework
@@ -26,75 +28,41 @@ left = Ferrite.Vec{3}((0.0, 0.0, 0.0))
 right = Ferrite.Vec{3}((100.0, 100.0, 100.0))
 grid = generate_grid(Hexahedron, grid_dimensions, left, right)
 
-#deisred cellsets:
-    # - a region where the liquid starts 
+addcellset!(grid, "wall", xyz -> 
+    xyz[1] <= 1.0 &&
+    xyz[1] >= 99.0 &&
+    xyz[2] <= 1.0 &&
+    xyz[2] >= 99.0 &&
+    xyz[3] <= 1.0 &&
+    xyz[3] >= 99.0
+)
+getcellset(grid, "wall")
 
-addcellset!(grid, "pipe_inlet", xyz -> xyz[3] <= (1 * (stripped_pipe_length / n_cells_axial)) && xyz[2] <= pipe_width)
-getcellset(grid, "pipe_inlet")
+addcellset!(grid, "fluid", xyz -> 
+    xyz[1] < 99.0 &&
+    xyz[1] > 1.0 &&
+    xyz[2] < 99.0 &&
+    xyz[2] > 1.0 &&
+    xyz[3] < 99.0 &&
+    xyz[3] > 1.0
+)
 
-addcellset!(grid, "silicon_carbide_preheater", xyz -> xyz[3] >= (1 * (stripped_pipe_length / n_cells_axial)) && xyz[3] <= (evaporator_endpoint_cell * (stripped_pipe_length / n_cells_axial)) && xyz[2] <= pipe_width)
-getcellset(grid, "silicon_carbide_preheater")
-
-addcellset!(grid, "copper_mesh_reformer", xyz -> xyz[3] >= (evaporator_endpoint_cell * (stripped_pipe_length / n_cells_axial)) && xyz[3] <= ((n_cells_axial - 1) * (stripped_pipe_length / n_cells_axial)) && xyz[2] <= pipe_width)
-getcellset(grid, "copper_mesh_reformer")
-
-addcellset!(grid, "pipe_outlet", xyz -> xyz[3] >= ((n_cells_axial - 1) * (stripped_pipe_length / n_cells_axial)) && xyz[2] <= pipe_width)
-getcellset(grid, "pipe_outlet")
-
-addcellset!(grid, "steel_pipe_wall", xyz -> xyz[2] >= pipe_width && xyz[2] <= 2 * pipe_width)
-getcellset(grid, "steel_pipe_wall")
-
-addcellset!(grid, "thermocouple_and_jacket", xyz -> xyz[2] >= 2 * pipe_width && xyz[2] <= 3 * pipe_width)
-getcellset(grid, "thermocouple_and_jacket")
-
-addfacetset!(grid, "thermocouple_to_heating_wire", xyz -> xyz[2] == 3 * pipe_width)
-getfacetset(grid, "thermocouple_to_heating_wire")
-
-addcellset!(grid, "heating_wire", xyz -> xyz[2] >= 3 * pipe_width && xyz[2] <= 4 * pipe_width)
-getcellset(grid, "heating_wire")
-
-addcellset!(grid, "insulation", xyz -> xyz[2] >= 4 * pipe_width)
-getcellset(grid, "insulation")
-
-addfacetset!(grid, "insulation_to_air", xyz -> xyz[2] >= 5 * pipe_width)
-getfacetset(grid, "insulation_to_air")
-
-addfacetset!(grid, "pipe_endcaps_to_air", xyz -> xyz[2] >= pipe_width && xyz[2] <= 2 * pipe_width && (xyz[3] == 0.0 || xyz[3] == stripped_pipe_length))
-getfacetset(grid, "pipe_endcaps_to_air")
+getcellset(grid, "fluid")
 
 n_cells = length(grid.cells)
 
 struct Fluid <: AbstractPhysics end
 struct Solid <: AbstractPhysics end
-#struct CustomFlux <: AbstractPhysics end #this is for when we want to only apply thermal resistance to some interfaces
-struct ThermocoupleAndJacket <: AbstractPhysics end
-struct HeatingWire <: AbstractPhysics end
 
-Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "multiphase.jl")) #the .. makes it go up one directory
-Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "energy.jl"))
-Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "momentum.jl"))
+#Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "multiphase.jl")) #the .. makes it go up one directory
+#Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "energy.jl"))
+#Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "momentum.jl"))
 
 #we use a polynomial due to the fact that the endcaps allow for a lot more heat to escape the ends of the reactor 
 #than the cells closer to the center of the reactor 
 #we don't need p1
 
 Revise.includet(joinpath(@__DIR__, "..", "packing_and_fluid_property_merging.jl"))
-
-function update_copper_mesh_properties!(du, u, cell_id, vol, system)
-    mw_avg!(u, cell_id)
-    get_fluid_and_copper_mesh_packing_rho!(du, u, cell_id, vol)
-    get_fluid_and_copper_mesh_packing_k!(du, u, cell_id, vol)
-    get_fluid_and_copper_mesh_packing_cp!(du, u, cell_id, vol)
-    molar_concentrations!(u, cell_id)
-end
-
-function update_silicon_carbide_bed_packing_properties!(du, u, cell_id, vol, system)
-    mw_avg!(u, cell_id)
-    get_fluid_and_silicon_carbide_bed_packing_rho!(du, u, cell_id, vol)
-    get_fluid_and_silicon_carbide_bed_packing_k!(du, u, cell_id, vol)
-    get_fluid_and_silicon_carbide_bed_packing_cp!(du, u, cell_id, vol)
-    molar_concentrations!(u, cell_id)
-end
 
 function update_fluid_properties!(du, u, cell_id, vol, system)
     mw_avg!(u, cell_id)
@@ -114,22 +82,23 @@ function update_solid_properties!(du, u, cell_id, vol, system)
     properties = ComponentVector(system.properties_vec, system.properties_axes)
 
     u.k[cell_id] = properties.k[cell_id]
-    u.cp[cell_id] = properties.cp[cell_id]
-    u.rho[cell_id] = properties.rho[cell_id]
-    #we still have to come up with a way to automatically do this
-    #we could probably make a generated function that automatically applies fixed values to cached values 
-    #I checked and this is working for now
-end
-
-function update_steel_pipe_properties!(du, u, cell_id, vol, system)
-    properties = ComponentVector(system.properties_vec, system.properties_axes)
-
-    u.k[cell_id] = properties.k[cell_id]
     u.cp[cell_id] = properties.cp[cell_id] * u.steel_thermal_mass_multiplier[cell_id]
     u.rho[cell_id] = properties.rho[cell_id]
 end
 
-#you could also add any of these functions individually
+function update_fluid_properties!(du, u, cell_id, vol, system)
+    mw_avg!(u, cell_id)
+    #rho_ideal!(u, cell_id)
+    #rho_multiphase!(du, u, cell_id, vol)
+
+    properties = ComponentVector(system.properties_vec, system.properties_axes)
+    u.k[cell_id] = properties.k[cell_id]
+    u.cp[cell_id] = properties.cp[cell_id]
+    u.rho[cell_id] = properties.rho[cell_id]
+
+    molar_concentrations!(u, cell_id)
+    #update_velocity!(du, u, cell_id, vol)
+end
 
 function fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     #it's definitely one of these
@@ -148,18 +117,18 @@ function solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
 end
 
 u_proto = ComponentVector(
-    mass_fractions = (
-        #methanol = zeros(n_cells)u"kg/kg",
+    gas_mass_fractions = (
+        methanol = zeros(n_cells)u"kg/kg",
         water = zeros(n_cells)u"kg/kg",
-        #carbon_monoxide = zeros(n_cells)u"kg/kg",
-        #hydrogen = zeros(n_cells)u"kg/kg",
-        #carbon_dioxide = zeros(n_cells)u"kg/kg",
-        air = zeros(n_cells)u"kg/kg"
     ),
+    liquid_mass_fractions = (
+        methanol = zeros(n_cells)u"kg/kg",
+        water = zeros(n_cells)u"kg/kg",
+    ),
+    #I think overall mass fractions would be a cached variable then
     pressure = zeros(n_cells)u"Pa",
     temp = zeros(n_cells)u"K",
-    #liquid_holdup = zeros(n_cells)u"m^3/m^3",
-    #gas_holdup = zeros(n_cells)u"m^3/m^3"
+    gas_holdup = zeros(n_cells)u"m^3/m^3"
 )
 
 config = create_fvm_config(grid, u_proto);
