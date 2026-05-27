@@ -117,18 +117,17 @@ function solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
 end
 
 u_proto = ComponentVector(
-    gas_mass_fractions = (
-        methanol = zeros(n_cells)u"kg/kg",
-        water = zeros(n_cells)u"kg/kg",
+    species_gas_density = (
+        methanol = zeros(n_cells)u"kg/m^3",
+        water = zeros(n_cells)u"kg/m^3",
     ),
-    liquid_mass_fractions = (
-        methanol = zeros(n_cells)u"kg/kg",
-        water = zeros(n_cells)u"kg/kg",
+    species_liquid_density = (
+        methanol = zeros(n_cells)u"kg/m^3",
+        water = zeros(n_cells)u"kg/m^3",
     ),
     #I think overall mass fractions would be a cached variable then
     pressure = zeros(n_cells)u"Pa",
     temp = zeros(n_cells)u"K",
-    gas_holdup = zeros(n_cells)u"m^3/m^3"
 )
 
 config = create_fvm_config(grid, u_proto);
