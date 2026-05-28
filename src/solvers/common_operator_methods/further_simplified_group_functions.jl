@@ -5,6 +5,7 @@ function solve_connection_groups!(du, u, geo, system)
             du, u,
             conn.flux_function!, conn.cell_neighbors,
             geo.cell_neighbor_areas, geo.cell_neighbor_normals, geo.cell_neighbor_distances,
+            geo.cell_volumes
         )
     end
 end
