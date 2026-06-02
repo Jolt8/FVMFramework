@@ -43,8 +43,11 @@ struct FVMSystem
     region_groups::Vector{RegionGroup}
     du_virtual_axes::NamedTuple
     u_virtual_axes::NamedTuple
+    state_axes::Tuple
     du_diff_cache::DiffCache
     u_diff_cache::DiffCache
+    cache_vec::Vector{Float64}
+    cache_axes::Tuple
     properties_vec::Vector{Float64}
     properties_axes::Tuple
     p_vec::Vector{Float64}
@@ -158,6 +161,9 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
 
     merged_caches = merge_in_second_order_caches(config, merged_caches, merged_properties)
 
+    cache_vec = Vector(ComponentArray(; ustrip.(upreferred.(deepcopy(merged_caches)))...))
+    cache_axes = getaxes(ComponentArray(; ustrip.(upreferred.(deepcopy(merged_caches)))...))
+
     state_axes = getaxes(config.u_proto)
     
     du0_vec_units = Vector(deepcopy(upreferred.(config.u_proto)))
@@ -219,10 +225,12 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
     system = FVMSystem(
         connection_groups, controller_groups, patch_groups, region_groups,
         du_virtual_axes, u_virtual_axes,
-        du_diff_cache, u_diff_cache,
+        state_axes,
+        du_diff_cache, u_diff_cache, 
+        cache_vec, cache_axes,
         properties_vec, properties_axes,
         p_vec, p_axes
     )
 
-    return du0_vec, u0_vec, state_axes, config.geo, system
+    return du0_vec, u0_vec, config.geo, system
 end
