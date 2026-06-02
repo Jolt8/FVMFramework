@@ -127,10 +127,10 @@ include("setup/sim_config_second_order_setup.jl")
 export merge_in_second_order_caches!
 
 include("setup/sim_config_regions.jl")
-export add_region!
+export add_region!, update_region!
 
 include("setup/sim_config_patches.jl")
-export add_patch!
+export add_patch!, update_patch!
 
 include("setup/sim_config_controllers.jl")
 export add_controller!

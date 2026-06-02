@@ -53,3 +53,30 @@ function add_patch!(
     end
     return 
 end
+
+#this is for updating the state vector (u0) when doing different experimental trials
+function update_patch!(config, name) 
+    all_patch_names = [patch.name for patch in config.patches]
+    existing_patch_idx = findfirst(x -> x == name, all_patch_names)
+    
+    patch = config.patches[existing_patch_idx]
+
+    cell_ids_and_face_idxs = [cell_id_facet_idx.idx for cell_id_facet_idx in keys(config.grid.facetsets[name].dict)]
+    #[(cell_id, face_idx), (cell_id, face_idx), ...]
+
+    n_cells = length(config.grid.cells)
+    
+    cell_neighbors = [(cell_id, Vector{Tuple{Int, Int}}()) for cell_id in 1:n_cells]
+
+    for (cell_id, face_idx) in cell_ids_and_face_idxs
+        neighbor_id, neighbor_face_idx = get_neighboring_cell_and_face_idx_from_face_idx(cell_id, face_idx, config.top)
+        if !isnothing(neighbor_id)
+            push!(cell_neighbors[cell_id][2], (neighbor_id, face_idx))
+            #push!(cell_neighbors[neighbor_id][2], (cell_id, neighbor_face_idx)) #This is not necessary
+        else
+            push!(cell_neighbors[cell_id][2], (0, face_idx))
+        end
+    end
+
+    config.regions[existing_region_idx] = region
+end

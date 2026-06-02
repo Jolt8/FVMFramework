@@ -169,20 +169,24 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
     u0_vec = ustrip.(upreferred.(deepcopy(u0_vec_units)))
 
     N::Int = ForwardDiff.pickchunksize(length(u0_vec))
+
+    #we could also do this in the future, although this will require a lot of testing to make sure nothing siliently breaks:
+    #du_unitful_cache_vec = Vector(deepcopy(merged_caches))
+    #u_unitful_cache_vec = Vector(deepcopy(merged_caches))
+    #du_diff_cache = DiffCache(ustrip.(upreferred.(Vector(deepcopy(merged_caches)))), N)
+    #u_diff_cache = DiffCache(ustrip.(upreferred.(Vector(deepcopy(merged_caches)))), N)
     
-    du_unitful_cache_vec = Vector(ComponentArray(; deepcopy(merged_caches)...))
-    u_unitful_cache_vec = Vector(ComponentArray(; deepcopy(merged_caches)...))
+    du_unitful_cache_vec = Vector(ComponentArray(; upreferred.(deepcopy(merged_caches))...))
+    u_unitful_cache_vec = Vector(ComponentArray(; upreferred.(deepcopy(merged_caches))...))
 
     du_diff_cache = DiffCache(ustrip.(upreferred.(deepcopy(du_unitful_cache_vec))), N)
     u_diff_cache = DiffCache(ustrip.(upreferred.(deepcopy(u_unitful_cache_vec))), N)
 
-    pre_lengthened_optimized_parameters_dict = Dict{Symbol, Any}()
+    optimized_parameters_property_names = propertynames(config.optimized_parameters)
+    #TODO: decide if optimized parameters should be only inputted as a single value or for all cells
+    optimized_parameters_values = [[getproperty(config.optimized_parameters, name)] for name in optimized_parameters_property_names]
 
-    for name in propertynames(config.optimized_parameters)
-        pre_lengthened_optimized_parameters_dict[name] = getproperty(config.optimized_parameters, name)
-    end
-
-    lengthened_optimized_parameters = ComponentVector(_dict_to_namedtuple(pre_lengthened_optimized_parameters_dict))
+    lengthened_optimized_parameters = ComponentVector(NamedTuple{optimized_parameters_property_names}(optimized_parameters_values))
 
     p_vec_units = Vector(ComponentVector(lengthened_optimized_parameters))
     p_vec = ustrip.(upreferred.(Vector(ComponentVector(lengthened_optimized_parameters))))
@@ -191,7 +195,7 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
     #we have to split up properties to strip it of units
     properties_vec_units = Vector(merged_properties)
     properties_vec = ustrip.(upreferred.(deepcopy(properties_vec_units)))
-
+    
     #virtual_merge_axes takes in a tuple of ComponentArrays
     du_virtual_axes = virtual_merge_axes((ComponentVector(config.u_proto), ComponentVector(merged_caches)))
     if ComponentVector(config.optimized_parameters) == Union{}[] #if the user doesn't provide any optimized parameters, we ignore them

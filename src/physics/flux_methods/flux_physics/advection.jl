@@ -14,7 +14,7 @@ function enthalpy_advection!(
     idx_a, idx_b, face_idx,
     area, norm, dist
 )
-    cp_upwinded = upwind(du, u, idx_a, idx_b, face_idx, u.cp[idx_a], u.cp[idx_b])
+    cp_upwinded = upwind(du, u, idx_a, idx_b, face_idx, u.fluid_cp[idx_a], u.fluid_cp[idx_b]) #TODO: change back to u.cp later
 
     temp_upwinded = upwind(du, u, idx_a, idx_b, face_idx, u.temp[idx_a], u.temp[idx_b])
 

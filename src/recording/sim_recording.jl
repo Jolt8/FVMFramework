@@ -1,26 +1,36 @@
-function write_to_vtk_helper!(vtk, u_named_step, n_cells)
+function write_to_vtk_helper!(vtk, u_named_step, n_cells, prev_field = "")
     for field in keys(u_named_step)
         data = u_named_step[field]
 
         if data isa ComponentVector || data isa NamedTuple
-            write_to_vtk_helper!(vtk, data, n_cells)
+            if prev_field == ""
+                new_field = string(field)
+            else 
+                new_field = string(prev_field, "_", string(field))
+            end
+            write_to_vtk_helper!(vtk, data, n_cells, new_field)
         elseif data isa Vector || data isa SubArray && length(data) == n_cells 
             #the length check is to handle cases where a field is not present on all cells, which write_to_vtk wouldn't accept
             #this is tricky because we can't exactly write stuff to cells that they're not on
             #one way to handle this is to create an array of length n_cells and then fill it with zeros and then write to the respective cell_ids of the field
             #this doens't work for things that are indexed by controller_id for example, which is what the current logic is handling
-            write_cell_data(vtk, data, String(field))
+            if prev_field == ""
+                new_field = string(field)
+            else
+                new_field = string(prev_field, "_", field)
+            end
+            write_cell_data(vtk, data, new_field)
         else
             println("not processed: ", field)
         end
     end
 end
 
-function sol_to_vtk(sol, u_named, grid, sim_file)
+function sol_to_vtk(sol, u_named, grid, sim_file, root_dir)
     date_and_time = Dates.format(now(), "I.MM.SS p yyyy-mm-dd")
     #date_and_time = Dates.format(now(), "I.MM.SS p")
 
-    root_dir = "C://Users//wille//Desktop//Julia_cfd_output_files"
+    #root_dir = "C://Users//wille//Desktop//Julia_cfd_output_files"
 
     project_name = replace(basename(sim_file), r".jl" => "")
 

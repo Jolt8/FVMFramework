@@ -1,3 +1,4 @@
+
 function upwind(
     du, u,
     idx_a, idx_b, face_idx,
@@ -10,6 +11,20 @@ function upwind(
     end
 end
 
+
+#=
+function upwind(
+    du, u,
+    idx_a, idx_b, face_idx,
+    var_a, var_b
+)
+    #wow, this is a lot slower than the basic upwind function, I thought it would allow the solver to take larger steps, guess not
+    k = 10
+    return ((var_a - var_b) / 2) * tanh(k * du.mass_face[idx_a, face_idx]) + ((var_a + var_b) / 2)
+end
+=#
+
+
 function harmonic_mean(val_a, val_b)
     2 * val_a * val_b / (val_a + val_b)
 end
@@ -17,11 +32,13 @@ end
 #we should probably decide whether or not to pass du into every function just for consistency
 #function mw_avg!(du, u, cell)
 function mw_avg!(u, cell_id)
-    u.mw_avg[cell_id] *= 0.0
+    inv_mw = 0.0
 
     for_fields!(u.mass_fractions, u.molecular_weights) do species, mass_fractions, molecular_weights
-        u.mw_avg[cell_id] += mass_fractions[species[cell_id]] * molecular_weights[species[cell_id]]
+        inv_mw += mass_fractions[species[cell_id]] / molecular_weights[species[cell_id]]
     end
+    
+    u.mw_avg[cell_id] = 1.0 / inv_mw
 end
 
 function rho_ideal!(u, cell_id)
