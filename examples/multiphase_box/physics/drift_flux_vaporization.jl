@@ -260,7 +260,6 @@ function update_face_driving_force_and_velocities!(
     u.liquid_velocity_face[idx_a, face_idx] = ((1.0 - gas_holdup_clamped * average_distribution_parameter) / (1.0 - gas_holdup_clamped)) * u.mixture_pore_velocity[idx_a, face_idx] - gas_holdup_clamped * drift_velocity
 end
 
-
 function drift_flux_mass_flux!(
     du, u,
     idx_a, idx_b, face_idx,
