@@ -11,7 +11,7 @@ function find_traced_cells(origin_node_id, destination_node_id, grid, geo)
     ray_len = norm(ray_vector)
     
     if ray_len < 1e-12
-        return Tuple{Int, Float64}[]
+        return Int[], Float64[], 0.0
     end
     
     ray_dir = ray_vector / ray_len
