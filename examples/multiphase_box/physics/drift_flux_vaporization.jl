@@ -366,18 +366,29 @@ function drift_flux_energy_balance!(
     du.heat[idx_a] += change_in_enthalpy_per_volume * vol_a #note that heat is not W/m^3, but just W, it's capped by the cell's volume later
 end
 
-Revise.includet(joinpath(@__DIR__, "eos_stuff.jl")) #for update_eos_densities! and update_K_vle!
-
-function overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
+function multi_species_overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
     liquid_and_gas_density!(du, u, cell_id, vol)
     liquid_and_gas_mass_fractions!(du, u, cell_id, vol)
     gas_and_liquid_mw_avg!(du, u, cell_id, vol)
     two_phase_mw_avg!(du, u, cell_id, vol)
     gas_and_liquid_mole_fractions!(du, u, cell_id, vol)
-    update_eos_densities!(du, u, cell_id, vol, clapeyron_model) #from eos_stuff.jl
+    multi_species_update_eos_densities!(du, u, cell_id, vol, clapeyron_model) #from eos_stuff.jl
     liquid_and_gas_holdup!(du, u, cell_id, vol)
     fluid_rho!(du, u, cell_id, vol)
-    update_K_vle!(du, u, cell_id, vol, clapeyron_model) #from eos_stuff.jl
+    multi_species_update_K_vle!(du, u, cell_id, vol, clapeyron_model) #from eos_stuff.jl
+    phase_change_kinetic_mass_transfer!(du, u, cell_id, vol)
+end
+
+function single_species_overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
+    liquid_and_gas_density!(du, u, cell_id, vol)
+    liquid_and_gas_mass_fractions!(du, u, cell_id, vol)
+    gas_and_liquid_mw_avg!(du, u, cell_id, vol)
+    two_phase_mw_avg!(du, u, cell_id, vol)
+    gas_and_liquid_mole_fractions!(du, u, cell_id, vol)
+    single_species_update_eos_densities!(du, u, cell_id, vol, clapeyron_model) #from eos_stuff.jl
+    liquid_and_gas_holdup!(du, u, cell_id, vol)
+    fluid_rho!(du, u, cell_id, vol)
+    single_species_update_K_vle!(du, u, cell_id, vol, clapeyron_model) #from eos_stuff.jl
     phase_change_kinetic_mass_transfer!(du, u, cell_id, vol)
 end
 
