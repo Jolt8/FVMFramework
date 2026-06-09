@@ -9,21 +9,29 @@ import ADTypes
 using NonlinearSolve
 using Sparspak
 using Dates
+using DataInterpolations
 
 using SparseArrays
 using JLD2
 
+Revise.includet(joinpath(@__DIR__, "..", "multiphase_box", "overloads", "clapeyron_tracer_overloads.jl"))
+
+#=
+using XLSX
 using SciMLSensitivity
 using Optimization
 using OptimizationOptimJL
+using OptimizationBBO
 using ForwardDiff
-using DataInterpolations
+using DataFrames
+using CSV
+=#
 
 using FVMFramework
 
-grid_dimensions = (20, 20, 20)
+grid_dimensions = (1, 1, 100)
 left = Ferrite.Vec{3}((0.0, 0.0, 0.0))
-right = Ferrite.Vec{3}((1.0, 1.0, 1.0))
+right = Ferrite.Vec{3}((1.0, 1.0, 20.0))
 grid = generate_grid(Hexahedron, grid_dimensions, left, right)
 
 addcellset!(grid, "fluid", xyz -> true)
@@ -38,47 +46,90 @@ struct Solid <: AbstractPhysics end
 Revise.includet(joinpath(@__DIR__, "properties", "water_properties.jl"))
 water_properties = get_water_properties()
 
+#physics
+Revise.includet(joinpath(@__DIR__, "..", "multiphase_box", "physics", "drift_flux_vaporization.jl"))
+Revise.includet(joinpath(@__DIR__, "..", "multiphase_box", "physics", "eos_stuff.jl")) #for update_eos_densities! and update_K_vle!
+#NOTE: if the solver ever crashes, it's most likely due to the rate in which the liquid boils in the drift_flux_vaporization physics functions
+#this is on lines 90-92 
+#the culprit is usually: kinetic_constant = u.phase_change_mass_transfer_coefficient[cell_id] * effective_bubble_area
+#if the phase_change_mass_transfer_coefficient is too high, the solver will be hit with extreme stiffness and never solve
+
+function update_solid_properties!(du, u, cell_id, vol, system)
+    properties = ComponentVector(system.properties_vec, system.properties_axes)
+
+    u.k[cell_id] = properties.k[cell_id]
+    u.cp[cell_id] = properties.cp[cell_id] * u.steel_thermal_mass_multiplier[cell_id]
+    u.rho[cell_id] = properties.solid_rho[cell_id]
+end
+
+#clapeyron_model = CPA(["methanol", "water"])
+clapeyron_model = IAPWS95(["water"])
+n_species = length(clapeyron_model.components)
+
+if n_species == 1
+    overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model) = single_species_overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
+else
+    overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model) = multi_species_overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
+end
+
 function update_fluid_properties!(du, u, cell_id, vol, system)
     properties = ComponentVector(system.properties_vec, system.properties_axes)
+
+    overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
     
     u.k[cell_id] = properties.k[cell_id]
     u.cp[cell_id] = properties.cp[cell_id]
-    u.rho[cell_id] = properties.fluid_rho[cell_id]
+    u.rho[cell_id] = u.bed_porosity[cell_id] * u.fluid_rho[cell_id] + (1.0 - u.bed_porosity[cell_id]) * properties.solid_rho[cell_id]
 
-    rho_effective = (u.gas_holdup[cell_id] * u.gas_density[cell_id]) + (u.liquid_holdup[cell_id] * u.fluid_density[cell_id])
-    #I wonder if we would use fluid_rho instead of rho_effective 
     compressibility_effective = u.gas_holdup[cell_id] * properties.gas_compressibility[cell_id] + u.liquid_holdup[cell_id] * properties.liquid_compressibility[cell_id]
+    #isothermal_compressibility(clapeyron_model, u.pressure[cell_id], u.temp[cell_id])
     
-    u.speed_of_sound[cell_id] = 1 / sqrt(rho_effective * compressibility_effective)
-
-    u.n_velocity_updates[cell_id] += 1.0 #because julia uses 1-based indexing, we have to make n_velocity_updates start at 1
+    u.speed_of_sound[cell_id] = 1 / sqrt(u.fluid_rho[cell_id] * compressibility_effective)
 end
 
 function fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+    #it's definitely one of these
+    sum_mass_flux_face_to_cell!(du, u, cell_id) #this always has to go before cap_mass_flux_to_pressure_change!
+
+    cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
+    cap_mass_flux_to_pressure_change!(du, u, cell_id, vol)
+end
+
+function solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
 end
 
 u_proto = ComponentVector(
+    gas_densities = (
+        #methanol = zeros(n_cells)u"kg/m^3",
+        water = zeros(n_cells)u"kg/m^3",
+    ),
+    liquid_densities = (
+        #methanol = zeros(n_cells)u"kg/m^3",
+        water = zeros(n_cells)u"kg/m^3",
+    ),
+    #I think overall mass fractions would be a cached variable then
     pressure = zeros(n_cells)u"Pa",
     temp = zeros(n_cells)u"K",
 )
 
 config = create_fvm_config(grid, u_proto);
 
-n_cells = length(config.geo.cell_volumes)
 n_faces = length(config.geo.cell_neighbor_areas[1])
+species_names = keys(u_proto.gas_densities)
 
-transducer_node_ids = [1, 10, 100, 200, 400, 500, 600, 3000, 5000, 8000]
+transducer_node_ids = [1, 10, 50, 100, 150, 200, 250, 300, 350, 400]
 transducer_ids = collect(1:length(transducer_node_ids))
 
 #Ray mapping
 Revise.includet(joinpath(@__DIR__, "transducer_profiles", "ray_mapping", "ray_tracers", "default_ray_tracer.jl"))
 Revise.includet(joinpath(@__DIR__, "transducer_profiles", "ray_mapping", "generate_ray_map.jl"))
-#generate_ray_map(transducer_ids, transducer_node_ids) #this takes a while
+#generate_ray_map(transducer_ids, transducer_node_ids, grid, config.geo) #this takes a while
 
 ray_map_intersected_cells, ray_map_distances_through_cells, ray_map_ray_lengths = load_object(
     joinpath(
-        @__DIR__, 
+        @__DIR__,
+        "transducer_profiles",
         "ray_mapping",
         "saved_ray_maps", 
         "ray_map_$(length(transducer_ids))_transducers_$(length(grid.cells))_cells.jls"
@@ -86,6 +137,8 @@ ray_map_intersected_cells, ray_map_distances_through_cells, ray_map_ray_lengths 
 )
 
 #Projections 
+#remember, although this seems pointless because projections are just for 1 transducer, 
+#we use the vector between the two transducers to determine the direction of the projection
 transducer_opposing_pairs_ids = [
     (1, 6),
     (2, 7),
@@ -94,11 +147,34 @@ transducer_opposing_pairs_ids = [
     (5, 10)
 ]
 
-Revise.includet(joinpath(@__DIR__, "transducer_profiles", "transducer_projecting", "default_transducer_projector.jl"))
-Revise.includet(joinpath(@__DIR__, "transducer_profiles", "transducer_projecting", "generate_transducer_projections.jl"))
-generate_transducer_projections(transducer_opposing_pairs_ids, transducer_node_ids, grid, geo, most_consistent_timestamp_for_speed_of_sound, experimental_travel_time_interp_matrix, transducer_frequency, transducer_diameter)
+#travel_time = experimental_travel_time_interp_matrix[opposing_transducer_node_id, source_transducer_node_id](most_consistent_timestamp_for_speed_of_sound)
+travel_time = 100u"μs"
+#speed_of_sound = 1500u"m/s"
+projection_distance = 100.0u"mm"
+transducer_frequency = 2.0u"MHz"
+transducer_diameter = 10.0u"mm"
 
-transducer_projection_intersected_cells, transducer_projection_volume_in_cells, transducer_projection_cell_distances, transducer_projection_distances, transducer_projection_slant_distances, cell_projection_counts, projection_unit_vectors_to_cell_centers = load_object(
+speed_of_sound = projection_distance / travel_time
+wavelength = speed_of_sound / transducer_frequency
+arg = ustrip(upreferred(1.22 * wavelength / transducer_diameter))
+transducer_angle_of_projection = asind(min(arg, 1.0))
+near_field_distance = ustrip(upreferred(transducer_diameter^2 / (4 * wavelength)))
+transducer_radius_val = ustrip(upreferred(transducer_diameter / 2))
+
+Revise.includet(joinpath(@__DIR__, "transducer_profiles", "transducer_projecting", "projectors", "default_projector.jl"))
+Revise.includet(joinpath(@__DIR__, "transducer_profiles", "transducer_projecting", "generate_transducer_projections.jl"))
+beam_profile = BeamProfile(transducer_angle_of_projection, near_field_distance, transducer_radius_val)
+#generate_transducer_projections(transducer_opposing_pairs_ids, transducer_node_ids, grid, config.geo, beam_profile)
+
+transducer_projection_intersected_cells, 
+transducer_projection_volume_in_cells, 
+transducer_projection_cell_distances, 
+transducer_projection_center_ray_intersected_cells,
+transducer_projection_center_ray_distances_through_cells,
+transducer_projection_center_ray_distances, 
+transducer_projection_slant_distances, 
+cell_projection_counts, 
+projection_unit_vectors_to_cell_centers = load_object(
     joinpath(
         @__DIR__, 
         "transducer_profiles",
@@ -106,7 +182,7 @@ transducer_projection_intersected_cells, transducer_projection_volume_in_cells, 
         "saved_transducer_projections", 
         "transducer_projection_$(length(transducer_opposing_pairs_ids))_pairs_$(length(grid.cells))_cells.jls"
     )
-)
+);
 
 add_setup_syms!(config;
     cache_syms_and_units = (
@@ -118,19 +194,74 @@ add_setup_syms!(config;
         compressibility = u"Pa^-1",
         speed_of_sound = u"m/s",
         mass = u"kg",
+        gas_holdup = u"1",
+        liquid_holdup = u"1",
+        gas_enthalpy = u"J/kg",
+        liquid_enthalpy = u"J/kg",
+        overall_gas_density = u"kg/m^3",
+        overall_liquid_density = u"kg/m^3",
+        fluid_rho = u"kg/m^3",
+
+        gas_mw_avg = u"kg/mol",
+        liquid_mw_avg = u"kg/mol",
+
+        eos_gas_density = u"kg/m^3", #these are the intrinsic density of the current phase found with the eos model
+        eos_liquid_density = u"kg/m^3",
+        
         mass_face = u"kg",
-        n_velocity_updates = u"1", #this is for keeping track of how many times a cell has been updated by the experimental velocity data
-        beam_x_components = u"1",
-        beam_y_components = u"1",
-        beam_z_components = u"1",
-        beam_measured_velocities = u"m/s",
+        
+        viscous_drag = u"kg/(m*s)",
+        inertial_drag = u"kg/(m^3)",
+        driving_force = u"N/m^3",
+        mixture_superficial_velocity = u"m/s",
+        mixture_pore_velocity = u"m/s",
+
+        gas_velocity_face = u"m/s",
+        liquid_velocity_face = u"m/s",
+
+        gas_mass_fractions = u"1",
+        liquid_mass_fractions = u"1",
+
+        gas_mole_fractions = u"1",
+        liquid_mole_fractions = u"1",
+
+        gas_generation = u"kg/(m^3*s)",
+
+        K_vle = u"1",
     ),
     special_caches = ComponentArray(
         mass_face = zeros(n_cells, n_faces)u"kg",
-        beam_x_components = [zeros(Float64, cell_projection_counts[cell_id]) for cell_id in grid.cells]u"1",
-        beam_y_components = [zeros(Float64, cell_projection_counts[cell_id]) for cell_id in grid.cells]u"1",
-        beam_z_components = [zeros(Float64, cell_projection_counts[cell_id]) for cell_id in grid.cells]u"1",
-        beam_measured_velocities = [zeros(Float64, cell_projection_counts[cell_id]) for cell_id in grid.cells]u"m/s",
+
+        viscous_drag = zeros(n_cells, n_faces)u"kg/(m*s)",
+        inertial_drag = zeros(n_cells, n_faces)u"kg/(m^3)",
+        driving_force = zeros(n_cells, n_faces)u"N/m^3",
+        mixture_superficial_velocity = zeros(n_cells, n_faces)u"m/s",
+        mixture_pore_velocity = zeros(n_cells, n_faces)u"m/s",
+
+        gas_velocity_face = zeros(n_cells, n_faces)u"m/s",
+        liquid_velocity_face = zeros(n_cells, n_faces)u"m/s",
+
+        gas_mass_fractions = NamedTuple{species_names}(
+            Tuple(zeros(n_cells)u"1" for _ in 1:length(species_names))
+        ),
+        liquid_mass_fractions = NamedTuple{species_names}(
+            Tuple(zeros(n_cells)u"1" for _ in 1:length(species_names))
+        ),
+
+        gas_mole_fractions = NamedTuple{species_names}(
+            Tuple(zeros(n_cells)u"1" for _ in 1:length(species_names))
+        ),
+        liquid_mole_fractions = NamedTuple{species_names}(
+            Tuple(zeros(n_cells)u"1" for _ in 1:length(species_names))
+        ),
+
+        gas_generation = NamedTuple{species_names}(
+            Tuple(zeros(n_cells)u"kg/(m^3*s)" for _ in 1:length(species_names))
+        ),
+
+        K_vle = NamedTuple{species_names}(
+            Tuple(zeros(n_cells)u"1" for _ in 1:length(species_names))
+        ),
     ),
     second_order_syms = [],
     optimized_parameters = ComponentVector()
@@ -140,12 +271,24 @@ add_region!(
     config, "fluid";
     type = Fluid(),
     initial_conditions = ComponentVector(
+        gas_densities = ComponentVector(
+            #methanol = 0.1u"kg/m^3",
+            water = 0.4u"kg/m^3",
+        ),
+        liquid_densities = ComponentVector(
+            #methanol = 80.0u"kg/m^3",
+            water = 200.0u"kg/m^3",
+        ),
         pressure = 1.0u"atm",
-        temp = 25.0u"°C",
+        temp = 60.0u"°C",
     ),
     properties = water_properties,
     region_function =
     function inlet!(du, u, cell_id, vol)
+        #update_fluid_properties!(du, u, cell_id, vol, system)
+
+        #du.heat[cell_id] += 10.0
+
         fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     end
 )
@@ -156,6 +299,13 @@ function fluid_fluid_flux!(
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
 )
+    overall_drift_flux_model!(
+        du, u,
+        idx_a, idx_b, face_idx,
+        cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
+        cell_volumes[idx_a], cell_volumes[idx_b]
+    )
+
     #this is the only equation that's still needed
     heat_diffusion!(
         du, u,
@@ -203,6 +353,10 @@ function connection_map_function(phys_a, phys_b)
 end
 
 function solve_system!(du, u, p_vec, t, geo, system)
+    #no=slip condition at walls to prevent liquid and gas from building up at the top and bottom cells
+    u.gravity[1] == 0.0 
+    u.local_gas_drift_velocity[end] == 0.0
+    
     for cell_id in grid.cellsets["fluid"]
         update_fluid_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
     end
@@ -212,7 +366,6 @@ function solve_system!(du, u, p_vec, t, geo, system)
     solve_patch_groups!(du, u, geo, system)
     solve_region_groups!(du, u, geo, system)
 end
-    
 
 du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, check_units = false);
 
@@ -249,71 +402,31 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 
 #sol_to_vtk(sol, u_named, grid, @__FILE__, root_dir)
 
-
-function build_simulated_travel_time_matrix(tMax, saveat)
-    n_timesteps = Int(tMax / saveat)
-    simulated_travel_time_matrix = [zeros(Float64, n_timesteps) for i in 1:length(transducer_ids), j in 1:length(transducer_ids)]
-
-    return simulated_travel_time_matrix
-end
-
-function calculate_simulated_travel_time(u, origin_node_id, destination_node_id, ray_map_intersected_cells, ray_map_distances_through_cells)
-    intersected_cells = ray_map_intersected_cells[origin_node_id, destination_node_id]
-    intersected_cell_distances = ray_map_distances_through_cells[origin_node_id, destination_node_id]
-
-    travel_time = 0.0
-
-    for (index, cell_id) in enumerate(intersected_cells)
-        travel_time += intersected_cell_distances[index] / u.speed_of_sound[cell_id]
-    end
-
-    return travel_time
-end
-
-function calculate_simulated_received_returned_volume(u, t, origin_node_id, destination_node_id, ray_map_intersected_cells, ray_map_distances_through_cells)
-    intersected_cells = ray_map_intersected_cells[origin_node_id, destination_node_id]
-    intersected_cell_distances = ray_map_distances_through_cells[origin_node_id, destination_node_id]
-
-    initial_ping_volume = experimental_ping_volumes_interp_matrix[origin_node_id, destination_node_id](t)
-
-    overall_attenuation_coefficient = 0.0
-
-    #just using a simple attenuiation_coefficient model for now 
-    for (index, cell_id) in enumerate(intersected_cells)
-        overall_attenuation_coefficient += (u.gas_holdup[cell_id] * u.bubble_radii[cell_id]) * intersected_cell_distances[index]
-    end
-
-    overall_attenuation_coefficient /= ray_map_ray_lengths[origin_node_id, destination_node_id]
-
-    returned_volume = initial_ping_volume * exp(-overall_attenuation_coefficient * ray_map_ray_lengths[origin_node_id, destination_node_id])
-
-    return returned_volume
-end
+Revise.includet(joinpath(@__DIR__, "sonic_helper_functions.jl"))
 
 Revise.includet(joinpath(@__DIR__, "precompute_experimental_velocities.jl"))
-experimental_vel_x_interps, experimental_vel_y_interps, experimental_vel_z_interps, = precompute_experimental_velocities_over_time(
+experimental_vel_x_interps, experimental_vel_y_interps, experimental_vel_z_interps, 
+cell_vel_x_uncertainty_interps, cell_vel_y_uncertainty_interps, cell_vel_z_uncertainty_interps, 
+speeds_of_sound_interps, speeds_of_sound_uncertainty_interps = precompute_experimental_velocities_over_time(
     grid, geo,
-    #cell_speeds_of_sounds, 
+    #cell_speeds_of_sound, 
     transducer_ids,
     transducer_opposing_pairs_ids,
-    ray_map_intersected_cells,
-    ray_map_distances_through_cells,
     transducer_projection_intersected_cells,
     transducer_projection_cell_distances,
+    transducer_projection_center_ray_distances,
+    transducer_projection_center_ray_intersected_cells,
+    transducer_projection_center_ray_distances_through_cells,
     projection_unit_vectors_to_cell_centers,
     cell_projection_counts,
 
-    experimental_double_pulse_echo_history, #TODO: make sure that the two pulses are done at every desired saveat time
+    experimental_sonic_data, #TODO: feed in the actual data
 
-    pulse_repetition_interval, #make sure to update this
-    samples_per_second, 
-    window_size_indices;
-    tolerance = 2.0,
-    total_simulation_time, 
-    simulation_saveat
+    window_size_indices,
+    reltol = 1.5
 )
 
-function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, tMax, p_guess)
+function build_prob(f_closure, du0_vec, u0_vec, tMax, p_guess)
     detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 
     jac_sparsity = ADTypes.jacobian_sparsity(
@@ -344,7 +457,7 @@ function loss(θ)
         
         f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo_copy, system_copy)
         
-        prob = built_trial_implicit_prob(f_closure, du0_vec, u0_vec, experimental_tMax, θ)
+        prob = build_prob(f_closure, du0_vec, u0_vec, experimental_tMax, θ)
         return (prob, system_copy, geo_copy)
     end
 
@@ -370,22 +483,100 @@ function loss(θ)
 
     mean_squared_error = 0.0
 
-    for i in eachindex(sol.t)
-        du, u = unpack_fvm_state(du_temporary, sol.u[i], θ, sol.t[i], system_copy)
+    for (i, t) in enumerate(sol.t)
+        du, u = unpack_fvm_state(du_temporary, sol.u[i], θ, t, system_copy)
         
         for cell_id in grid.cellsets["fluid"]
             update_fluid_properties!(du, u, cell_id, geo_copy.cell_volumes[cell_id], system_copy)
         end
 
+        reconstructed_speeds_of_sound = reconstruct_simulated_speeds_of_sound(
+            du, u, geo, system,
+            transducer_opposing_pairs_ids, experimental_sonic_data,
+            center_ray_intersected_cells, center_ray_distances_through_cells;
+            regularization_lambda = 1e-4
+        )
+
+        #getting the scaling right between these three so that one of the them doesn't overpower the other is going to be tricky
+        #we also have to get the scaling right for the two simulated transducer paths
+        for cell_id in 1:length(geo.cell_volumes)
+            mean_squared_error += abs2(reconstructed_speeds_of_sound[cell_id] - experimental_speeds_of_sound_interps[cell_id](t)) / speeds_of_sound_uncertainty_interps[cell_id](t)
+        end
+
+        for cell_id in 1:length(geo.cell_volumes)
+            mean_squared_error += abs2(u.local_gas_drift_velocity[cell_id] - experimental_vel_z_interps[cell_id](t)) / cell_vel_z_uncertainty_interps[cell_id](t)
+        end
+
+        for cell_id in 1:length(geo.cell_volumes)
+            mean_squared_error += abs2(u.bubble_acceleration[cell_id] - DataInterpolations.derivative(experimental_vel_z_interps[cell_id], t)) / cell_vel_z_uncertainty_interps[cell_id](t) 
+        end
+
         for origin_transducer_idx in transducer_ids
             for destination_transducer_idx in transducer_ids
                 if origin_transducer_idx != destination_transducer_idx
-                    experimental_travel_time = experimental_travel_time_interp_matrix[origin_transducer_idx, destination_transducer_idx](sol.t[i])
+                    #=
+                    this part of the loss function will force the optimizer to get the density, bulk modulus, and gas_holdup/void_fraction right
+                    bulk modulus is probably going to come from an EOS model though, so that only density and gas_holdup are variables that must be satisfied through other conditions
+                    however, we also have access to experimental speeds of sound from our precompute_experimental_velocities_over_time function, so we can still constrain the solver by making it satisfy 
+                    that condition as well
+                    don't know if it's going to be better to constrain it by simulating the sound waves and comparing it to the experimental travel times, or compare each cell's speed of sound to 
+                    the approximate_experimental_speeds_of_sound found in precompute_experimental_velocities_over_time
+
+                    if we do the precompute_experimental_velocities_over_time, I wonder if it would be a good idea to plug the simulated travel times into the same function that finds 
+                    the approximate_experimental_speeds_of_sound and see if that matches the experimental one or if it would be better to compare the speeds of sound f each cell direclty
+                    maybe then we could ignore cells that have not been observed by a transducer instead of filling them in
+                    this is going to be challenging to figure out the best solution
+                    actually, would it make sense to do this by also simulating sound waves in the simulation to find simulated_velocities and then compare that to experimental_velocities
+                        - notes on this:
+
+                        - I think this would actually be a good idea as it would impose the same lossiness and limitations of the velocity reconstruction
+                        - However, the only issue is that running it through this pipeline might be too performance intensive and thus comparing the raw simulated values 
+                        to the experimentally-derived values would be better
+                        - There's no way to predict this, so we'll just see how slow precompute_experimental_velocities_over_time is
+                        - TODO: check how slow precompute_experimental_velocities_over_time is
+                        - Wait a minute, we can't do this because precompute_experimental_velocities_over_time relies on actual experimental data
+                        of the frequency response from the transducers and we can't simulate that
+                        - I guess we could maybe built an uncertainty quantification map for each cell's experimental velocity 
+                            - for example, this would be the map that we would probably go for
+                                uncertainty = 0.1^n (cell has been observed by n tansducers)
+                                uncertainty = 0.1^2 (cell has been observed by 2 transducer)
+                                uncertianty = 1 (cell has been observed by only 1 transducer)
+                                uncertainty = 10 (cell has had no transducers observe it and requied a neighbor fill-in)
+                                NOTE: the uncertainty would also go up if a cell was only observed by two transducers that were roughly parallel to each other,
+                                beacause then the measured velocity of the cell can "notch" both transducers 
+                                for example, if the difference  between the angle formed by the ray projected by transducer 1 to the cell 
+                                and the ray projected by transducer 2 to the cell is small, the uncertainty would be greater
+                                - I'm sure there's a smart way to do this, I'll look into it later
+                                - Smart way: You could use 1 / cond(A[1:n, :]) or the smallest singular value as your uncertainty metric — 
+                                it's cheap to compute and directly measures how well-constrained the velocity reconstruction is for that cell.
+                                 
+                            - We could also use a greater weighting for simulated cell speeds of sound that are observed by two transducers that are closer together
+                            since if the transducers are closer together, there are less cells along the path between them, meaning that that speed of sound is more accurate for 
+                            that specific subset of cells and a cell within that should be weighted more by that speed of sound calculation than when it's 
+                            calculated from transducers that are further away from each other
+                            
+                        - Apparently this is an "Inverse Crime" as I would normally be comparing raw simulated cell values against reconstructed experimental values
+
+                        - NOTE: we can still use precompute_experimental_speeds_of_sound though because it only relies on travel times
+                        - The only uncertainty would be in finding velocities
+
+
+                                
+                    =#
+                    experimental_travel_time = experimental_travel_time_interp_matrix[origin_transducer_idx, destination_transducer_idx](t)
                     sim_travel_time = calculate_simulated_travel_time(
                         u, origin_transducer_idx, destination_transducer_idx, 
                         ray_map_intersected_cells, ray_map_distances_through_cells
                     )
                     mean_squared_error += abs2(sim_travel_time - experimental_travel_time)
+                    
+                    ping_volume = experimental_ping_volumes_interp_matrix[origin_transducer_idx, destination_transducer_idx](t)
+                    experimental_returned_volume = experimental_return_volumes_interp_matrix[origin_transducer_idx, destination_transducer_idx](t)
+                    sim_returned_volume = calculate_simulated_received_returned_volume(
+                        u, t, origin_transducer_idx, destination_transducer_idx, 
+                        ray_map_intersected_cells, ray_map_distances_through_cells, ping_volume
+                    )
+                    mean_squared_error += abs2(sim_returned_volume - experimental_returned_volume)
                 end
             end
         end
@@ -394,31 +585,88 @@ function loss(θ)
     return sol.t, u_named, mean_squared_error
 end
 
-function regenerate_fvm_state(sol, system)
+function regenerate_fvm_state(sol, system; u_additional_information = ComponentVector())
+    #we don't need an du_additional_information because we're not updating any new fields each time and because we can just put derivatives in u_additional_information
+    du_list = ComponentVector[]
     u_list = ComponentVector[]
 
     u_named = [ComponentVector(sol.u[i], system.state_axes) for i in eachindex(sol.u)]
+    du_named = [ComponentVector(deepcopy(sol.u[i]), system.state_axes) for i in eachindex(sol.u)]
 
-    du_temporary = similar(merge_properties(u_named[1], deepcopy(ComponentVector(system.properties_vec, system.properties_axes))))
+    temporary_cache = ComponentVector(system.cache_vec, system.cache_axes)
+    temporary_cache .= 0.0
 
-    for i in eachindex(sol.t)
+    t_last = sol.t[1]
+
+    for (i, t) in enumerate(sol.t)
         u = merge_properties(u_named[i], deepcopy(ComponentVector(system.properties_vec, system.properties_axes)))
         u = merge_properties(u, deepcopy(ComponentVector(system.cache_vec, system.cache_axes)))
+        u = merge_properties(u, u_additional_information)
+
+        du = merge_properties(du_named[i], deepcopy(ComponentVector(system.cache_vec, system.cache_axes)))
+        du .= 0.0
         
-        for cell_id in grid.cellsets["fluid"]
-            update_fluid_properties!(du_temporary, u, cell_id, geo.cell_volumes[cell_id], system)
+        solve_system!(du, u, p_guess, t, geo, system) #solve_sytem! is extremely cheap to run once we've already solved it
+
+        #however, since it updates u_named, we need to set it back to the original
+        #if this breaks in the future, we can just fallback to only running update_fluid_properties! each iteration instead of solve_system!
+        #if we don't run the entire solve_system! stuff like u.mass_face or u.heat will not get updated
+        for propertyname in propertynames(u_named[i])
+            getproperty(u, propertyname)[1:end] = getproperty(u_named[i], propertyname)[1:end] #we have to use getproperty() because just doing u[propertyname] doesn't update it
         end
 
+        #TODO: we may also want to log the experimental transducer data into the vtk file so that we can observe it
+        #this would be very useful for stuff like cell_velocity_uncertainties
+        push!(du_list, du)
         push!(u_list, u)
+
+        #TODO: get the caches finite differences to work with nested fields
+        if i == 1
+            #for the first time step we can't use finite differences so we will just set it to 0.0
+            for propertyname in propertynames(temporary_cache) #we use finite differences for apprroximating the time derivative of the cached variables who derivatives are not cached
+                getproperty(du_list[i], propertyname)[1:end] .= 0.0
+            end
+        else
+            for propertyname in propertynames(temporary_cache) #we use finite differences for apprroximating the time derivative of the cached variables who derivatives are not cached
+                for cell_id in eachindex(temporary_cache[propertyname])
+                    getproperty(du_list[i], propertyname)[cell_id] = (u_list[i][propertyname][cell_id] - u_list[i-1][propertyname][cell_id]) / (t - t_last)
+                end
+            end
+        end
+
+        t_last = t
     end
 
-    return u_list
+    return du_list, u_list
 end
 
-u_complete_list = regenerate_fvm_state(sol, system);
+#=
+u_additional_information = ComponentVector(
+    speeds_of_sound_uncertainties = speeds_of_sound_uncertainty_interps[i](t),
+    experimental_speeds_of_sound = experimental_speeds_of_sound_interps[i](t),
+    experimental_vel_vec = [
+        SVector{3, Float64}(
+            experimental_vel_x_interps[i](t)[cell_id], 
+            experimental_vel_y_interps[i](t)[cell_id], 
+            experimental_vel_z_interps[i](t)[cell_id]
+        )
+        for cell_id in 1:n_cells
+    ],
+    experimental_vel_vec_uncertainties = [
+        SVector{3, Float64}(
+            cell_vel_x_uncertainty_interps[i](t)[cell_id], 
+            cell_vel_y_uncertainty_interps[i](t)[cell_id], 
+            cell_vel_z_uncertainty_interps[i](t)[cell_id]
+        )
+        for cell_id in 1:n_cells
+    ]
+)
+    =#
+
+du_complete, u_complete = regenerate_fvm_state(sol, system, u_additional_information = ComponentVector());
 
 root_dir = "C:\\Users\\wille\\Desktop\\Julia_cfd_output_files"
 
-sol_to_vtk(sol, u_complete_list, grid, @__FILE__, root_dir)
+sol_to_vtk(sol, du_complete, u_complete, grid, geo, @__FILE__, root_dir; include_zeros_fields = false) 
 
 loss(1.0)
