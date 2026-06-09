@@ -2,27 +2,66 @@ using Ferrite
 using LinearAlgebra
 using FVMFramework
 
-# Helper function to check if a point is inside the projection cone
-function is_point_in_cone(P, source_transducer_coordinates, unit_ray_vector, projection_distance, cos_theta)
+struct BeamProfile
+    angle_of_projection::Float64      # degrees (far-field divergence half-angle)
+    near_field_distance::Float64      # same units as grid coordinates (Fresnel zone length)
+    transducer_radius::Float64        # same units as grid coordinates
+end
+
+# Check if a point is inside the beam envelope (near-field cylinder + far-field cone)
+function is_point_in_beam(P, source_transducer_coordinates, unit_ray_vector, projection_distance, beam::BeamProfile)
     v = P - source_transducer_coordinates
     d_axis = dot(v, unit_ray_vector)
     if d_axis < 0.0 || d_axis > projection_distance
         return false
     end
-    dist_from_apex = norm(v)
-    if dist_from_apex < 1e-12
-        return true
+    
+    # Compute perpendicular distance from beam axis
+    v_parallel = d_axis * unit_ray_vector
+    dist_from_axis = norm(v - v_parallel)
+    
+    if d_axis <= beam.near_field_distance
+        # Near-field (Fresnel zone): cylindrical beam
+        return dist_from_axis <= beam.transducer_radius
+    else
+        # Far-field (Fraunhofer zone): diverging cone from the near-field boundary
+        far_field_distance = d_axis - beam.near_field_distance
+        max_radius = beam.transducer_radius + far_field_distance * tand(beam.angle_of_projection)
+        return dist_from_axis <= max_radius
     end
-    return (d_axis / dist_from_apex) >= cos_theta
+end
+
+# Compute the beam volume for a segment between d_entry and d_exit along the axis
+function beam_segment_volume(d_entry, d_exit, beam::BeamProfile)
+    N = beam.near_field_distance
+    R = beam.transducer_radius
+    tan_theta = tand(beam.angle_of_projection)
+    
+    vol = 0.0
+    
+    # Near-field portion (cylinder)
+    nf_start = max(d_entry, 0.0)
+    nf_end = min(d_exit, N)
+    if nf_end > nf_start
+        vol += pi * R^2 * (nf_end - nf_start)
+    end
+    
+    # Far-field portion (expanding frustum)
+    ff_start = max(d_entry, N)
+    ff_end = d_exit
+    if ff_end > ff_start
+        r1 = R + (ff_start - N) * tan_theta
+        r2 = R + (ff_end - N) * tan_theta
+        vol += pi * (ff_end - ff_start) / 3.0 * (r1^2 + r1 * r2 + r2^2)
+    end
+    
+    return vol
 end
 
 
 function get_cells_in_transducer_projection(
     source_transducer_node_id, opposing_transducer_node_id, grid, geo,
-    most_consistent_timestamp_for_speed_of_sound,
-    experimental_travel_time_interp_matrix, #used to find the speed of sound
-    transducer_frequency,
-    transducer_diameter
+    beam::BeamProfile
 )
     source_transducer_coordinates = grid.nodes[source_transducer_node_id].x
     opposing_transducer_coordinates_raw = grid.nodes[opposing_transducer_node_id].x
@@ -39,30 +78,14 @@ function get_cells_in_transducer_projection(
     ray_vector = opposing_transducer_coordinates .- source_transducer_coordinates
     unit_ray_vector = normalize(ray_vector)
 
-    projection_distance = sqrt(
-        (opposing_transducer_coordinates[1] - source_transducer_coordinates[1])^2 + 
-        (opposing_transducer_coordinates[2] - source_transducer_coordinates[2])^2 + 
-        (opposing_transducer_coordinates[3] - source_transducer_coordinates[3])^2
-    )
+    projection_distance = norm(ray_vector)
 
-    experimental_travel_time_at_consistent_timestamp = experimental_travel_time_interp_matrix[opposing_transducer_node_id, source_transducer_node_id](most_consistent_timestamp_for_speed_of_sound)
-    speed_of_sound = projection_distance / experimental_travel_time_at_consistent_timestamp
-
-    wavelength = speed_of_sound / transducer_frequency
-    arg = 1.22 * wavelength / transducer_diameter
-    if arg >= 1.0
-        angle_of_projection = 90.0
-    else
-        angle_of_projection = asind(arg)
-    end
-    cos_theta = cosd(angle_of_projection)
-
-    slant_distance = projection_distance / cos_theta
+    slant_distance = projection_distance / cosd(beam.angle_of_projection)
 
     projection_intersected_cells = Int[]
     projection_volume_in_cells = Float64[]
     projection_distances_from_source = Float64[]
-    projection_unit_vectors_to_cell_centers = Vec{3, Float64}[]
+    projection_unit_vectors_to_cell_centers = Vector{Float64}[]
 
     CellType = typeof(grid.cells[1])
 
@@ -76,20 +99,20 @@ function get_cells_in_transducer_projection(
         vertices_inside = 0
         p = ntuple(i -> grid.nodes[cell_nodes[i]].x, n_nodes)
         for i in 1:n_nodes
-            if is_point_in_cone(p[i], source_transducer_coordinates, unit_ray_vector, projection_distance, cos_theta)
+            if is_point_in_beam(p[i], source_transducer_coordinates, unit_ray_vector, projection_distance, beam)
                 vertices_inside += 1
             end
         end
 
-        centroid_inside = is_point_in_cone(cell_centroid, source_transducer_coordinates, unit_ray_vector, projection_distance, cos_theta)
+        centroid_inside = is_point_in_beam(cell_centroid, source_transducer_coordinates, unit_ray_vector, projection_distance, beam)
 
         if vertices_inside == n_nodes
-            # Entirely inside the cone
+            # Entirely inside the beam
             push!(projection_intersected_cells, cell_id)
             push!(projection_volume_in_cells, cell_volume)
             push!(projection_distances_from_source, norm(cell_centroid - source_transducer_coordinates))
         elseif vertices_inside > 0 || centroid_inside
-            # Partially inside the cone, estimate volume via sub-cell sampling
+            # Partially inside the beam, estimate volume via sub-cell sampling
             n_inside = 0
             n_total = 0
             if CellType <: Hexahedron
@@ -103,7 +126,7 @@ function get_cells_in_transducer_projection(
                          r * (1 - s) * t * p[6] +
                          r * s * t * p[7] +
                          (1 - r) * s * t * p[8]
-                    if is_point_in_cone(pt, source_transducer_coordinates, unit_ray_vector, projection_distance, cos_theta)
+                    if is_point_in_beam(pt, source_transducer_coordinates, unit_ray_vector, projection_distance, beam)
                         n_inside += 1
                     end
                 end
@@ -112,7 +135,7 @@ function get_cells_in_transducer_projection(
                     if r + s + t <= 0.95
                         n_total += 1
                         pt = (1 - r - s - t) * p[1] + r * p[2] + s * p[3] + t * p[4]
-                        if is_point_in_cone(pt, source_transducer_coordinates, unit_ray_vector, projection_distance, cos_theta)
+                        if is_point_in_beam(pt, source_transducer_coordinates, unit_ray_vector, projection_distance, beam)
                             n_inside += 1
                         end
                     end
@@ -133,7 +156,7 @@ function get_cells_in_transducer_projection(
                 push!(projection_distances_from_source, norm(cell_centroid - source_transducer_coordinates))
             end
         else
-            # For narrow cones, check if the cone axis (ray) itself intersects the cell.
+            # For narrow beams, check if the beam axis (ray) itself intersects the cell.
             n_faces = nfacets(grid.cells[cell_id])
             t_ray_entry = 0.0
             t_ray_exit = projection_distance
@@ -159,9 +182,8 @@ function get_cells_in_transducer_projection(
             end
             
             if ray_intersect && (t_ray_exit - t_ray_entry > 1e-10)
-                # Calculate frustum volume of the narrow cone segment
-                v_frustum = (pi * (tand(angle_of_projection)^2) / 3.0) * (t_ray_exit^3 - t_ray_entry^3)
-                intersect_volume = min(cell_volume, v_frustum)
+                # Calculate beam volume of the segment using the two-zone model
+                intersect_volume = min(cell_volume, beam_segment_volume(t_ray_entry, t_ray_exit, beam))
                 if intersect_volume > 0.0
                     push!(projection_intersected_cells, cell_id)
                     push!(projection_volume_in_cells, intersect_volume)
@@ -171,14 +193,15 @@ function get_cells_in_transducer_projection(
         end
     end
 
-    for cell_id in projection_intersected_cells
-        cell_displacement_vector = source_transducer_coordinates .- geo.cell_centroids[cell_id]
+    for (transducer_cell_idx, cell_id) in enumerate(projection_intersected_cells)
+        cell_displacement_vector = geo.cell_centroids[cell_id] .- source_transducer_coordinates
         push!(projection_unit_vectors_to_cell_centers, normalize(cell_displacement_vector))
     end
 
     # Sort results by distance from source transducer
     if !isempty(projection_distances_from_source)
         perm = sortperm(projection_distances_from_source)
+        projection_distances_from_source = projection_distances_from_source[perm]
         projection_intersected_cells = projection_intersected_cells[perm]
         projection_volume_in_cells = projection_volume_in_cells[perm]
         projection_unit_vectors_to_cell_centers = projection_unit_vectors_to_cell_centers[perm]
