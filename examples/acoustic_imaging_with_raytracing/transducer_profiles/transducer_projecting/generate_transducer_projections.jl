@@ -11,10 +11,7 @@ end
 
 function generate_transducer_projections_between_transducers(
     transducer_opposing_pairs_ids::Vector{Tuple{Int, Int}}, transducer_node_ids::Vector{Int}, grid, geo,
-    most_consistent_timestamp_for_speed_of_sound,
-    experimental_travel_time_interp_matrix, #used to find the speed of sound
-    transducer_frequency,
-    transducer_diameter
+    beam_profile::BeamProfile
 )
     n_transducers = length(transducer_node_ids)
     transducer_projection_intersected_cells = [Int[] for _ in 1:n_transducers]
@@ -22,7 +19,11 @@ function generate_transducer_projections_between_transducers(
     transducer_projection_cell_distances = [Float64[] for _ in 1:n_transducers]
     transducer_projection_distances = zeros(Float64, n_transducers)
     transducer_projection_slant_distances = zeros(Float64, n_transducers)
-    projection_unit_vectors_to_cell_centers = [Float64[] for _ in 1:n_transducers]
+    projection_unit_vectors_to_cell_centers = [Vector{Float64}[] for _ in 1:n_transducers]
+    
+    transducer_projection_center_ray_intersected_cells = [Int[] for _ in 1:n_transducers]
+    transducer_projection_center_ray_distances_through_cells = [Float64[] for _ in 1:n_transducers]
+    transducer_projection_center_ray_distances = zeros(Float64, n_transducers)
     
     for (transducer_A_id, transducer_B_id) in transducer_opposing_pairs_ids #A and B capitalized for clarity
         transducer_A_node_id = transducer_node_ids[transducer_A_id]
@@ -37,10 +38,7 @@ function generate_transducer_projections_between_transducers(
             transducer_A_node_id, #Transducer A is source
             transducer_B_node_id, #Transducer B opposes
             grid, geo,
-            most_consistent_timestamp_for_speed_of_sound,
-            experimental_travel_time_interp_matrix,
-            transducer_frequency,
-            transducer_diameter
+            beam_profile
         )
 
         transducer_projection_intersected_cells[transducer_B_id], 
@@ -52,39 +50,51 @@ function generate_transducer_projections_between_transducers(
             transducer_B_node_id, #Transducer B is source
             transducer_A_node_id, #Transducer A opposes
             grid, geo,
-            most_consistent_timestamp_for_speed_of_sound,
-            experimental_travel_time_interp_matrix,
-            transducer_frequency,
-            transducer_diameter
+            beam_profile
         )
+
+        # Trace center rays using find_traced_cells
+        ray_cells_A, ray_dists_A, ray_len_A = find_traced_cells(transducer_A_node_id, transducer_B_node_id, grid, geo)
+        transducer_projection_center_ray_intersected_cells[transducer_A_id] = ray_cells_A
+        transducer_projection_center_ray_distances_through_cells[transducer_A_id] = ray_dists_A
+        transducer_projection_center_ray_distances[transducer_A_id] = transducer_projection_distances[transducer_A_id]
+
+        ray_cells_B, ray_dists_B, ray_len_B = find_traced_cells(transducer_B_node_id, transducer_A_node_id, grid, geo)
+        transducer_projection_center_ray_intersected_cells[transducer_B_id] = ray_cells_B
+        transducer_projection_center_ray_distances_through_cells[transducer_B_id] = ray_dists_B
+        transducer_projection_center_ray_distances[transducer_B_id] = transducer_projection_distances[transducer_B_id]
     end
 
     cell_projection_counts = count_cell_projections(transducer_projection_intersected_cells, length(grid.cells))
 
-    return transducer_projection_intersected_cells, transducer_projection_volume_in_cells, transducer_projection_distances, transducer_projection_slant_distances, cell_projection_counts, projection_unit_vectors_to_cell_centers
+    return transducer_projection_intersected_cells, 
+           transducer_projection_volume_in_cells, 
+           transducer_projection_cell_distances, 
+           transducer_projection_center_ray_intersected_cells, 
+           transducer_projection_center_ray_distances_through_cells, 
+           transducer_projection_center_ray_distances, 
+           transducer_projection_slant_distances, 
+           cell_projection_counts, 
+           projection_unit_vectors_to_cell_centers
 end
 
 function generate_transducer_projections(
     transducer_opposing_pairs_ids::Vector{Tuple{Int, Int}}, transducer_node_ids::Vector{Int}, grid, geo,
-    most_consistent_timestamp_for_speed_of_sound,
-    experimental_travel_time_interp_matrix, #used to find the speed of sound
-    transducer_frequency,
-    transducer_diameter
+    beam_profile::BeamProfile
 )
     transducer_projection_intersected_cells, 
     transducer_projection_volume_in_cells, 
     transducer_projection_cell_distances, 
-    transducer_projection_distances, 
+    transducer_projection_center_ray_intersected_cells,
+    transducer_projection_center_ray_distances_through_cells,
+    transducer_projection_center_ray_distances, 
     transducer_projection_slant_distances,
     cell_projection_counts,
     projection_unit_vectors_to_cell_centers = generate_transducer_projections_between_transducers(
         transducer_opposing_pairs_ids, 
         transducer_node_ids, 
         grid, geo,
-        most_consistent_timestamp_for_speed_of_sound,
-        experimental_travel_time_interp_matrix, #used to find the speed of sound
-        transducer_frequency,
-        transducer_diameter
+        beam_profile
     )
     
     save_object(joinpath(
@@ -96,7 +106,9 @@ function generate_transducer_projections(
             transducer_projection_intersected_cells, 
             transducer_projection_volume_in_cells, 
             transducer_projection_cell_distances, 
-            transducer_projection_distances, 
+            transducer_projection_center_ray_intersected_cells,
+            transducer_projection_center_ray_distances_through_cells,
+            transducer_projection_center_ray_distances, 
             transducer_projection_slant_distances, 
             cell_projection_counts,
             projection_unit_vectors_to_cell_centers
