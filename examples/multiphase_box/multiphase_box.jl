@@ -4,51 +4,14 @@ using Ferrite
 using FerriteGmsh
 using SparseConnectivityTracer
 using ForwardDiff
-# Overload power_by_squaring to support tracer types inside Clapeyron's complex root solver
-#Base.power_by_squaring(x::Any, p::SparseConnectivityTracer.Dual) = p
-Base.power_by_squaring(x::SparseConnectivityTracer.Dual, p::SparseConnectivityTracer.Dual) = x+p
-#Base.power_by_squaring(x::Any, p::SparseConnectivityTracer.Dual) = x^p #this is the only thing left that fails, the above works though
-
-# Overload ldexp for SparseConnectivityTracer.Dual
-Base.ldexp(x::SparseConnectivityTracer.Dual, i::Int) = x
-
-# Define explicit promotion rules to resolve ambiguity
-Base.promote_rule(::Type{SparseConnectivityTracer.Dual{P, T}}, ::Type{ForwardDiff.Dual{Tx, Vx, Nx}}) where {P, T, Tx, Vx, Nx} = 
-    ForwardDiff.Dual{Tx, promote_type(SparseConnectivityTracer.Dual{P, T}, Vx), Nx}
-
-Base.promote_rule(::Type{ForwardDiff.Dual{Tx, Vx, Nx}}, ::Type{SparseConnectivityTracer.Dual{P, T}}) where {P, T, Tx, Vx, Nx} = 
-    ForwardDiff.Dual{Tx, promote_type(SparseConnectivityTracer.Dual{P, T}, Vx), Nx}
-
-# Define convert overload to resolve conversion ambiguity
-Base.convert(::Type{ForwardDiff.Dual{Tx, Vx, Nx}}, y::D) where {Tx, Vx, Nx, P, T, D <: SparseConnectivityTracer.Dual{P, T}} = 
-    ForwardDiff.Dual{Tx, Vx, Nx}(convert(Vx, y), ForwardDiff.Partials{Nx, Vx}(ntuple(i -> zero(Vx), Nx)))
-
-# Resolve ambiguities for common binary operators and comparisons (+, -, *, /, ^, ==, <, <=)
-for TracerType in (SparseConnectivityTracer.GradientTracer, SparseConnectivityTracer.HessianTracer)
-    # Define ^(::D, ::D) using the exp(y * log(x)) identity
-    @eval begin
-        function Base.:^(x::D, y::D) where {P, T <: $TracerType, D <: SparseConnectivityTracer.Dual{P, T}}
-            return exp(y * log(x))
-        end
-    end
-    for op in (:+, :-, :*, :/, :^, Symbol("=="), Symbol("<"), Symbol("<="))
-        @eval begin
-            function Base.$op(x::ForwardDiff.Dual{Tx, Vx, Nx}, y::D) where {Tx, Vx, Nx, P, T <: $TracerType, D <: SparseConnectivityTracer.Dual{P, T}}
-                x_prom, y_prom = promote(x, y)
-                return Base.$op(x_prom, y_prom)
-            end
-            function Base.$op(x::D, y::ForwardDiff.Dual{Tx, Vx, Nx}) where {Tx, Vx, Nx, P, T <: $TracerType, D <: SparseConnectivityTracer.Dual{P, T}}
-                x_prom, y_prom = promote(x, y)
-                return Base.$op(x_prom, y_prom)
-            end
-        end
-    end
-end
-
 using ComponentArrays
 import ADTypes
 using NonlinearSolve
 using Sparspak
+using Dates
+using DataInterpolations
+
+Revise.includet(joinpath(@__DIR__, "overloads", "clapeyron_tracer_overloads.jl"))
 
 #=
 using XLSX
@@ -59,9 +22,7 @@ using OptimizationBBO
 using ForwardDiff
 using DataFrames
 using CSV
-using DataInterpolations
 =#
-using Dates
 
 using FVMFramework
 
@@ -92,6 +53,7 @@ getcellset(grid, "fluid")
 =#
 
 addcellset!(grid, "fluid", xyz -> true)
+getcellset(grid, "fluid")
 
 n_cells = length(grid.cells)
 
@@ -104,21 +66,11 @@ water_methanol_properties = get_water_methanol_properties()
 
 #physics
 Revise.includet(joinpath(@__DIR__, "physics", "drift_flux_vaporization.jl"))
-
-function get_mole_fractions_vec(du, u, cell_id, vol)
-    gas_mole_fractions_vec = [
-        max(u.gas_mole_fractions.methanol[cell_id], 1e-15),
-        max(u.gas_mole_fractions.water[cell_id], 1e-15)
-    ]
-    liquid_mole_fractions_vec = [
-        max(u.liquid_mole_fractions.methanol[cell_id], 1e-15),
-        max(u.liquid_mole_fractions.water[cell_id], 1e-15)
-    ]
-    # Normalize so they sum to 1
-    gas_mole_fractions_vec ./= sum(gas_mole_fractions_vec)
-    liquid_mole_fractions_vec ./= sum(liquid_mole_fractions_vec)
-    return gas_mole_fractions_vec, liquid_mole_fractions_vec
-end
+Revise.includet(joinpath(@__DIR__, "eos_stuff.jl")) #for update_eos_densities! and update_K_vle!
+#NOTE: if the solver ever crashes, it's most likely due to the rate in which the liquid boils in the drift_flux_vaporization physics functions
+#this is on lines 90-92 
+#the culprit is usually: kinetic_constant = u.phase_change_mass_transfer_coefficient[cell_id] * effective_bubble_area
+#if the phase_change_mass_transfer_coefficient is too high, the solver will be hit with extreme stiffness and never solve
 
 function update_solid_properties!(du, u, cell_id, vol, system)
     properties = ComponentVector(system.properties_vec, system.properties_axes)
@@ -181,7 +133,7 @@ add_setup_syms!(config;
     cache_syms_and_units = (
         heat = u"J",
         mw_avg = u"kg/mol",
-        k = u"W/(m*K)", #k and cp cause a dimsnion error for some reason
+        k = u"W/(m*K)",
         cp = u"J/(kg*K)",
         rho = u"kg/m^3",
         mass = u"kg",
@@ -336,9 +288,10 @@ end
 
 function connection_map_function(phys_a, phys_b)
     typeof(phys_a) <: Fluid && typeof(phys_b) <: Fluid && return fluid_fluid_flux!
+    
     typeof(phys_a) <: Fluid && typeof(phys_b) <: Solid && return fluid_solid_flux!
-
     typeof(phys_a) <: Solid && typeof(phys_b) <: Fluid && return fluid_solid_flux!
+
     typeof(phys_a) <: Solid && typeof(phys_b) <: Solid && return solid_solid_flux!
 end
 
@@ -350,10 +303,10 @@ function solve_system!(du, u, p_vec, t, geo, system)
     solve_connection_groups!(du, u, geo, system)
     solve_controller_groups!(du, u, geo, system)
     solve_patch_groups!(du, u, geo, system)
-    solve_region_groups!(du, u, geo, system) #this seems to be the culprit
+    solve_region_groups!(du, u, geo, system)
 end
 
-du0_vec, u0_vec, state_axes, geo, system = finish_fvm_config(config, connection_map_function, check_units = false);
+du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, check_units = false);
 
 f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
 
