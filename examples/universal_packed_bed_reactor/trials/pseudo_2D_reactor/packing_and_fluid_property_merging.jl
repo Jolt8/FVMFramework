@@ -1,5 +1,3 @@
-
-
 function get_fluid_and_copper_mesh_packing_rho!(du, u, cell_id, vol)
     u.rho[cell_id] = (u.copper_rho[cell_id] * (1 - u.bed_void_fraction[cell_id])) + (u.fluid_rho[cell_id] * u.bed_void_fraction[cell_id])
 end
