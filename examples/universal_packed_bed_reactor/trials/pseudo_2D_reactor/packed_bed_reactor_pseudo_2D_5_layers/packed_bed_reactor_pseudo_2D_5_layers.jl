@@ -177,7 +177,7 @@ p_lower_bounds = ustrip.(upreferred.(Vector(ComponentVector(
     steel_thermal_mass_multiplier = 0.1,
     TC1_thermal_resistance = 0.1u"K/W",
     TC2_thermal_resistance = 0.1u"K/W",
-    TC3_thermal_resistance = 0.1"K/W",
+    TC3_thermal_resistance = 0.1u"K/W",
     TC4_thermal_resistance = 0.1u"K/W",
     TC5_thermal_resistance = 0.1u"K/W",
 ))))
