@@ -1,7 +1,8 @@
 function all_species_advection!(
     du, u,
     idx_a, idx_b, face_idx,
-    area, norm, dist
+    area, norm, dist,
+    vol_a, vol_b
 )
     for_fields!(u.mass_fractions, du.species_mass_flows) do species, mass_fractions, species_mass_flows
         upwinded_mass_fraction = upwind(du, u, idx_a, idx_b, face_idx, mass_fractions[species[idx_a]], mass_fractions[species[idx_b]])
@@ -12,7 +13,8 @@ end
 function enthalpy_advection!(
     du, u,
     idx_a, idx_b, face_idx,
-    area, norm, dist
+    area, norm, dist,
+    vol_a, vol_b
 )
     cp_upwinded = upwind(du, u, idx_a, idx_b, face_idx, u.fluid_cp[idx_a], u.fluid_cp[idx_b]) #TODO: change back to u.cp later
 
