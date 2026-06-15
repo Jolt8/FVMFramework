@@ -145,6 +145,9 @@ export finish_fvm_config, FVMSystem
 include("recording/sim_recording.jl")
 export sol_to_vtk
 
+include("recording/state_regenerator.jl")
+export regenerate_fvm_state
+
 # ----- Solvers -----
 #   ---- Preconditioners ----
 include("solvers/preconditioners.jl")
