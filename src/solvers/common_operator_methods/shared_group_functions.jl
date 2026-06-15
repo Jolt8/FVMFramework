@@ -1,5 +1,5 @@
 function solve_connection_group!(
-    du, u,
+    du, u, p, t,
     flux!::F, cell_neighbors,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -8,7 +8,7 @@ function solve_connection_group!(
     for (idx_a, neighbor_list) in cell_neighbors
         for (idx_b, face_idx) in neighbor_list
             flux!(
-                du, u,
+                du, u, p, t, 
                 idx_a, idx_b, face_idx,
                 cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
                 cell_volumes
@@ -18,33 +18,35 @@ function solve_connection_group!(
 end
 
 function solve_controller_group!(
-    du, u,
+    du, u, p, t,
     controller::C, controller_id,
     control!::F, monitored_cells, affected_cells,
     cell_volumes
 ) where {C, F}
     control!(
-        du, u, controller, controller_id,
+        du, u, p, t, 
+        controller, controller_id,
         monitored_cells, affected_cells,
         cell_volumes
     )
 end
 
 function solve_region_group!(
-    du, u,
+    du, u, p, t,
     internal_physics!::F, region_cells,
     cell_volumes
 ) where {F}
     for cell_id in region_cells
         internal_physics!(
-            du, u, cell_id,
+            du, u, p, t, 
+            cell_id,
             cell_volumes[cell_id]
         )
     end
 end
 
 function solve_patch_group!(
-    du, u,
+    du, u, p, t,
     patch_physics!::F, cell_neighbors,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -52,7 +54,7 @@ function solve_patch_group!(
     for (idx_a, neighbor_list) in cell_neighbors
         for (idx_b, face_idx) in neighbor_list
             patch_physics!(
-                du, u,
+                du, u, p, t,
                 idx_a, idx_b, face_idx,
                 cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
                 cell_volumes
