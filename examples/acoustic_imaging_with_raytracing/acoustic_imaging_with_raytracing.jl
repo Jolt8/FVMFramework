@@ -228,6 +228,19 @@ add_setup_syms!(config;
         gas_generation = u"kg/(m^3*s)",
 
         K_vle = u"1",
+
+        # Feature 1: Backscatter amplitude (independent constraint on void fraction)
+        backscatter_intensity = u"1",
+
+        # Feature 2: Turbulence intensity (velocity variance from xcorr peak width)
+        turbulence_intensity = u"m/s",
+
+        # Feature 3: Bubble size distribution spread (log-normal σ of ln(radius))
+        bubble_radii_sigma = u"1",
+
+        # Feature 4: Bubble number density and passage frequency
+        bubble_number_density = u"m^-3",
+        bubble_passage_frequency = u"Hz",
     ),
     special_caches = ComponentArray(
         mass_face = zeros(n_cells, n_faces)u"kg",
@@ -407,7 +420,8 @@ Revise.includet(joinpath(@__DIR__, "sonic_helper_functions.jl"))
 Revise.includet(joinpath(@__DIR__, "precompute_experimental_velocities.jl"))
 experimental_vel_x_interps, experimental_vel_y_interps, experimental_vel_z_interps, 
 cell_vel_x_uncertainty_interps, cell_vel_y_uncertainty_interps, cell_vel_z_uncertainty_interps, 
-speeds_of_sound_interps, speeds_of_sound_uncertainty_interps = precompute_experimental_velocities_over_time(
+speeds_of_sound_interps, speeds_of_sound_uncertainty_interps,
+backscatter_intensity_interps, turbulence_intensity_interps, bubble_passage_frequency_interps = precompute_experimental_velocities_over_time(
     grid, geo,
     #cell_speeds_of_sound, 
     transducer_ids,
@@ -425,6 +439,20 @@ speeds_of_sound_interps, speeds_of_sound_uncertainty_interps = precompute_experi
     window_size_indices,
     reltol = 1.5
 )
+
+# Feature 3: Precompute spectral attenuation from transducer-to-transducer data
+transducer_center_frequency_hz = ustrip(upreferred(transducer_frequency)) # 2.0 MHz → Hz
+spectral_frequencies, spectral_attenuation_interps = precompute_experimental_spectral_attenuation(
+    transducer_ids,
+    transducer_opposing_pairs_ids,
+    experimental_sonic_data,
+    transducer_center_frequency_hz;
+    n_frequency_bins = 10,
+    bandwidth_factor = 0.25
+)
+
+# Measurement cross-section for bubble passage frequency (beam area at near-field boundary)
+measurement_cross_section = pi * transducer_radius_val^2
 
 function build_prob(f_closure, du0_vec, u0_vec, tMax, p_guess)
     detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
@@ -511,6 +539,34 @@ function loss(θ)
             mean_squared_error += abs2(u.bubble_acceleration[cell_id] - DataInterpolations.derivative(experimental_vel_z_interps[cell_id], t)) / cell_vel_z_uncertainty_interps[cell_id](t) 
         end
 
+        # ── Feature 4: Bubble passage frequency constraint ────────────────────
+        # Constrains the relationship between gas_holdup, bubble_radii, and gas velocity.
+        # passage_freq = n_density × |v_gas| × A_measurement
+        for cell_id in 1:length(geo.cell_volumes)
+            sim_passage_freq, _ = calculate_simulated_bubble_passage_frequency(u, cell_id, measurement_cross_section)
+            exp_passage_freq = bubble_passage_frequency_interps[cell_id](t)
+            if exp_passage_freq > 0.0
+                mean_squared_error += abs2(sim_passage_freq - exp_passage_freq) / exp_passage_freq
+            end
+        end
+
+        # ── Feature 1: Backscatter amplitude constraint ────────────────────────
+        # Independent per-cell constraint on void fraction from self-to-self echo path.
+        # Does not go through the lossy tomographic inversion.
+        for transducer_id in transducer_ids
+            ray_cells, sim_backscatter = calculate_simulated_backscatter_amplitudes(
+                u, transducer_id,
+                transducer_projection_center_ray_intersected_cells,
+                transducer_projection_center_ray_distances_through_cells
+            )
+            for (idx, cell_id) in enumerate(ray_cells)
+                exp_backscatter = backscatter_intensity_interps[cell_id](t)
+                if exp_backscatter > 0.0
+                    mean_squared_error += abs2(sim_backscatter[idx] - exp_backscatter) / exp_backscatter
+                end
+            end
+        end
+
         for origin_transducer_idx in transducer_ids
             for destination_transducer_idx in transducer_ids
                 if origin_transducer_idx != destination_transducer_idx
@@ -577,6 +633,27 @@ function loss(θ)
                         ray_map_intersected_cells, ray_map_distances_through_cells, ping_volume
                     )
                     mean_squared_error += abs2(sim_returned_volume - experimental_returned_volume)
+
+                    # ── Feature 3: Spectral attenuation constraint ────────────────
+                    # Compares the frequency-dependent attenuation along the ray path
+                    # to constrain the bubble size distribution (log-normal: median + σ).
+                    # Both sides are normalized by the center frequency, so the
+                    # transmitted spectrum shape cancels exactly.
+                    if length(spectral_frequencies) > 0
+                        sim_total_atten = calculate_simulated_total_attenuation_per_frequency(
+                            u, origin_transducer_idx, destination_transducer_idx,
+                            ray_map_intersected_cells, ray_map_distances_through_cells,
+                            spectral_frequencies
+                        )
+                        center_f_idx = argmin(abs.(spectral_frequencies .- transducer_center_frequency_hz))
+                        sim_center_atten = sim_total_atten[center_f_idx]
+
+                        for f_idx in eachindex(spectral_frequencies)
+                            sim_normalized = -(sim_total_atten[f_idx] - sim_center_atten)
+                            exp_normalized = spectral_attenuation_interps[origin_transducer_idx, destination_transducer_idx][f_idx](t)
+                            mean_squared_error += abs2(sim_normalized - exp_normalized)
+                        end
+                    end
                 end
             end
         end

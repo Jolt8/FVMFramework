@@ -2,6 +2,7 @@ using DSP
 using DataInterpolations
 using LinearAlgebra
 using SparseArrays
+using FFTW
 using Ferrite
 
 function precompute_experimental_speeds_of_sound(
@@ -208,6 +209,8 @@ function extract_velocities_from_data(pulse_1_data, pulse_2_data, pulse_repetiti
     
     window_times = Float64[]
     window_partial_velocities = Float64[]
+    window_backscatter_amplitudes = Float64[]
+    window_turbulence_widths = Float64[]
     
     for w in 1:n_windows
         start_idx = (w - 1) * window_size_indices + 1
@@ -247,9 +250,54 @@ function extract_velocities_from_data(pulse_1_data, pulse_2_data, pulse_repetiti
         # So we just store the tau and the time.
         push!(window_times, center_time)
         push!(window_partial_velocities, tau / (2 * pulse_repetition_interval)) # Partial velocity equation: v = c * (tau / 2*T_PRI)
+
+        # ── Feature 1: Backscatter amplitude (RMS envelope of the window) ────────
+        # The RMS amplitude at each depth window is proportional to local scatterer
+        # reflectivity (gas_holdup × bubble_cross_section). This gives an independent
+        # constraint on void fraction from the self-to-self echo path.
+        rms_amplitude = sqrt(sum(window_1 .^ 2) / length(window_1))
+        push!(window_backscatter_amplitudes, rms_amplitude)
+
+        # ── Feature 2: Spectral broadening / turbulence intensity ────────────────
+        # The width of the cross-correlation peak contains velocity variance info.
+        # A sharp peak = uniform flow; a broad peak = turbulent mixing.
+        # Fit log(|corr|) to a parabola over ±3 points around the peak to get σ.
+        half_fit_width = 3
+        if peak_idx > half_fit_width && peak_idx <= length(lags) - half_fit_width
+            fit_indices = (peak_idx - half_fit_width):(peak_idx + half_fit_width)
+            fit_values = lags[fit_indices]
+
+            peak_val = lags[peak_idx]
+            if peak_val > 1e-12
+                # Normalize by peak and take log (clamp to avoid log(0))
+                normalized = max.(fit_values ./ peak_val, 1e-10)
+                log_corr = log.(normalized)
+
+                # Fit parabola: log(G(x)) ≈ a × x² + b, where a = -1/(2σ²)
+                x = collect(-half_fit_width:half_fit_width)
+                x2 = x .^ 2
+                n_fit = length(x)
+                mean_log = sum(log_corr) / n_fit
+                mean_x2 = sum(x2) / n_fit
+                a_coeff = sum(x2 .* (log_corr .- mean_log)) / sum(x2 .* (x2 .- mean_x2))
+
+                if a_coeff < -1e-12
+                    σ_indices = sqrt(-1.0 / (2.0 * a_coeff))
+                    # Store as "partial" turbulence width (multiply by c later)
+                    σ_partial = σ_indices / (2.0 * samples_per_second * pulse_repetition_interval)
+                    push!(window_turbulence_widths, σ_partial)
+                else
+                    push!(window_turbulence_widths, 0.0)
+                end
+            else
+                push!(window_turbulence_widths, 0.0)
+            end
+        else
+            push!(window_turbulence_widths, 0.0)
+        end
     end
     
-    return window_times, window_partial_velocities
+    return window_times, window_partial_velocities, window_backscatter_amplitudes, window_turbulence_widths
 end
 
 function map_experimental_velocities_to_cells!(
@@ -380,6 +428,262 @@ function patch_unaccounted_experimental_velocities!(experimental_vel_x::Vector{F
     end
 end
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature 1: Backscatter amplitude — mapping and finalization
+# ═══════════════════════════════════════════════════════════════════════════════
+
+function map_experimental_backscatter_to_cells!(
+    cell_backscatter_sum::Vector{Float64},
+    cell_backscatter_counts::Vector{Int},
+    window_times,
+    window_backscatter_amplitudes,
+    time_to_distance_map,
+    projection_cells,
+    projection_distances,
+    tolerance = 2.0
+)
+    for (i, t_arrival) in enumerate(window_times)
+        bubble_distance = time_to_distance_map(t_arrival)
+
+        for cell_idx in eachindex(projection_cells)
+            cell_dist = projection_distances[cell_idx]
+            cell_id = projection_cells[cell_idx]
+
+            if abs(cell_dist - bubble_distance) <= tolerance
+                cell_backscatter_sum[cell_id] += window_backscatter_amplitudes[i]
+                cell_backscatter_counts[cell_id] += 1
+            end
+
+            if cell_dist > bubble_distance + tolerance
+                break
+            end
+        end
+    end
+end
+
+function finalize_backscatter!(
+    cell_backscatter_intensity::Vector{Float64},
+    cell_backscatter_sum::Vector{Float64},
+    cell_backscatter_counts::Vector{Int}
+)
+    for cell_id in eachindex(cell_backscatter_intensity)
+        if cell_backscatter_counts[cell_id] > 0
+            # Average backscatter across all beam observations
+            cell_backscatter_intensity[cell_id] = cell_backscatter_sum[cell_id] / cell_backscatter_counts[cell_id]
+        else
+            cell_backscatter_intensity[cell_id] = NaN
+        end
+    end
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature 2: Spectral broadening / turbulence intensity — mapping and finalization
+# ═══════════════════════════════════════════════════════════════════════════════
+
+function map_experimental_turbulence_to_cells!(
+    cell_turbulence_sum_sq::Vector{Float64},
+    cell_turbulence_counts::Vector{Int},
+    speed_of_sound::Vector{Float64},
+    window_times,
+    window_turbulence_widths,
+    time_to_distance_map,
+    projection_cells,
+    projection_distances,
+    tolerance = 2.0
+)
+    for (i, t_arrival) in enumerate(window_times)
+        bubble_distance = time_to_distance_map(t_arrival)
+
+        for cell_idx in eachindex(projection_cells)
+            cell_dist = projection_distances[cell_idx]
+            cell_id = projection_cells[cell_idx]
+
+            if abs(cell_dist - bubble_distance) <= tolerance
+                # Convert partial turbulence width to velocity units: σ_v = c × σ_partial
+                # Sum of squares for RMS averaging across beams
+                σ_v = speed_of_sound[cell_id] * window_turbulence_widths[i]
+                cell_turbulence_sum_sq[cell_id] += σ_v^2
+                cell_turbulence_counts[cell_id] += 1
+            end
+
+            if cell_dist > bubble_distance + tolerance
+                break
+            end
+        end
+    end
+end
+
+function finalize_turbulence!(
+    cell_turbulence_intensity::Vector{Float64},
+    cell_turbulence_sum_sq::Vector{Float64},
+    cell_turbulence_counts::Vector{Int}
+)
+    for cell_id in eachindex(cell_turbulence_intensity)
+        if cell_turbulence_counts[cell_id] > 0
+            # RMS of velocity standard deviations across beams
+            cell_turbulence_intensity[cell_id] = sqrt(cell_turbulence_sum_sq[cell_id] / cell_turbulence_counts[cell_id])
+        else
+            cell_turbulence_intensity[cell_id] = NaN
+        end
+    end
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Generic scalar field NaN-patching (for backscatter and turbulence)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+function patch_unaccounted_scalar_field!(field::Vector{Float64}, geo)
+    while any(isnan, field)
+        new_field = copy(field)
+        updates_made = false
+
+        for cell_id in eachindex(field)
+            if isnan(field[cell_id])
+                neighbor_cells = geo.cell_neighbors[cell_id][2]
+                total = 0.0
+                count = 0
+
+                for (neighbor_id, face_idx) in neighbor_cells
+                    if neighbor_id != 0 && !isnan(field[neighbor_id])
+                        total += field[neighbor_id]
+                        count += 1
+                    end
+                end
+
+                if count > 0
+                    new_field[cell_id] = total / count
+                    updates_made = true
+                end
+            end
+        end
+
+        if !updates_made
+            break
+        end
+
+        field .= new_field
+    end
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature 3: Spectral shape extraction from received signals
+# Normalizes by the center frequency to cancel the transmitted spectrum shape.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+function extract_normalized_spectral_shape(
+    received_amplitude_signal::Vector{Float64},
+    samples_per_second::Float64,
+    transducer_center_frequency::Float64;
+    n_frequency_bins = 10,
+    bandwidth_factor = 0.25
+)
+    n_samples = length(received_amplitude_signal)
+
+    # FFT of received signal (magnitude only)
+    spectrum = abs.(fft(received_amplitude_signal))
+    freqs = collect(0:n_samples - 1) .* (samples_per_second / n_samples)
+
+    # Positive frequencies only
+    n_positive = div(n_samples, 2)
+    spectrum = spectrum[1:n_positive]
+    freqs = freqs[1:n_positive]
+
+    # Usable frequency range: within ±2Γ of center (Lorentzian half-width Γ = f₀ × bandwidth_factor)
+    Γ = transducer_center_frequency * bandwidth_factor
+    f_min = transducer_center_frequency - 2.0 * Γ
+    f_max = transducer_center_frequency + 2.0 * Γ
+
+    usable_mask = (freqs .>= f_min) .& (freqs .<= f_max)
+    usable_freqs = freqs[usable_mask]
+    usable_spectrum = spectrum[usable_mask]
+
+    if length(usable_freqs) < 2
+        return Float64[], Float64[]
+    end
+
+    # Bin the usable range into n_frequency_bins
+    bin_edges = range(f_min, f_max, length = n_frequency_bins + 1)
+
+    bin_center_freqs = Float64[]
+    bin_log_amplitudes = Float64[]
+
+    for bin in 1:n_frequency_bins
+        f_lo = bin_edges[bin]
+        f_hi = bin_edges[bin + 1]
+        bin_mask = (usable_freqs .>= f_lo) .& (usable_freqs .< f_hi)
+
+        n_in_bin = sum(bin_mask)
+        if n_in_bin > 0
+            avg_amplitude = sum(usable_spectrum[bin_mask]) / n_in_bin
+            if avg_amplitude > 1e-30
+                push!(bin_center_freqs, (f_lo + f_hi) / 2.0)
+                push!(bin_log_amplitudes, log(avg_amplitude))
+            end
+        end
+    end
+
+    if length(bin_log_amplitudes) < 2
+        return Float64[], Float64[]
+    end
+
+    # Normalize by center frequency bin — this cancels the transmitted spectrum shape
+    center_bin_idx = argmin(abs.(bin_center_freqs .- transducer_center_frequency))
+    center_log_amplitude = bin_log_amplitudes[center_bin_idx]
+    normalized_shape = bin_log_amplitudes .- center_log_amplitude
+
+    return bin_center_freqs, normalized_shape
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature 4: Bubble passage frequency from backscatter time series
+# Uses zero-crossing rate of detrended backscatter in a sliding window.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+function compute_bubble_passage_frequencies(
+    cell_backscatter_history,  # Vector of Vector{Float64}: [timestamp_idx] → per-cell backscatter
+    timestamps::Vector{Float64},
+    n_cells::Int;
+    passage_half_window = 5
+)
+    n_timestamps = length(timestamps)
+    cell_passage_frequencies = [zeros(Float64, n_cells) for _ in 1:n_timestamps]
+
+    for cell_id in 1:n_cells
+        # Extract backscatter time series for this cell
+        bs_series = [cell_backscatter_history[t][cell_id] for t in 1:n_timestamps]
+
+        # Detrend by subtracting the mean
+        mean_val = sum(bs_series) / n_timestamps
+        detrended = bs_series .- mean_val
+
+        for t_idx in 1:n_timestamps
+            w_start = max(1, t_idx - passage_half_window)
+            w_end = min(n_timestamps, t_idx + passage_half_window)
+
+            if w_end - w_start < 2
+                cell_passage_frequencies[t_idx][cell_id] = 0.0
+                continue
+            end
+
+            # Count zero-crossings in window
+            n_crossings = 0
+            for i in (w_start + 1):w_end
+                if detrended[i] * detrended[i - 1] < 0.0
+                    n_crossings += 1
+                end
+            end
+
+            window_duration = timestamps[w_end] - timestamps[w_start]
+            if window_duration > 0.0
+                # Each full cycle has 2 zero crossings
+                cell_passage_frequencies[t_idx][cell_id] = n_crossings / (2.0 * window_duration)
+            end
+        end
+    end
+
+    return cell_passage_frequencies
+end
+
 struct SonicData
     #= self_to_self_echo_pairs[transducer_id] is a Vector of timestamp entries,
        each entry is a Tuple of two RF signal vectors (pulse_1, pulse_2)
@@ -392,6 +696,11 @@ struct SonicData
                self_to_self_send_echo_timestamps[transducer_id][timestamp_idx].echo
     =#
     self_to_self_send_echo_timestamps::Vector{Vector{NamedTuple{(:send, :echo), Tuple{Float64, Float64}}}}
+
+    #= self_to_self_echo_frequencies[transducer_id] is a Vector of frequencies over timestamps
+       Access: self_to_self_echo_frequencies[transducer_id][timestamp_idx]
+    =#
+    self_to_self_echo_frequencies::Vector{Vector{Float64}}
 
     #= transducer_to_transducer_receive_amplitudes[transducer_a_id, transducer_b_id] is a Vector of 
        amplitude vectors over timestamps
@@ -463,11 +772,21 @@ function precompute_experimental_velocities_over_time(
     experimental_discrete_vel_y = [zeros(Float64, n_cells) for _ in 1:n_velocity_timesteps]
     experimental_discrete_vel_z = [zeros(Float64, n_cells) for _ in 1:n_velocity_timesteps]
     cell_velocity_uncertainties = Vector{Vector{Vector{Float64}}}(undef, n_velocity_timesteps)
+
+    # Storage for backscatter and turbulence (Features 1 & 2)
+    experimental_discrete_backscatter = [zeros(Float64, n_cells) for _ in 1:n_velocity_timesteps]
+    experimental_discrete_turbulence = [zeros(Float64, n_cells) for _ in 1:n_velocity_timesteps]
     
     # Loop over each velocity timestep
     for timestamp_idx in 1:n_velocity_timesteps
         cell_update_counts = zeros(Int, n_cells)
         beam_velocities = [zeros(Float64, cell_projection_counts[cell_id]) for cell_id in 1:n_cells]
+
+        # Feature 1 & 2: accumulators for backscatter and turbulence
+        cell_backscatter_sum = zeros(Float64, n_cells)
+        cell_backscatter_counts = zeros(Int, n_cells)
+        cell_turbulence_sum_sq = zeros(Float64, n_cells)
+        cell_turbulence_counts = zeros(Int, n_cells)
         
         # Find the speed-of-sound snapshot closest to this velocity timestamp
         # Use the average of send and echo times as the representative time for this measurement
@@ -491,7 +810,7 @@ function precompute_experimental_velocities_over_time(
             pulse_1 = experimental_sonic_data.self_to_self_echo_pairs[transducer_id][timestamp_idx][1]
             pulse_2 = experimental_sonic_data.self_to_self_echo_pairs[transducer_id][timestamp_idx][2]
             
-            window_times, window_partial_velocities = extract_velocities_from_data(
+            window_times, window_partial_velocities, window_backscatter_amplitudes, window_turbulence_widths = extract_velocities_from_data(
                 pulse_1, pulse_2, experimental_sonic_data.pulse_repetition_interval, experimental_sonic_data.samples_per_second, window_size_indices
             )
             
@@ -502,6 +821,21 @@ function precompute_experimental_velocities_over_time(
             map_experimental_velocities_to_cells!(
                 beam_velocities, cell_update_counts, cell_speeds_of_sound[sos_t_idx],
                 window_times, window_partial_velocities, time_to_distance_map,
+                proj_cells, proj_dists, tolerance
+            )
+
+            # Feature 1: Map backscatter amplitudes to cells
+            map_experimental_backscatter_to_cells!(
+                cell_backscatter_sum, cell_backscatter_counts,
+                window_times, window_backscatter_amplitudes, time_to_distance_map,
+                proj_cells, proj_dists, tolerance
+            )
+
+            # Feature 2: Map turbulence widths to cells
+            map_experimental_turbulence_to_cells!(
+                cell_turbulence_sum_sq, cell_turbulence_counts,
+                cell_speeds_of_sound[sos_t_idx],
+                window_times, window_turbulence_widths, time_to_distance_map,
                 proj_cells, proj_dists, tolerance
             )
         end
@@ -519,12 +853,21 @@ function precompute_experimental_velocities_over_time(
             experimental_discrete_vel_z[timestamp_idx], 
             geo
         )
-    end
 
-    # Build per-cell velocity interpolations over the velocity timestamps
-    experimental_vel_x_interp = Vector{LinearInterpolation}(undef, n_cells)
-    experimental_vel_y_interp = Vector{LinearInterpolation}(undef, n_cells)
-    experimental_vel_z_interp = Vector{LinearInterpolation}(undef, n_cells)
+        # Feature 1: Finalize and patch backscatter
+        finalize_backscatter!(
+            experimental_discrete_backscatter[timestamp_idx],
+            cell_backscatter_sum, cell_backscatter_counts
+        )
+        patch_unaccounted_scalar_field!(experimental_discrete_backscatter[timestamp_idx], geo)
+
+        # Feature 2: Finalize and patch turbulence intensity
+        finalize_turbulence!(
+            experimental_discrete_turbulence[timestamp_idx],
+            cell_turbulence_sum_sq, cell_turbulence_counts
+        )
+        patch_unaccounted_scalar_field!(experimental_discrete_turbulence[timestamp_idx], geo)
+    end
 
     # Build the time axis from the reference transducer's self-to-self timestamps
     reference_transducer_id = transducer_ids[1]
@@ -534,6 +877,21 @@ function precompute_experimental_velocities_over_time(
         for t in 1:n_velocity_timesteps
     ]
 
+    # Feature 4: Compute bubble passage frequency from backscatter time series
+    cell_passage_frequencies = compute_bubble_passage_frequencies(
+        experimental_discrete_backscatter, velocity_timestamps, n_cells
+    )
+
+    # Build per-cell velocity interpolations over the velocity timestamps
+    experimental_vel_x_interp = Vector{LinearInterpolation}(undef, n_cells)
+    experimental_vel_y_interp = Vector{LinearInterpolation}(undef, n_cells)
+    experimental_vel_z_interp = Vector{LinearInterpolation}(undef, n_cells)
+
+    # Feature 1 & 2 & 4: interpolations for backscatter, turbulence, passage frequency
+    backscatter_intensity_interps = Vector{LinearInterpolation}(undef, n_cells)
+    turbulence_intensity_interps = Vector{LinearInterpolation}(undef, n_cells)
+    bubble_passage_frequency_interps = Vector{LinearInterpolation}(undef, n_cells)
+
     for cell_id in 1:n_cells
         cell_vel_x_history = [experimental_discrete_vel_x[t][cell_id] for t in 1:n_velocity_timesteps]
         cell_vel_y_history = [experimental_discrete_vel_y[t][cell_id] for t in 1:n_velocity_timesteps]
@@ -542,6 +900,18 @@ function precompute_experimental_velocities_over_time(
         experimental_vel_x_interp[cell_id] = LinearInterpolation(cell_vel_x_history, velocity_timestamps)
         experimental_vel_y_interp[cell_id] = LinearInterpolation(cell_vel_y_history, velocity_timestamps)
         experimental_vel_z_interp[cell_id] = LinearInterpolation(cell_vel_z_history, velocity_timestamps)
+
+        # Feature 1: Backscatter intensity per cell over time
+        cell_backscatter_history = [experimental_discrete_backscatter[t][cell_id] for t in 1:n_velocity_timesteps]
+        backscatter_intensity_interps[cell_id] = LinearInterpolation(cell_backscatter_history, velocity_timestamps)
+
+        # Feature 2: Turbulence intensity per cell over time
+        cell_turbulence_history = [experimental_discrete_turbulence[t][cell_id] for t in 1:n_velocity_timesteps]
+        turbulence_intensity_interps[cell_id] = LinearInterpolation(cell_turbulence_history, velocity_timestamps)
+
+        # Feature 4: Bubble passage frequency per cell over time
+        cell_passage_history = [cell_passage_frequencies[t][cell_id] for t in 1:n_velocity_timesteps]
+        bubble_passage_frequency_interps[cell_id] = LinearInterpolation(cell_passage_history, velocity_timestamps)
     end
 
     cell_vel_x_uncertainty_interps = Vector{LinearInterpolation}(undef, n_cells)
@@ -563,5 +933,73 @@ function precompute_experimental_velocities_over_time(
         )
     end
 
-    return experimental_vel_x_interp, experimental_vel_y_interp, experimental_vel_z_interp, cell_vel_x_uncertainty_interps, cell_vel_y_uncertainty_interps, cell_vel_z_uncertainty_interps, speeds_of_sound_interps, speeds_of_sound_uncertainty_interps
+    return experimental_vel_x_interp, experimental_vel_y_interp, experimental_vel_z_interp, 
+           cell_vel_x_uncertainty_interps, cell_vel_y_uncertainty_interps, cell_vel_z_uncertainty_interps, 
+           speeds_of_sound_interps, speeds_of_sound_uncertainty_interps,
+           backscatter_intensity_interps, turbulence_intensity_interps, bubble_passage_frequency_interps
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature 3: Spectral attenuation precomputation
+# Processes transducer-to-transducer received amplitude signals to extract
+# frequency-dependent attenuation (normalized spectral shape).
+# This is separate from the velocity pipeline because it uses different data
+# (transducer-to-transducer paths, not self-to-self echo pairs).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+function precompute_experimental_spectral_attenuation(
+    transducer_ids::Vector{Int},
+    transducer_opposing_pairs_ids::Vector{Tuple{Int, Int}},
+    experimental_sonic_data::SonicData,
+    transducer_center_frequency::Float64;
+    n_frequency_bins = 10,
+    bandwidth_factor = 0.25
+)
+    n_transducers = length(transducer_ids)
+
+    # Determine the frequency bins from the first available measurement
+    first_pair = transducer_opposing_pairs_ids[1]
+    first_signal = experimental_sonic_data.transducer_to_transducer_receive_amplitudes[first_pair[1], first_pair[2]][1]
+    spectral_frequencies, _ = extract_normalized_spectral_shape(
+        first_signal, experimental_sonic_data.samples_per_second, transducer_center_frequency;
+        n_frequency_bins, bandwidth_factor
+    )
+    n_freq_bins = length(spectral_frequencies)
+
+    if n_freq_bins == 0
+        return spectral_frequencies, [Vector{LinearInterpolation}() for _ in 1:n_transducers, _ in 1:n_transducers]
+    end
+
+    spectral_attenuation_interps = [Vector{LinearInterpolation}(undef, n_freq_bins) for _ in 1:n_transducers, _ in 1:n_transducers]
+
+    for (transducer_a_id, transducer_b_id) in transducer_opposing_pairs_ids
+        for (src_id, dst_id) in [(transducer_a_id, transducer_b_id), (transducer_b_id, transducer_a_id)]
+            amplitude_signals = experimental_sonic_data.transducer_to_transducer_receive_amplitudes[src_id, dst_id]
+            timestamps_data = experimental_sonic_data.transducer_to_transducer_send_receive_timestamps[src_id, dst_id]
+
+            n_measurements = length(amplitude_signals)
+            measurement_timestamps = [timestamps_data[t].send for t in 1:n_measurements]
+
+            # Extract spectral shape at each timestamp
+            spectral_shapes = [zeros(Float64, n_freq_bins) for _ in 1:n_measurements]
+
+            for t_idx in 1:n_measurements
+                _, shape = extract_normalized_spectral_shape(
+                    amplitude_signals[t_idx], experimental_sonic_data.samples_per_second, transducer_center_frequency;
+                    n_frequency_bins, bandwidth_factor
+                )
+                if length(shape) == n_freq_bins
+                    spectral_shapes[t_idx] = shape
+                end
+            end
+
+            # Build per-frequency-bin interpolations over time
+            for f_idx in 1:n_freq_bins
+                freq_history = [spectral_shapes[t][f_idx] for t in 1:n_measurements]
+                spectral_attenuation_interps[src_id, dst_id][f_idx] = LinearInterpolation(freq_history, measurement_timestamps)
+            end
+        end
+    end
+
+    return spectral_frequencies, spectral_attenuation_interps
 end
