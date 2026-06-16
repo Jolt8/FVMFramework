@@ -1,4 +1,4 @@
-function get_copper_mesh_reformer_properties(pipe_length, n_cells, cell_lengths_along_pipe, wall_lengths_along_pipe)
+function get_copper_mesh_reformer_properties()
     van_t_hoff_A = ComponentVector(CH3O = 1.7e-6u"s^-1", HCOO = 4.74e-13u"s^-1", OH = 3.32e-14u"s^-1")
     van_t_hoff_dH = ComponentVector(CH3O = -46800.0u"J/mol", HCOO = -115000.0u"J/mol", OH = -110000.0u"J/mol")
 

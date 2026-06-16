@@ -1,6 +1,3 @@
-#huh, I guess these are the only properties that are really shared between the different property groups
-#I guess I just won't use it
-
 function get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_cells_axial)
     #Reforming Area
     reforming_area_outside_diameter = 16u"mm"
@@ -61,7 +58,7 @@ function get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_c
         #General properties of the pipe
         pipe_length = pipe_length,
         cell_lengths_along_pipe = cell_lengths_along_pipe,
-        per_cell_pipe_length = cell_lengths_along_pipe / n_cells_axial,
+        per_cell_pipe_length = pipe_length / n_cells_axial,
 
         reforming_area_outside_diameter = reforming_area_outside_diameter,
         reforming_area_cell_volumes = reforming_area_cell_volumes,

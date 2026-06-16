@@ -1,6 +1,3 @@
-#huh, I guess these are the only properties that are really shared between the different property groups
-#I guess I just won't use it
-
 function get_empty_trial_properties()
     empty_trial_properties = ComponentVector(
         pipe_mass_flow = 0.0u"g/minute",
