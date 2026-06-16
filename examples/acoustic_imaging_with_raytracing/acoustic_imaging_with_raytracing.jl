@@ -72,7 +72,7 @@ else
     overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model) = multi_species_overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
 end
 
-function update_fluid_properties!(du, u, cell_id, vol, system)
+function update_fluid_properties!(du, u, p, t, cell_id, vol, system)
     properties = ComponentVector(system.properties_vec, system.properties_axes)
 
     overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
@@ -296,8 +296,12 @@ add_region!(
         temp = 60.0u"°C",
     ),
     properties = water_properties,
+    property_update_function = 
+    function update_inlet!(du, u, p, t, cell_id, vol)
+        update_fluid_properties!(du, u, p, t, cell_id, vol, system)
+    end,
     region_function =
-    function inlet!(du, u, cell_id, vol)
+    function inlet!(du, u, p, t, cell_id, vol)
         #update_fluid_properties!(du, u, cell_id, vol, system)
 
         #du.heat[cell_id] += 10.0
@@ -307,7 +311,7 @@ add_region!(
 )
 #Connection functions
 function fluid_fluid_flux!(
-    du, u,
+    du, u, p, t,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -329,7 +333,7 @@ function fluid_fluid_flux!(
 end
 
 function fluid_solid_flux!(
-    du, u,
+    du, u, p, t,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -343,7 +347,7 @@ function fluid_solid_flux!(
 end
 
 function solid_solid_flux!(
-    du, u,
+    du, u, p, t,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -367,17 +371,16 @@ end
 
 function solve_system!(du, u, p_vec, t, geo, system)
     #no=slip condition at walls to prevent liquid and gas from building up at the top and bottom cells
-    u.gravity[1] == 0.0 
-    u.local_gas_drift_velocity[end] == 0.0
-    
-    for cell_id in grid.cellsets["fluid"]
-        update_fluid_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
-    end
+    u.gravity[1] = 0.0 
+    u.local_gas_drift_velocity[end] = 0.0
 
-    solve_connection_groups!(du, u, geo, system)
-    solve_controller_groups!(du, u, geo, system)
-    solve_patch_groups!(du, u, geo, system)
-    solve_region_groups!(du, u, geo, system)
+    p = ComponentVector(p_vec, system.p_axes)
+
+    update_region_groups!(du, u, p, t, geo, system)
+    solve_connection_groups!(du, u, p, t, geo, system)
+    solve_controller_groups!(du, u, p, t, geo, system)
+    solve_patch_groups!(du, u, p, t, geo, system)
+    solve_region_groups!(du, u, p, t, geo, system)
 end
 
 du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, check_units = false);
@@ -511,15 +514,15 @@ function loss(θ)
 
     mean_squared_error = 0.0
 
+    p_named = ComponentVector(θ, system_copy.p_axes)
+
     for (i, t) in enumerate(sol.t)
         du, u = unpack_fvm_state(du_temporary, sol.u[i], θ, t, system_copy)
-        
-        for cell_id in grid.cellsets["fluid"]
-            update_fluid_properties!(du, u, cell_id, geo_copy.cell_volumes[cell_id], system_copy)
-        end
+
+        update_region_groups!(du, u, p_named, t, geo_copy, system_copy)
 
         reconstructed_speeds_of_sound = reconstruct_simulated_speeds_of_sound(
-            du, u, geo, system,
+            du, u, geo_copy, system_copy,
             transducer_opposing_pairs_ids, experimental_sonic_data,
             center_ray_intersected_cells, center_ray_distances_through_cells;
             regularization_lambda = 1e-4
