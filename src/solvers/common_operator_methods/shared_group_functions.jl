@@ -31,13 +31,27 @@ function solve_controller_group!(
     )
 end
 
-function solve_region_group!(
+function update_region_group!(
     du, u, p, t,
-    internal_physics!::F, region_cells,
+    property_update_function!::F, region_cells,
     cell_volumes
 ) where {F}
     for cell_id in region_cells
-        internal_physics!(
+        property_update_function!(
+            du, u, p, t, 
+            cell_id,
+            cell_volumes[cell_id]
+        )
+    end
+end
+
+function solve_region_group!(
+    du, u, p, t,
+    region_function!::G, region_cells,
+    cell_volumes
+) where {G}
+    for cell_id in region_cells
+        region_function!(
             du, u, p, t, 
             cell_id,
             cell_volumes[cell_id]

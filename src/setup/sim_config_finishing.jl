@@ -1,8 +1,9 @@
 
-struct RegionGroup{P <: ComponentVector, F <: Function}
+struct RegionGroup{P <: ComponentVector, F <: Function, G <: Function}
     name::String
     properties::P
-    region_function!::F
+    property_update_function::F
+    region_function!::G
     region_cells::Vector{Int}
 end
 
@@ -67,7 +68,7 @@ function finish_fvm_config(config, connection_map_function; check_units::Bool)
     #although this could be a part of RegionGroup, I'd rather not contaminate it with information not required in the simulation
 
     for region in config.regions
-        push!(region_groups, RegionGroup(region.name, region.properties, region.region_function, region.region_cells))
+        push!(region_groups, RegionGroup(region.name, region.properties, region.property_update_function, region.region_function, region.region_cells))
 
         for cell_id in region.region_cells
             cell_region_phys_map[cell_id] = region.type

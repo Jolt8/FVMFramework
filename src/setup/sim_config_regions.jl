@@ -3,6 +3,7 @@ function add_region!(
     type,
     initial_conditions,
     properties,
+    property_update_function,
     region_function
 )
 
@@ -22,7 +23,7 @@ function add_region!(
         end
     end
 
-    region = RegionSetupInfo(name, type, initial_conditions, properties, region_function, region_cells)
+    region = RegionSetupInfo(name, type, initial_conditions, properties, property_update_function, region_function, region_cells)
 
     all_region_names = [region.name for region in config.regions]
 

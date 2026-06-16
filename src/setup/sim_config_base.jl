@@ -3,6 +3,7 @@ mutable struct RegionSetupInfo{P <: AbstractPhysics} #this must be defined befor
     type::P
     initial_conditions::ComponentVector
     properties::ComponentVector
+    property_update_function::Function
     region_function::Function
     region_cells::Vector{Int}
 end

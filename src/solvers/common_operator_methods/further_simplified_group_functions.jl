@@ -34,6 +34,16 @@ function solve_patch_groups!(du, u, p, t, geo, system)
     end
 end
 
+function update_region_groups!(du, u, p, t, geo, system)
+    for reg in system.region_groups
+        update_region_group!(
+            du, u, p, t,
+            reg.property_update_function!, reg.region_cells,
+            geo.cell_volumes
+        )
+    end
+end
+
 function solve_region_groups!(du, u, p, t, geo, system)
     for reg in system.region_groups
         solve_region_group!(
@@ -45,6 +55,7 @@ function solve_region_groups!(du, u, p, t, geo, system)
 end
 
 function default_order_solve_all_groups!(du, u, p, t, geo, system)
+    update_region_groups!(du, u, p, t, geo, system)
     solve_connection_groups!(du, u, p, t, geo, system)
     solve_controller_groups!(du, u, p, t, geo, system)
     solve_patch_groups!(du, u, p, t, geo, system)
