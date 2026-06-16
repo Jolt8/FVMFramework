@@ -1,6 +1,3 @@
-using DataFrames, CSV
-using Unitful
-
 #options for reading data:
 
 #1. "hot_water_flow_tc_temps.csv"
