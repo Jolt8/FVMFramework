@@ -183,7 +183,7 @@ Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "5_layer_comm
 common_properties = get_5_layer_common_properties(pipe_length, cell_lengths_along_pipe, n_cells_axial)
 
 Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "packed_media_properties", "copper_mesh_reformer_properties.jl"))
-pre_copper_mesh_reformer_properties = get_copper_mesh_reformer_properties(pipe_length, n_cells_axial, grid.cellsets["copper_mesh_reformer"], cell_lengths_along_pipe)
+pre_copper_mesh_reformer_properties = get_copper_mesh_reformer_properties()
 copper_mesh_reformer_properties = merge_properties(pre_copper_mesh_reformer_properties, common_properties)
 
 Revise.includet(joinpath(@__DIR__, "..", "..", "..", "properties", "packed_media_properties", "silicon_carbide_sand_properties.jl"))
@@ -922,6 +922,22 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
         u.steel_thermal_mass_multiplier[cell_id] = p.steel_thermal_mass_multiplier[1]
     end
 
+    for cell_id in TC1_cells
+        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC1_thermal_resistance[1]
+    end
+    for cell_id in TC2_cells
+        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC2_thermal_resistance[1]
+    end
+    for cell_id in TC3_cells
+        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC3_thermal_resistance[1]
+    end
+    for cell_id in TC4_cells
+        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC4_thermal_resistance[1]
+    end
+    for cell_id in TC5_cells
+        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC5_thermal_resistance[1]
+    end
+
     #VERY IMPORTANT: since most software uses 0-based indexing, you need to adjust the cell id by +1
     #for example, if you mouse over cell_id 5161 in ParaView, you need to use 5162 in the code because julia uses 1-based indexing 
 
@@ -959,22 +975,6 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
         
         du.mass_face[idx_a, 6] -= u.pipe_mass_flow[idx_a]
         du.mass_face[idx_b, 1] += u.pipe_mass_flow[idx_a]
-    end
-
-    for cell_id in TC1_cells
-        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC1_thermal_resistance[1]
-    end
-    for cell_id in TC2_cells
-        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC2_thermal_resistance[1]
-    end
-    for cell_id in TC3_cells
-        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC3_thermal_resistance[1]
-    end
-    for cell_id in TC4_cells
-        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC4_thermal_resistance[1]
-    end
-    for cell_id in TC5_cells
-        u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC5_thermal_resistance[1]
     end
 
     solve_connection_groups!(du, u, geo, system)
@@ -1052,7 +1052,7 @@ function hot_water_solve_system!(du, u, p_vec, t, geo, system)
     trial_independent_solve_system!(du, u, p_vec, t, geo, system)
 end
 
-function built_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data, p_guess)
+function build_trial_implicit_prob(f_closure, du0_vec, u0_vec, thermocouple_data, p_guess)
     detector = SparseConnectivityTracer.TracerLocalSparsityDetector()
 
     jac_sparsity = ADTypes.jacobian_sparsity(
@@ -1127,8 +1127,8 @@ p_guess = ustrip.(upreferred.(Vector(first_p_guess_init)))
 dry_run_p_best = ustrip.(upreferred.(Vector(dry_run_best_params)))
 hot_water_p_best = ustrip.(upreferred.(Vector(hot_water_best_params)))
 
-dry_run_implicit_prob = built_trial_implicit_prob(f_closure_dry_run, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data, dry_run_p_best);
-hot_water_implicit_prob = built_trial_implicit_prob(f_closure_hot_water, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data, hot_water_p_best);
+dry_run_implicit_prob = build_trial_implicit_prob(f_closure_dry_run, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data, dry_run_p_best);
+hot_water_implicit_prob = build_trial_implicit_prob(f_closure_hot_water, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data, hot_water_p_best);
 
 #NOTE!!: since we use an interpolation for heater wattage and nothing else happens in dry_run_saveat, 
 #the solver will skip over times where the heater is on, resulting in no change
@@ -1169,17 +1169,18 @@ dry_run_heater_powers = dry_run_thermocouple_data.heater_power_interp.(ustrip.(d
 dry_run_tstops = ustrip.(upreferred.(dry_run_thermocouple_data.timestamps[findall(!iszero, dry_run_heater_powers)]))
 
 function get_trial_temperature_variance(thermocouple_data)
-    all_recorded_temperatures = []
+    n_thermocouples = 5
+    all_recorded_temperatures = zeros(Float64, n_thermocouples, length(thermocouple_data.timestamps))
 
-    for t in ustrip.(thermocouple_data.timestamps)
-        push!(all_recorded_temperatures, thermocouple_data.TC1_temps_interp(t))
-        push!(all_recorded_temperatures, thermocouple_data.TC2_temps_interp(t))
-        push!(all_recorded_temperatures, thermocouple_data.TC3_temps_interp(t))
-        push!(all_recorded_temperatures, thermocouple_data.TC4_temps_interp(t))
-        push!(all_recorded_temperatures, thermocouple_data.TC5_temps_interp(t))
+    for (time_index, t) in enumerate(ustrip.(thermocouple_data.timestamps))
+        all_recorded_temperatures[1, time_index] = thermocouple_data.TC1_temps_interp(t)
+        all_recorded_temperatures[2, time_index] = thermocouple_data.TC2_temps_interp(t)
+        all_recorded_temperatures[3, time_index] = thermocouple_data.TC3_temps_interp(t)
+        all_recorded_temperatures[4, time_index] = thermocouple_data.TC4_temps_interp(t)
+        all_recorded_temperatures[5, time_index] = thermocouple_data.TC5_temps_interp(t)
     end
 
-    mean_recorded_temperatures = sum(all_recorded_temperatures) / length(all_recorded_temperatures)
+    mean_recorded_temperatures = sum(all_recorded_temperatures) / (n_thermocouples * length(thermocouple_data.timestamps))
 
     sum_of_squares = 0.0
 
@@ -1187,7 +1188,7 @@ function get_trial_temperature_variance(thermocouple_data)
         sum_of_squares += (all_recorded_temperatures[i] - mean_recorded_temperatures)^2
     end
 
-    return sum_of_squares / length(all_recorded_temperatures)
+    return sum_of_squares / (n_thermocouples * length(thermocouple_data.timestamps))
 end
 
 dry_run_temperature_variance = get_trial_temperature_variance(dry_run_thermocouple_data)
@@ -1203,7 +1204,7 @@ function dry_run_loss(θ)
         f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, dry_run_solve_system!, geo_copy, system_copy)
         
         # Re-generate the Jacobian sparsity and the implicit ODEProblem
-        built_trial_implicit_prob(f_closure, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data, θ)
+        build_trial_implicit_prob(f_closure, dry_run_du0_vec, dry_run_u0_vec, dry_run_thermocouple_data, θ)
     end
     
     dry_run_loss_prob = remake(prob, p = θ)
@@ -1271,7 +1272,7 @@ function hot_water_loss(θ)
         f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solve_system!, geo_copy, system_copy)
         
         # Re-generate the Jacobian sparsity and the implicit ODEProblem
-        built_trial_implicit_prob(f_closure, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data, θ)
+        build_trial_implicit_prob(f_closure, hot_water_du0_vec, hot_water_u0_vec, hot_water_thermocouple_data, θ)
     end
     
     hot_water_loss_prob = remake(prob, p = θ)
@@ -1573,18 +1574,3 @@ end
     #Method = :SepReal
 )
     =#
-
-#NOTE: the default MaxIters is 10000, if you want to let something run for like 6 hours (like I did)
-#increase it to something higher
-#weird thing is is that it took like 3000 itertaions to get a better loss value
-#also, here't the time stats: 
-#13225.185498 seconds (86.69 G allocations: 2.874 TiB, 2.98% gc time, 0.00% compilation time)
-#that's 3.67 hours
-#wowie! 
-#Compilation time is not that big of a factor when running these big number-crunching simulations, that's great news
-#also, 3.00% GC time is great!
-#the allocations are pretty high, but for 13000 seconds of computation time, that's not bad (at least I think)
-#sometimes I feel bad about running these simulations for hours at a time with a constant power draw of ~200W, 
-#but I guess people have used computers for way more useless things.
-#also, energy is only $0.1548 per kWh, so you're only consuming around $0.031 worth of energy per hour, which is very cheap! 
-#I just really hope that some change later on doesn't make all of these numbers invalid 
