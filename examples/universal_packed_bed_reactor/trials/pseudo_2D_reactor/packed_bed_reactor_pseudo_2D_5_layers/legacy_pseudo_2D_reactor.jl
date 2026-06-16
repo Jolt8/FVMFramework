@@ -1074,19 +1074,19 @@ f_closure_dry_run = (du, u, p, t) -> fvm_operator!(du, u, p, t, dry_run_solve_sy
 f_closure_hot_water = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solve_system!, hot_water_geo, hot_water_system)
 
 first_p_guess_init = ComponentVector(
-    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 3.9215249544953634u"W/(m^2*K)",
-    pipe_endcaps_to_air_thermal_conductance = 0.21843778568123667u"W/K",
-    heater_weight_1 = 0.04233643564131222,
-    heater_weight_2 = 0.6599848372698764,
-    heater_weight_3 = 0.4480116180759421,
-    heater_weight_4 = 0.007962092313654773,
-    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 61.49737866475787u"W/(m^2*K)",
-    steel_thermal_mass_multiplier = 3.7753230723789706,
-    TC1_thermal_resistance = 28.129313413301414u"K/W",
-    TC2_thermal_resistance = 97.1810904949918u"K/W",
-    TC3_thermal_resistance = 91.60608551471157u"K/W",
-    TC4_thermal_resistance = 57.90696805772799u"K/W",
-    TC5_thermal_resistance = 67.15056955503321u"K/W",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.4055158193977433u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 0.49932462378728537u"W/K",
+    heater_weight_1 = 0.06728217161894057,
+    heater_weight_2 = 0.2323239425794256,
+    heater_weight_3 = 0.31160742389943263,
+    heater_weight_4 = 0.46367844468599706,
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 34.29281343252844u"W/(m^2*K)",
+    steel_thermal_mass_multiplier = 2.5780844682515482,
+    TC1_thermal_resistance = 68.51914705578082u"K/W",
+    TC2_thermal_resistance = 195.16805450015954u"K/W",
+    TC3_thermal_resistance = 129.78054246870073u"K/W",
+    TC4_thermal_resistance = 157.87722864395607u"K/W",
+    TC5_thermal_resistance = 21.658473286372u"K/W",
 )
 
 dry_run_best_params = ComponentVector(
@@ -1338,79 +1338,60 @@ hot_water_output_dir = joinpath(@__DIR__, "..", "graphs", "hot_water_graphs")
 dry_run_output_dir = joinpath(@__DIR__, "..", "graphs", "dry_run_graphs")
 combined_parameters_output_dir = joinpath(@__DIR__, "..", "graphs", "combined_parameters_loss_graphs")
 
-function generate_dry_run_plots(dry_run_p_best, plot_output_dir)
-    # Ensure plots directory exists
-    mkpath(dry_run_output_dir)
-    new_path = joinpath(dry_run_output_dir, Dates.format(now(), "yyyy-mm-dd_HH-MM-SS"))
-    parameters_path = joinpath(new_path, "parameters")
-    results_path = joinpath(new_path, "results")
-    mkpath(parameters_path)
-    mkpath(results_path)
-
-    CSV.write(joinpath(parameters_path, "parameters.csv"), DataFrame([NamedTuple(ComponentVector(dry_run_p_best, p_axes))]))
-
+function generate_dry_run_plots(dry_run_p_best, results_path)
     dry_run_simulated = viewable_dry_run_loss(dry_run_p_best)
     dry_run_times = dry_run_simulated.dry_run_times
 
     TC1_plt = plot(dry_run_times, dry_run_simulated.dry_run_TC1, label="Sim TC1", linewidth=2)
     plot!(TC1_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC1_temps_interp.(dry_run_times)), label="Exp TC1", linewidth=2)
-    savefig(TC1_plt, joinpath(plot_output_dir, "TC1_dry_run_loss.png"))
+    savefig(TC1_plt, joinpath(results_path, "TC1_dry_run_loss.png"))
 
     TC2_plt = plot(dry_run_times, dry_run_simulated.dry_run_TC2, label="Sim TC2", linewidth=2)
     plot!(TC2_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC2_temps_interp.(dry_run_times)), label="Exp TC2", linewidth=2)
-    savefig(TC2_plt, joinpath(plot_output_dir, "TC2_dry_run_loss.png"))
+    savefig(TC2_plt, joinpath(results_path, "TC2_dry_run_loss.png"))
 
     TC3_plt = plot(dry_run_times, dry_run_simulated.dry_run_TC3, label="Sim TC3", linewidth=2)
     plot!(TC3_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC3_temps_interp.(dry_run_times)), label="Exp TC3", linewidth=2)
-    savefig(TC3_plt, joinpath(plot_output_dir, "TC3_dry_run_loss.png"))
+    savefig(TC3_plt, joinpath(results_path, "TC3_dry_run_loss.png"))
 
     TC4_plt = plot(dry_run_times, dry_run_simulated.dry_run_TC4, label="Sim TC4", linewidth=2)
     plot!(TC4_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC4_temps_interp.(dry_run_times)), label="Exp TC4", linewidth=2)
-    savefig(TC4_plt, joinpath(plot_output_dir, "TC4_dry_run_loss.png"))
+    savefig(TC4_plt, joinpath(results_path, "TC4_dry_run_loss.png"))
 
     TC5_plt = plot(dry_run_times, dry_run_simulated.dry_run_TC5, label="Sim TC5", linewidth=2)
     plot!(TC5_plt, dry_run_times, ustrip(dry_run_thermocouple_data.TC5_temps_interp.(dry_run_times)), label="Exp TC5", linewidth=2)
-    savefig(TC5_plt, joinpath(plot_output_dir, "TC5_dry_run_loss.png"))
+    savefig(TC5_plt, joinpath(results_path, "TC5_dry_run_loss.png"))
 
     overall_plot = plot(TC1_plt, TC2_plt, TC3_plt, TC4_plt, TC5_plt, layout=(5, 1), size=(1000, 250*5), ylims=(250, 600))
-    savefig(overall_plot, joinpath(plot_output_dir, "overall_dry_run_loss.png"))
+    savefig(overall_plot, joinpath(results_path, "overall_dry_run_loss.png"))
 end
 
-function generate_hot_water_plots(hot_water_p_best, plot_output_dir)
-    mkpath(hot_water_output_dir)
-    new_path = joinpath(hot_water_output_dir, Dates.format(now(), "yyyy-mm-dd_HH-MM-SS"))
-    parameters_path = joinpath(new_path, "parameters")
-    results_path = joinpath(new_path, "results")
-    mkpath(parameters_path)
-    mkpath(results_path)
-
-    CSV.write(joinpath(parameters_path, "parameters.csv"), DataFrame([NamedTuple(ComponentVector(hot_water_p_best, p_axes))]))
-
+function generate_hot_water_plots(hot_water_p_best, results_path)
     hot_water_simulated = viewable_hot_water_loss(hot_water_p_best)
     hot_water_times = hot_water_simulated.hot_water_times
 
     TC1_hw_plt = plot(hot_water_times, hot_water_simulated.hot_water_TC1, label="Sim TC1", linewidth=2)
     plot!(TC1_hw_plt, hot_water_times, ustrip(hot_water_thermocouple_data.TC1_temps_interp.(hot_water_times)), label="Exp TC1", linewidth=2)
-    savefig(TC1_hw_plt, joinpath(plot_output_dir, "TC1_hot_water_loss.png"))
+    savefig(TC1_hw_plt, joinpath(results_path, "TC1_hot_water_loss.png"))
 
     TC2_hw_plt = plot(hot_water_times, hot_water_simulated.hot_water_TC2, label="Sim TC2", linewidth=2)
     plot!(TC2_hw_plt, hot_water_times, ustrip(hot_water_thermocouple_data.TC2_temps_interp.(hot_water_times)), label="Exp TC2", linewidth=2)
-    savefig(TC2_hw_plt, joinpath(plot_output_dir, "TC2_hot_water_loss.png"))
+    savefig(TC2_hw_plt, joinpath(results_path, "TC2_hot_water_loss.png"))
 
     TC3_hw_plt = plot(hot_water_times, hot_water_simulated.hot_water_TC3, label="Sim TC3", linewidth=2)
     plot!(TC3_hw_plt, hot_water_times, ustrip(hot_water_thermocouple_data.TC3_temps_interp.(hot_water_times)), label="Exp TC3", linewidth=2)
-    savefig(TC3_hw_plt, joinpath(plot_output_dir, "TC3_hot_water_loss.png"))
+    savefig(TC3_hw_plt, joinpath(results_path, "TC3_hot_water_loss.png"))
 
     TC4_hw_plt = plot(hot_water_times, hot_water_simulated.hot_water_TC4, label="Sim TC4", linewidth=2)
     plot!(TC4_hw_plt, hot_water_times, ustrip(hot_water_thermocouple_data.TC4_temps_interp.(hot_water_times)), label="Exp TC4", linewidth=2)
-    savefig(TC4_hw_plt, joinpath(plot_output_dir, "TC4_hot_water_loss.png"))
+    savefig(TC4_hw_plt, joinpath(results_path, "TC4_hot_water_loss.png"))
 
     TC5_hw_plt = plot(hot_water_times, hot_water_simulated.hot_water_TC5, label="Sim TC5", linewidth=2)
     plot!(TC5_hw_plt, hot_water_times, ustrip(hot_water_thermocouple_data.TC5_temps_interp.(hot_water_times)), label="Exp TC5", linewidth=2)
-    savefig(TC5_hw_plt, joinpath(plot_output_dir, "TC5_hot_water_loss.png"))
+    savefig(TC5_hw_plt, joinpath(results_path, "TC5_hot_water_loss.png"))
 
     overall_hw_plot = plot(TC1_hw_plt, TC2_hw_plt, TC3_hw_plt, TC4_hw_plt, TC5_hw_plt, layout=(5, 1), size=(1000, 250*5), ylims=(290, 340))
-    savefig(overall_hw_plot, joinpath(plot_output_dir, "overall_hot_water_loss.png"))
+    savefig(overall_hw_plot, joinpath(results_path, "overall_hot_water_loss.png"))
 end
 
 function generate_combined_validation_plots(p_best, plot_output_dir)
@@ -1419,20 +1400,18 @@ function generate_combined_validation_plots(p_best, plot_output_dir)
     new_path = joinpath(plot_output_dir, Dates.format(now(), "yyyy-mm-dd_HH-MM-SS"))
     nested_dry_run_path = joinpath(new_path, "dry_run")
     nested_hot_water_path = joinpath(new_path, "hot_water")
-    parameters_path = joinpath(new_path, "parameters")
-    results_path = joinpath(new_path, "results")
+    #parameters_path = joinpath(new_path, "parameters")
     mkpath(nested_dry_run_path)
     mkpath(nested_hot_water_path)
-    mkpath(parameters_path)
-    mkpath(results_path)
+    #mkpath(parameters_path)
 
-    CSV.write(joinpath(parameters_path, "parameters.csv"), DataFrame([NamedTuple(ComponentVector(p_best, p_axes))]))
+    CSV.write(joinpath(new_path, "parameters.csv"), DataFrame([NamedTuple(ComponentVector(p_best, p_axes))]))
     
     generate_dry_run_plots(p_best, nested_dry_run_path)
     generate_hot_water_plots(p_best, nested_hot_water_path)
 end
 
-#generate_combined_validation_plots(p_guess, combined_parameters_output_dir)
+generate_combined_validation_plots(p_guess, combined_parameters_output_dir)
 
 #OPTIMIZATION
 adtype = Optimization.AutoForwardDiff()
@@ -1553,7 +1532,7 @@ end
 )
     =#
 
-
+#=
 @time res = solve(
     ensembleprob, 
     BBO_adaptive_de_rand_1_bin_radiuslimited(), 
@@ -1563,7 +1542,7 @@ end
     #Method = :RandomSearcher,
     callback = cb,
 )
-
+=#
 #=
 @time res = solve(
     optprob, 
@@ -1574,3 +1553,30 @@ end
     #Method = :SepReal
 )
     =#
+
+optimization_results_file = joinpath(@__DIR__, "optimization_results", "optimization_results_2026-06-10_14-41-25.csv")
+data = CSV.read(optimization_results_file, DataFrame)
+
+n_best_solutions = 10
+
+best_losses = sort(unique(data.loss))[1:n_best_solutions]
+
+function find_best_parameters(best_losses, data, p_axes)
+    corresponding_best_parameters = ComponentVector{Float64}[]
+
+    for i in 1:n_best_solutions
+        found_index = findlast(x -> x == best_losses[i], data.loss)
+        best_parameters = collect(data[found_index, 2:end])
+        @show best_parameters
+        @show length(best_parameters)
+        push!(corresponding_best_parameters, ComponentVector(best_parameters, p_axes))
+    end
+    
+    return corresponding_best_parameters
+end
+
+corresponding_best_parameters = find_best_parameters(best_losses, data, p_axes)
+
+corresponding_best_parameters[1]
+
+#generate_combined_validation_plots(Vector(corresponding_best_parameters[1]), combined_parameters_output_dir)
