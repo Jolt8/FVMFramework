@@ -2,7 +2,7 @@
 struct RegionGroup{P <: ComponentVector, F <: Function, G <: Function}
     name::String
     properties::P
-    property_update_function::F
+    property_update_function!::F
     region_function!::G
     region_cells::Vector{Int}
 end
