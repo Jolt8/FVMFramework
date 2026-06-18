@@ -18,7 +18,7 @@ function get_water_methanol_properties()
         bubble_area_per_m3 = 300.0u"m^2/m^3",
 
         k = 0.6u"W/(m*K)",
-        cp = 3000u"J/(kg*K)",
+        solid_cp = 3000u"J/(kg*K)",
         gas_viscosity = 1e-5u"Pa*s",
         liquid_viscosity = 1e-3u"Pa*s",
 
@@ -30,7 +30,10 @@ function get_water_methanol_properties()
         specific_heat_of_vaporizations = (
             methanol = 2260u"J/g",
             water = 1100u"J/g",
-        )
+        ),
+
+        liquid_compressibility = 2.3032798788253632e-10u"1/Pa",
+        gas_compressibility = 1.0271942036794588e-5u"1/Pa",
     )
 
     return water_methanol_properties
