@@ -66,34 +66,57 @@ water_methanol_properties = get_water_methanol_properties()
 
 #physics
 Revise.includet(joinpath(@__DIR__, "physics", "drift_flux_vaporization.jl"))
-Revise.includet(joinpath(@__DIR__, "eos_stuff.jl")) #for update_eos_densities! and update_K_vle!
+Revise.includet(joinpath(@__DIR__, "physics", "eos_stuff.jl")) #for update_eos_densities! and update_K_vle!
 #NOTE: if the solver ever crashes, it's most likely due to the rate in which the liquid boils in the drift_flux_vaporization physics functions
 #this is on lines 90-92 
 #the culprit is usually: kinetic_constant = u.phase_change_mass_transfer_coefficient[cell_id] * effective_bubble_area
 #if the phase_change_mass_transfer_coefficient is too high, the solver will be hit with extreme stiffness and never solve
 
-function update_solid_properties!(du, u, cell_id, vol, system)
+function update_solid_properties!(du, u, p, t, cell_id, vol, system)
     properties = ComponentVector(system.properties_vec, system.properties_axes)
 
     u.k[cell_id] = properties.k[cell_id]
-    u.cp[cell_id] = properties.cp[cell_id] * u.steel_thermal_mass_multiplier[cell_id]
+    u.cp[cell_id] = properties.cp[cell_id]
     u.rho[cell_id] = properties.solid_rho[cell_id]
 end
 
 #clapeyron_model = CPA(["methanol", "water"])
 clapeyron_model = PR(["methanol", "water"])
 
-Clapeyron.volume(clapeyron_model, 100000, 273.13, [0.5, 0.5], phase = :liquid)
-Clapeyron.volume(clapeyron_model, 100000, 273.13, [1.0, 1.0], phase = :liquid)
+Clapeyron.volume(clapeyron_model, 100000u"Pa", 273.13u"K", [0.5, 0.5], phase = :liquid)
+Clapeyron.volume(clapeyron_model, 100000u"Pa", 273.13u"K", [1.0, 1.0], phase = :liquid)
 
-function update_fluid_properties!(du, u, cell_id, vol, system)
+Clapeyron.isothermal_compressibility(clapeyron_model, 100000u"Pa", 273.13u"K", [0.5, 0.5], phase = :liquid)
+Clapeyron.isothermal_compressibility(clapeyron_model, 100000u"Pa", 273.13u"K", [0.5, 0.5], phase = :gas)
+isobaric_heat_capacity(clapeyron_model, 100000u"Pa", 273.13u"K", [0.5, 0.5], phase = :gas)
+isobaric_heat_capacity(clapeyron_model, 100000u"Pa", 273.13u"K", [0.5, 0.5])
+
+function update_fluid_properties!(du, u, p, t, cell_id, vol, system)
     properties = ComponentVector(system.properties_vec, system.properties_axes)
 
-    overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
+    multi_species_overall_drift_flux_state_update!(du, u, cell_id, vol, clapeyron_model)
+
+    gas_mole_fractions_vec, liquid_mole_fractions_vec = get_mole_fractions_vec(du, u, cell_id, vol)
     
     u.k[cell_id] = properties.k[cell_id]
-    u.cp[cell_id] = properties.cp[cell_id]
-    u.rho[cell_id] = u.bed_porosity[cell_id] * u.fluid_rho[cell_id] + (1.0 - u.bed_porosity[cell_id]) * properties.solid_rho[cell_id]
+
+    u.rho[cell_id] = u.bed_porosity[cell_id] * u.fluid_rho[cell_id] + (1.0 - u.bed_porosity[cell_id]) * u.solid_rho[cell_id]
+    u.gravity[cell_id] = 9.81
+
+    #=
+    gas_cp_mass = isobaric_heat_capacity(clapeyron_model, u.pressure[cell_id], u.temp[cell_id], gas_mole_fractions_vec, phase = :gas) / u.gas_mw_avg[cell_id]
+    liquid_cp_mass = isobaric_heat_capacity(clapeyron_model, u.pressure[cell_id], u.temp[cell_id], liquid_mole_fractions_vec, phase = :liquid) / u.liquid_mw_avg[cell_id]
+    
+    fluid_rho_cp = u.gas_holdup[cell_id] * u.eos_gas_density[cell_id] * gas_cp_mass + u.liquid_holdup[cell_id] * u.eos_liquid_density[cell_id] * liquid_cp_mass
+
+    rho_cp_total = u.bed_porosity[cell_id] * fluid_rho_cp + (1.0 - u.bed_porosity[cell_id]) * u.solid_rho[cell_id] * u.solid_cp[cell_id]
+    u.cp[cell_id] = rho_cp_total / u.rho[cell_id]
+    =#
+    u.cp[cell_id] = u.solid_cp[cell_id]
+
+    gas_compressibility = isothermal_compressibility(clapeyron_model, u.pressure[cell_id], u.temp[cell_id], gas_mole_fractions_vec, phase = :gas)
+    liquid_compressibility = isothermal_compressibility(clapeyron_model, u.pressure[cell_id], u.temp[cell_id], liquid_mole_fractions_vec, phase = :liquid)
+    u.compressibility_effective[cell_id] = gas_compressibility * u.gas_holdup[cell_id] + liquid_compressibility * u.liquid_holdup[cell_id]
 end
 
 function fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
@@ -101,7 +124,10 @@ function fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     sum_mass_flux_face_to_cell!(du, u, cell_id) #this always has to go before cap_mass_flux_to_pressure_change!
 
     cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
-    cap_mass_flux_to_pressure_change!(du, u, cell_id, vol)
+    cap_mass_flux_to_pressure_change_with_compressibility!(du, u, cell_id, vol) 
+    #cap_mass_flux_to_pressure_change!(du, u, cell_id, vol)
+    #compared to cap_mass_flux_to_pressure_change! that uses the ideal gas law, the version that uses 
+    #compressibility makes the solver take 3x longer to solve
 end
 
 function solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
@@ -124,7 +150,6 @@ u_proto = ComponentVector(
 
 config = create_fvm_config(grid, u_proto);
 
-n_cells = length(config.geo.cell_volumes)
 n_faces = length(config.geo.cell_neighbor_areas[1])
 #reaction_names = keys(water_methanol_properties.reactions.reforming_reactions)
 species_names = keys(u_proto.gas_densities)
@@ -171,6 +196,10 @@ add_setup_syms!(config;
         gas_generation = u"kg/(m^3*s)",
 
         K_vle = u"1",
+
+        gravity = u"m/s^2",
+
+        compressibility_effective = u"1/Pa"
     ),
     special_caches = ComponentArray(
         mass_face = zeros(n_cells, n_faces)u"kg",
@@ -226,8 +255,12 @@ add_region!(
         temp = 60.0u"°C",
     ),
     properties = water_methanol_properties,
+    property_update_function = 
+    function update_inlet!(du, u, p, t, cell_id, vol)
+        update_fluid_properties!(du, u, p, t, cell_id, vol, system)
+    end,
     region_function =
-    function inlet!(du, u, cell_id, vol)
+    function inlet!(du, u, p, t, cell_id, vol)
         #update_fluid_properties!(du, u, cell_id, vol, system)
 
         #du.heat[cell_id] += 10.0
@@ -237,7 +270,7 @@ add_region!(
 )
 #Connection functions
 function fluid_fluid_flux!(
-    du, u,
+    du, u, p, t,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -259,7 +292,7 @@ function fluid_fluid_flux!(
 end
 
 function fluid_solid_flux!(
-    du, u,
+    du, u, p, t,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -273,7 +306,7 @@ function fluid_solid_flux!(
 end
 
 function solid_solid_flux!(
-    du, u,
+    du, u, p, t,
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -296,21 +329,21 @@ function connection_map_function(phys_a, phys_b)
 end
 
 function solve_system!(du, u, p_vec, t, geo, system)
-    for cell_id in grid.cellsets["fluid"]
-        update_fluid_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
-    end
+    p = ComponentVector(p_vec, system.p_axes)
 
-    solve_connection_groups!(du, u, geo, system)
-    solve_controller_groups!(du, u, geo, system)
-    solve_patch_groups!(du, u, geo, system)
-    solve_region_groups!(du, u, geo, system)
+    update_region_groups!(du, u, p, t, geo, system)
+
+    solve_connection_groups!(du, u, p, t, geo, system)
+    solve_controller_groups!(du, p, t, u, geo, system)
+    solve_patch_groups!(du, u, p, t, geo, system)
+    solve_region_groups!(du, u, p, t, geo, system)
 end
 
 du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, check_units = false);
 
 f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
 
-p_guess = 0.0
+p_guess = [0.0]
 
 #test_prob = ODEProblem(f_closure, u0_vec, (0.0, 0.01), p_guess)
 #@time sol = solve(test_prob, Tsit5(), callback = approximate_time_to_finish_cb)
@@ -332,47 +365,10 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 @time sol = solve(implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 
-u_named = [ComponentVector(sol.u[i], state_axes) for i in 1:length(sol.u)];
-u_named[33].pressure
-u_named[33].gas_densities.methanol
-u_named[33].liquid_densities.water
+u_named = [ComponentVector(sol.u[i], system.state_axes) for i in 1:length(sol.u)];
+
+du_complete, u_complete = regenerate_fvm_state(sol, system, solve_system!, geo, p_guess, u_additional_information = ComponentVector());
 
 root_dir = "C:\\Users\\wille\\Desktop\\Julia_cfd_output_files"
 
-sol_to_vtk(sol, u_named, grid, @__FILE__, root_dir)
-
-hi = 1
-
-#=
-
-using Plots
-
-gas_inlet_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].gas_densities.methanol[1] for i in 1:length(sol.u)], label = "methanol", title = "gas_densities inlet")
-plot!(gas_inlet_plot, [sol.t[i] for i in 1:length(sol.u)], [u_named[i].gas_densities.water[1] for i in 1:length(sol.u)], label = "water")
-
-gas_middle_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].gas_densities.methanol[50] for i in 1:length(sol.u)], label = "methanol", title = "gas_densities middle")
-plot!(gas_middle_plot, [sol.t[i] for i in 1:length(sol.u)], [u_named[i].gas_densities.water[50] for i in 1:length(sol.u)], label = "water")
-
-gas_outlet_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].gas_densities.methanol[100] for i in 1:length(sol.u)], label = "methanol", title = "gas_densities outlet")
-plot!(gas_outlet_plot, [sol.t[i] for i in 1:length(sol.u)], [u_named[i].gas_densities.water[100] for i in 1:length(sol.u)], label = "water")
-
-liquid_inlet_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].liquid_densities.methanol[1] for i in 1:length(sol.u)], label = "methanol", title = "liquid_densities inlet")
-plot!(liquid_inlet_plot, [sol.t[i] for i in 1:length(sol.u)], [u_named[i].liquid_densities.water[1] for i in 1:length(sol.u)], label = "water")
-
-liquid_middle_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].liquid_densities.methanol[50] for i in 1:length(sol.u)], label = "methanol", title = "liquid_densities middle")
-plot!(liquid_middle_plot, [sol.t[i] for i in 1:length(sol.u)], [u_named[i].liquid_densities.water[50] for i in 1:length(sol.u)], label = "water")
-
-liquid_outlet_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].liquid_densities.methanol[100] for i in 1:length(sol.u)], label = "methanol", title = "liquid_densities outlet")
-plot!(liquid_outlet_plot, [sol.t[i] for i in 1:length(sol.u)], [u_named[i].liquid_densities.water[100] for i in 1:length(sol.u)], label = "water")
-
-methanol_liquid_cell_before_outlet_plot = plot([sol.t[i] for i in 270:length(sol.u)], [u_named[i].liquid_densities.methanol[99] for i in 270:length(sol.u)], label = "methanol liquid density", title = "liquid and gas densities before outlet") #this is the strange one
-plot!([sol.t[i] for i in 270:length(sol.u)], [u_named[i].gas_densities.methanol[99] for i in 270:length(sol.u)], label = "methanol gas density") #this is also a strange one
-water_liquid_cell_before_outlet_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].liquid_densities.water[99] for i in 1:length(sol.u)], label = "water", title = "liquid_densities before outlet")
-water_gas_cell_before_outlet_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].gas_densities.water[99] for i in 1:length(sol.u)], label = "water", title = "liquid_densities before outlet")
-
-inlet_pressure_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].pressure[1] for i in 1:length(sol.u)], label = "inlet", title = "pressure inlet")
-middle_pressure_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].pressure[50] for i in 1:length(sol.u)], label = "pressure", title = "pressure middle")
-outlet_pressure_plot = plot([sol.t[i] for i in 1:length(sol.u)], [u_named[i].pressure[100] for i in 1:length(sol.u)], label = "pressure", title = "pressure outlet")
-
-plot(gas_inlet_plot, gas_middle_plot, gas_outlet_plot, liquid_inlet_plot, liquid_middle_plot, liquid_outlet_plot, methanol_liquid_cell_before_outlet_plot, water_liquid_cell_before_outlet_plot, inlet_pressure_plot, middle_pressure_plot, outlet_pressure_plot, layout = (11, 1), legend = false, size = (3000, 3000))
-=#
+sol_to_vtk(sol, du_complete, u_complete, grid, geo, @__FILE__, root_dir; include_zeros_fields = false)
