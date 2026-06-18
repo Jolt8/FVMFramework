@@ -163,10 +163,10 @@ include("solvers/common_operator_methods/unpack_fvm_state.jl")
 export unpack_fvm_state
 
 include("solvers/common_operator_methods/shared_group_functions.jl")
-export solve_connection_group!, solve_controller_group!, solve_region_group!, solve_patch_group!
+export solve_connection_group!, solve_controller_group!, update_region_group!, solve_region_group!, solve_patch_group!
 
 include("solvers/common_operator_methods/further_simplified_group_functions.jl")
-export solve_connection_groups!, solve_controller_groups!, solve_region_groups!, solve_patch_groups!
+export solve_connection_groups!, solve_controller_groups!, update_region_groups!, solve_region_groups!, solve_patch_groups!
 export default_order_solve_all_groups!
 
 #   ---- FVM Operators ----
