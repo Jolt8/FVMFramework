@@ -101,7 +101,6 @@ function update_fluid_properties!(du, u, p, t, cell_id, vol, system)
     u.k[cell_id] = properties.k[cell_id]
 
     u.rho[cell_id] = u.bed_porosity[cell_id] * u.fluid_rho[cell_id] + (1.0 - u.bed_porosity[cell_id]) * u.solid_rho[cell_id]
-    u.gravity[cell_id] = 9.81
 
     #=
     gas_cp_mass = isobaric_heat_capacity(clapeyron_model, u.pressure[cell_id], u.temp[cell_id], gas_mole_fractions_vec, phase = :gas) / u.gas_mw_avg[cell_id]
@@ -196,8 +195,6 @@ add_setup_syms!(config;
         gas_generation = u"kg/(m^3*s)",
 
         K_vle = u"1",
-
-        gravity = u"m/s^2",
 
         compressibility_effective = u"1/Pa"
     ),
