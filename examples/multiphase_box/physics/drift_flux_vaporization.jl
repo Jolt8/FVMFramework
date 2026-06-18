@@ -7,7 +7,7 @@ using LinearAlgebra
     #- eos_gas/liquid_density is the density of the gas/liquid phase in the cell as determined by the equation of state for the gaseous/liquid phase
     #- fluid_rho is the overall density of the fluid in the cell (determined with overall_gas_density and overall_liquid_density)
     #- solid_rho is the density of the solid packing (if any)
-    #- rho is the combination of fluid_rho and solid_rho based on bed_proosity
+    #- rho is the combination of fluid_rho and solid_rho based on bed_porosity
 
 function liquid_and_gas_density!(du, u, cell_id, vol)
     u.overall_gas_density[cell_id] *= 0.0
@@ -83,6 +83,22 @@ function gas_and_liquid_mole_fractions!(du, u, cell_id, vol)
     end
 end
 
+
+function cap_mass_flux_to_pressure_change_with_compressibility!(du, u, cell_id, vol)
+    dP_dt = (1 / u.compressibility_effective[cell_id]) * (1 / u.fluid_rho[cell_id]) * (du.mass[cell_id] / vol)
+
+    gas_vol_frac = u.overall_gas_density[cell_id] / max(u.eos_gas_density[cell_id], 1e-8)
+    liq_vol_frac = u.overall_liquid_density[cell_id] / max(u.eos_liquid_density[cell_id], 1e-8)
+    
+    sum_volume = gas_vol_frac + liq_vol_frac
+
+    tau = 0.05 
+    dP_error = (sum_volume - 1.0) / (u.compressibility_effective[cell_id] * tau)
+
+    du.pressure[cell_id] += dP_dt + dP_error
+end
+
+
 #update_K_vle! would go here
 
 function phase_change_kinetic_mass_transfer!(du, u, cell_id, vol)
@@ -155,6 +171,8 @@ function phase_change_kinetic_mass_transfer!(du, u, cell_id, vol)
 
         #@show u_K_vle[species[cell_id]] u_K_vle comes back as 2 and 10 usually
         #@show driving_force driving force comes back as 0.79 or 3.0
+
+        u.gas_generation[species[cell_id]] += evaporation_rate #we do this to track evaporation in Paraview
         
         du_gas_densities[species[cell_id]] += evaporation_rate
         du_liquid_densities[species[cell_id]] -= evaporation_rate
@@ -253,7 +271,7 @@ function update_face_driving_force_and_velocities!(
     
     average_distribution_parameter = 0.5 * (u.distribution_parameter[idx_a] + u.distribution_parameter[idx_b])
     drift_velocity = 0.5 * (u.local_gas_drift_velocity[idx_a] + u.local_gas_drift_velocity[idx_b]) * norm[3]
-
+    
     u.gas_velocity_face[idx_a, face_idx] = average_distribution_parameter * u.mixture_pore_velocity[idx_a, face_idx] + drift_velocity * (1.0 - gas_holdup_clamped)
     
     # Algebraically simplified v_l to avoid division by near-zero when gas_holdup approaches 1:
