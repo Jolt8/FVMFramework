@@ -52,7 +52,7 @@ function get_common_properties(pipe_length, cell_lengths_along_pipe, n_cells_axi
         #General properties of the pipe
         pipe_length = pipe_length,
         cell_lengths_along_pipe = cell_lengths_along_pipe,
-        per_cell_pipe_length = cell_lengths_along_pipe / n_cells_axial,
+        per_cell_pipe_length = pipe_length / n_cells_axial,
 
         reforming_area_outside_diameter = reforming_area_outside_diameter,
         reforming_area_cell_volumes = reforming_area_cell_volumes,
