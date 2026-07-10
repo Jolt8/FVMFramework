@@ -6,6 +6,25 @@
     elseif G1 <: ComponentArray
         Ax = G1.parameters[4].parameters[1]
         properties = keys(Ax.parameters[1])
+    elseif G1 <: SubArray || G1 <: Number
+        error("only one field detected in ComponentVector, perhaps you forgot to add a comma after creating a field with only one symbol
+            \n
+            for example:
+            incorrect: 
+            ComponentVector(
+                mass_fractions = (
+                    carbon_dioxide = 1.0
+                )
+            )
+            \n
+            correct: 
+            ComponentVector(
+                mass_fractions = (
+                    carbon_dioxide = 1.0,
+                )
+            )
+            "
+        )
     else
         properties = ()
     end
@@ -59,6 +78,23 @@ end
                 push!(exprs, :(f($axis_obj, groups...)))
             end
         end
+    elseif G1 <: SubArray || G1 <: Number
+        error(
+        "Only one field detected in ComponentVector, perhaps you forgot to add a comma after creating a field with only one symbol
+        For example:
+            Incorrect:
+            ComponentVector(
+                mass_fractions = (
+                    carbon_dioxide = 1.0
+                )
+            )
+            Correct:
+            ComponentVector(
+                mass_fractions = (
+                    carbon_dioxide = 1.0,
+                )
+            )"
+        )
     end
 
     return quote
