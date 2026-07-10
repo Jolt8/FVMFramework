@@ -100,7 +100,7 @@ Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "momentum.jl"))
 
 Revise.includet(joinpath(@__DIR__, "..", "..", "pseudo_2D_reactor", "packing_and_fluid_property_merging.jl"))
 
-function update_copper_mesh_properties!(du, u, cell_id, vol, system)
+function update_copper_mesh_properties!(du, u, p, t, cell_id, vol, system)
     mw_avg!(u, cell_id)
     get_fluid_and_copper_mesh_packing_rho!(du, u, cell_id, vol)
     get_fluid_and_copper_mesh_packing_k!(du, u, cell_id, vol)
@@ -108,7 +108,7 @@ function update_copper_mesh_properties!(du, u, cell_id, vol, system)
     molar_concentrations!(u, cell_id)
 end
 
-function update_silicon_carbide_bed_packing_properties!(du, u, cell_id, vol, system)
+function update_silicon_carbide_bed_packing_properties!(du, u, p, t, cell_id, vol, system)
     mw_avg!(u, cell_id)
     get_fluid_and_silicon_carbide_bed_packing_rho!(du, u, cell_id, vol)
     get_fluid_and_silicon_carbide_bed_packing_k!(du, u, cell_id, vol)
@@ -116,7 +116,7 @@ function update_silicon_carbide_bed_packing_properties!(du, u, cell_id, vol, sys
     molar_concentrations!(u, cell_id)
 end
 
-function update_fluid_properties!(du, u, cell_id, vol, system)
+function update_fluid_properties!(du, u, p, t, cell_id, vol, system)
     mw_avg!(u, cell_id)
 
     properties = ComponentVector(system.properties_vec, system.properties_axes)
@@ -127,7 +127,7 @@ function update_fluid_properties!(du, u, cell_id, vol, system)
     molar_concentrations!(u, cell_id)
 end
 
-function update_solid_properties!(du, u, cell_id, vol, system)
+function update_solid_properties!(du, u, p, t, cell_id, vol, system)
     properties = ComponentVector(system.properties_vec, system.properties_axes)
 
     u.k[cell_id] = properties.k[cell_id]
@@ -138,7 +138,7 @@ function update_solid_properties!(du, u, cell_id, vol, system)
     #I checked and this is working for now
 end
 
-function update_steel_pipe_properties!(du, u, cell_id, vol, system)
+function update_steel_pipe_properties!(du, u, p, t, cell_id, vol, system)
     properties = ComponentVector(system.properties_vec, system.properties_axes)
 
     u.k[cell_id] = properties.k[cell_id]
@@ -148,7 +148,7 @@ end
 
 #you could also add any of these functions individually
 
-function fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+function fluid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     sum_mass_flux_face_to_cell!(du, u, cell_id) #this always has to go before cap_mass_flux_to_pressure_change!
 
     cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
@@ -156,7 +156,7 @@ function fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
 end
 
-function solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+function solid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
 end
 
@@ -301,8 +301,9 @@ add_region!(
         temp = placeholder_temperature,
     ),
     properties = silicon_carbide_sand_properties,
+    property_update_function = update_silicon_carbide_bed_packing_properties!,
     region_function =
-    function inlet!(du, u, cell_id, vol)
+    function inlet!(du, u, p, t, cell_id, vol)
         fluid_physics_functions!(du, u, cell_id, vol)
 
         du.mass_face[cell_id, 1] += u.pipe_mass_flow[cell_id]
@@ -310,7 +311,7 @@ add_region!(
         du.heat[cell_id] *= 0.0
         #du.heat[cell_id] += u.pipe_mass_flow[cell_id] * u.cp[cell_id] * u.temp[cell_id]
 
-        fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        fluid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
 
         for_fields!(du.mass_fractions) do species, du_mass_fractions
             du_mass_fractions[species[cell_id]] *= 0.0
@@ -327,11 +328,12 @@ add_region!(
         temp = placeholder_temperature,
     ),
     properties = silicon_carbide_sand_properties,
+    property_update_function = update_silicon_carbide_bed_packing_properties!,
     region_function =
-    function evaporator!(du, u, cell_id, vol)
+    function evaporator!(du, u, p, t, cell_id, vol)
         fluid_physics_functions!(du, u, cell_id, vol)
 
-        fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        fluid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     end
 )
 
@@ -344,13 +346,14 @@ add_region!(
         temp = placeholder_temperature,
     ),
     properties = copper_mesh_reformer_properties,
+    property_update_function = update_copper_mesh_properties!,
     region_function =
-    function reactor!(du, u, cell_id, vol)
+    function reactor!(du, u, p, t, cell_id, vol)
         fluid_physics_functions!(du, u, cell_id, vol)
 
         #PAM_reforming_react_cell!(du, u, cell_id, vol)
 
-        fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        fluid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     end
 )
 
@@ -363,8 +366,9 @@ add_region!(
         temp = placeholder_temperature,
     ),
     properties = copper_mesh_reformer_properties,
+    property_update_function = update_copper_mesh_properties!,
     region_function =
-    function outlet!(du, u, cell_id, vol)
+    function outlet!(du, u, p, t, cell_id, vol)
         fluid_physics_functions!(du, u, cell_id, vol)
         
         du.mass_face[cell_id, 6] -= u.pipe_mass_flow[cell_id]
@@ -378,7 +382,7 @@ add_region!(
         du.heat[cell_id] -= u.pipe_mass_flow[cell_id] * u.fluid_cp[cell_id] * u.temp[cell_id] 
         #this is to prevent the temperature from building up at the outlet
 
-        fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        fluid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     end
 )
 
@@ -391,11 +395,12 @@ add_region!(
         temp = placeholder_temperature,
     ),
     properties = steel_pipe_wall_properties,
+    property_update_function = update_steel_pipe_properties!,
     region_function =
-    function steel_pipe_wall!(du, u, cell_id, vol)
+    function steel_pipe_wall!(du, u, p, t, cell_id, vol)
         solid_physics_functions!(du, u, cell_id, vol)
 
-        solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        solid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     end
 )
 
@@ -408,11 +413,12 @@ add_region!(
         temp = placeholder_temperature,
     ),
     properties = thermocouple_and_jacket_properties,
+    property_update_function = update_solid_properties!,
     region_function =
-    function thermocouple_and_jacket!(du, u, cell_id, vol)
+    function thermocouple_and_jacket!(du, u, p, t, cell_id, vol)
         solid_physics_functions!(du, u, cell_id, vol)
 
-        solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        solid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     end
 )
 
@@ -421,7 +427,7 @@ add_patch!(
     properties = ComponentVector(), #no new properties here
     patch_function =
     function thermocouple_to_heating_wire!(
-        du, u,
+        du, u, p, t,
         idx_a, idx_b, face_idx, #idx_b is not applicable here because it connects to nothing
         cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
         cell_volumes
@@ -439,11 +445,12 @@ add_region!(
         temp = placeholder_temperature,
     ),
     properties = heating_wire_properties,
+    property_update_function = update_solid_properties!,
     region_function =
-    function heating_wire!(du, u, cell_id, vol)
+    function heating_wire!(du, u, p, t, cell_id, vol)
         solid_physics_functions!(du, u, cell_id, vol)
 
-        solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        solid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     end
 )
 
@@ -456,11 +463,12 @@ add_region!(
         temp = placeholder_temperature,
     ),
     properties = insulation_properties,
+    property_update_function = update_solid_properties!,
     region_function =
-    function insulation!(du, u, cell_id, vol)
+    function insulation!(du, u, p, t, cell_id, vol)
         solid_physics_functions!(du, u, cell_id, vol)
 
-        solid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        solid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     end
 )
 
@@ -469,7 +477,7 @@ add_patch!(
     properties = ComponentVector(),
     patch_function =
     function insulation_to_air!(
-        du, u,
+        du, u, p, t, 
         idx_a, idx_b, face_idx,
         cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
         cell_volumes
@@ -483,7 +491,7 @@ add_patch!(
     properties = ComponentVector(),
     patch_function =
     function pipe_endcaps_to_air!(
-        du, u,
+        du, u, p, t, 
         idx_a, idx_b, face_idx,
         cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
         cell_volumes
@@ -494,7 +502,7 @@ add_patch!(
 
 #Connection functions
 function fluid_fluid_flux!(
-    du, u,
+    du, u, p, t, 
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -530,7 +538,7 @@ end
 Revise.includet(joinpath(@__DIR__, "..", "..", "..", "physics", "convective_heat_transfer.jl"))
 
 function fluid_solid_flux!(
-    du, u,
+    du, u, p, t, 
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -544,7 +552,7 @@ function fluid_solid_flux!(
 end
 
 function solid_solid_flux!(
-    du, u,
+    du, u, p, t, 
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -558,7 +566,7 @@ function solid_solid_flux!(
 end
 
 function no_flux!(
-    du, u,
+    du, u, p, t, 
     idx_a, idx_b, face_idx,
     cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
     cell_volumes
@@ -700,10 +708,10 @@ function dry_run_trial()
     region_names = [dry_run_config.regions[i].name for i in eachindex(dry_run_config.regions)]
     regions = Dict(region_names .=> dry_run_config.regions)
 
-    function dry_run_inlet!(du, u, cell_id, vol)
+    function dry_run_inlet!(du, u, p, t, cell_id, vol)
         fluid_physics_functions!(du, u, cell_id, vol)
 
-        fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        fluid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
     end
 
     regions["pipe_inlet"].initial_conditions.temp = dry_run_properties.room_temperature
@@ -797,7 +805,7 @@ function hot_water_trial()
     region_names = [hot_water_config.regions[i].name for i in eachindex(hot_water_config.regions)]
     regions = Dict(region_names .=> hot_water_config.regions)
 
-    function hot_water_inlet!(du, u, cell_id, vol)
+    function hot_water_inlet!(du, u, p, t, cell_id, vol)
         fluid_physics_functions!(du, u, cell_id, vol)
 
         du.mass_face[cell_id, 1] += u.pipe_mass_flow[cell_id]
@@ -806,7 +814,7 @@ function hot_water_trial()
         #du.heat[cell_id] += u.pipe_mass_flow[cell_id] * u.cp[cell_id] * u.temp[cell_id]
         #the only reason we don't have to do this for the outlet is because the outlet actually does the du.heat[cell_id] += etc..
 
-        fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
+        fluid_sum_and_cap_fluxes!(du, u, p, t, cell_id, vol)
 
         for_fields!(du.mass_fractions) do species, du_mass_fractions
             du_mass_fractions[species[cell_id]] *= 0.0
@@ -922,6 +930,8 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
         u.steel_thermal_mass_multiplier[cell_id] = p.steel_thermal_mass_multiplier[1]
     end
 
+    update_region_groups!(du, u, p, t, geo, system)
+
     for cell_id in TC1_cells
         u.thermocouple_to_heating_wire_thermal_resistance[cell_id] = p.TC1_thermal_resistance[1]
     end
@@ -941,34 +951,6 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
     #VERY IMPORTANT: since most software uses 0-based indexing, you need to adjust the cell id by +1
     #for example, if you mouse over cell_id 5161 in ParaView, you need to use 5162 in the code because julia uses 1-based indexing 
 
-    #TODO: we probably should do something about the issue below
-    #we could probably just add a pre_calculations function for this in each region group, but this works for now
-    #we would have to decide whether or not it would be based on type like Fluid() vs Solid() or if each region would have its own function
-    #I think region based is better just because being explicit is always great and a lot more flexible. 
-    for reg in system.region_groups
-        if reg.name == "pipe_inlet" || reg.name == "silicon_carbide_preheater"
-            for cell_id in reg.region_cells
-                update_silicon_carbide_bed_packing_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
-            end
-        elseif reg.name == "copper_mesh_reformer" || reg.name == "pipe_outlet"
-            for cell_id in reg.region_cells
-                update_copper_mesh_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
-            end
-        elseif reg.name in fluid_regions
-            for cell_id in reg.region_cells
-                update_fluid_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
-            end
-        elseif reg.name == "steel_pipe_wall"
-            for cell_id in reg.region_cells
-                update_steel_pipe_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
-            end
-        else
-            for cell_id in reg.region_cells
-                update_solid_properties!(du, u, cell_id, geo.cell_volumes[cell_id], system)
-            end
-        end
-    end
-
     for i in 1:length(advecting_fluid_cells) - 1 #we don't take mass out of the outlet
         idx_a = advecting_fluid_cells[i]
         idx_b = advecting_fluid_cells[i + 1]
@@ -977,10 +959,10 @@ function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
         du.mass_face[idx_b, 1] += u.pipe_mass_flow[idx_a]
     end
 
-    solve_connection_groups!(du, u, geo, system)
-    solve_controller_groups!(du, u, geo, system)
-    solve_patch_groups!(du, u, geo, system)
-    solve_region_groups!(du, u, geo, system)
+    solve_connection_groups!(du, u, p, t, geo, system)
+    solve_controller_groups!(du, u, p, t, geo, system)
+    solve_patch_groups!(du, u, p, t, geo, system)
+    solve_region_groups!(du, u, p, t, geo, system)
 end
 
 dry_run_config, dry_run_properties, dry_run_thermocouple_data, 
@@ -1074,19 +1056,19 @@ f_closure_dry_run = (du, u, p, t) -> fvm_operator!(du, u, p, t, dry_run_solve_sy
 f_closure_hot_water = (du, u, p, t) -> fvm_operator!(du, u, p, t, hot_water_solve_system!, hot_water_geo, hot_water_system)
 
 first_p_guess_init = ComponentVector(
-    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.4055158193977433u"W/(m^2*K)",
-    pipe_endcaps_to_air_thermal_conductance = 0.49932462378728537u"W/K",
-    heater_weight_1 = 0.06728217161894057,
-    heater_weight_2 = 0.2323239425794256,
-    heater_weight_3 = 0.31160742389943263,
-    heater_weight_4 = 0.46367844468599706,
-    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 34.29281343252844u"W/(m^2*K)",
-    steel_thermal_mass_multiplier = 2.5780844682515482,
-    TC1_thermal_resistance = 68.51914705578082u"K/W",
-    TC2_thermal_resistance = 195.16805450015954u"K/W",
-    TC3_thermal_resistance = 129.78054246870073u"K/W",
-    TC4_thermal_resistance = 157.87722864395607u"K/W",
-    TC5_thermal_resistance = 21.658473286372u"K/W",
+    insulation_to_air_overall_heat_transfer_coefficient_to_environment = 0.6660961855285039u"W/(m^2*K)",
+    pipe_endcaps_to_air_thermal_conductance = 0.2495764613764466u"W/K",
+    heater_weight_1 = 0.07428260028432067,
+    heater_weight_2 = 0.3499726682885098,
+    heater_weight_3 = 0.26917982171867927,
+    heater_weight_4 = 0.5781643096813001,
+    fluid_to_steel_pipe_convective_heat_transfer_coefficient = 34.02609390801851u"W/(m^2*K)",
+    steel_thermal_mass_multiplier = 2.903109036597523,
+    TC1_thermal_resistance = 68.52070429001392u"K/W",
+    TC2_thermal_resistance = 195.16398786764938u"K/W",
+    TC3_thermal_resistance = 129.78394261858463u"K/W",
+    TC4_thermal_resistance = 157.8874124214126u"K/W",
+    TC5_thermal_resistance = 21.669354950158237u"K/W",
 )
 
 dry_run_best_params = ComponentVector(
@@ -1139,6 +1121,16 @@ hot_water_saveat = ustrip(upreferred(hot_water_thermocouple_data.timestamps[end]
 
 @time dry_run_test_sol = solve(dry_run_implicit_prob, FBDF(linsolve = SparspakFactorization()), dtmax = dry_run_saveat, callback = approximate_time_to_finish_cb)
 @time hot_water_test_sol = solve(hot_water_implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
+
+#=
+dry_run_du_complete, dry_run_u_complete = regenerate_fvm_state(dry_run_test_sol, dry_run_system, dry_run_solve_system!, dry_run_geo, p_guess, u_additional_information = ComponentVector());
+hot_water_du_complete, hot_water_u_complete = regenerate_fvm_state(hot_water_test_sol, hot_water_system, hot_water_solve_system!, hot_water_geo, p_guess, u_additional_information = ComponentVector());
+
+root_dir = "C:\\Users\\wille\\Desktop\\Julia_cfd_output_files"
+
+sol_to_vtk(dry_run_test_sol, dry_run_du_complete, dry_run_u_complete, grid, dry_run_geo, @__FILE__, root_dir; include_zeros_fields = false)
+sol_to_vtk(hot_water_test_sol, hot_water_du_complete, hot_water_u_complete, grid, hot_water_geo, @__FILE__, root_dir; include_zeros_fields = false)
+=#
 
 #@time hot_water_krylov_sol = solve(hot_water_implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 
@@ -1334,6 +1326,8 @@ function loss(θ)
     return (pure_dry_run_loss(θ) + pure_hot_water_loss(θ)) / 2.0
 end
 
+loss(p_guess)
+
 hot_water_output_dir = joinpath(@__DIR__, "..", "graphs", "hot_water_graphs")
 dry_run_output_dir = joinpath(@__DIR__, "..", "graphs", "dry_run_graphs")
 combined_parameters_output_dir = joinpath(@__DIR__, "..", "graphs", "combined_parameters_loss_graphs")
@@ -1517,7 +1511,7 @@ end
     #g_abstol=1e-8,
 )=#
 
-#=
+
 @time res = Optimization.solve(
     optprob,
     callback = cb,
@@ -1530,7 +1524,6 @@ end
     #f_abstol=1e-8,
     #g_abstol=1e-8,
 )
-    =#
 
 #=
 @time res = solve(
