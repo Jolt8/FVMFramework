@@ -29,7 +29,7 @@ kg_syngas_per_kg_plastic = 2.0u"kg/kg" #1.5-2.5
 
 kg_ethylene_prod_per_kg_syngas = 0.31u"kg/kg" #0.333-0.286
 
-ethylene_cost_per_kg = 0.9u"USD/kg" #1.21 - 0.53 #OUPUT
+ethylene_cost_per_kg = 0.9u"USD/kg" #1.21 - 0.53 #OUTPUT
 
 ethylene_prod_per_kg_plastic = kg_syngas_per_kg_plastic * kg_ethylene_prod_per_kg_syngas 
 
