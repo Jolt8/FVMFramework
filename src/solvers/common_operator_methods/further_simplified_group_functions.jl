@@ -39,7 +39,7 @@ function update_region_groups!(du, u, p, t, geo, system)
         update_region_group!(
             du, u, p, t,
             reg.property_update_function!, reg.region_cells,
-            geo.cell_volumes
+            geo.cell_volumes, system
         )
     end
 end
