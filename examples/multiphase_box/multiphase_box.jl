@@ -10,6 +10,7 @@ using NonlinearSolve
 using Sparspak
 using Dates
 using DataInterpolations
+using Clapeyron
 
 Revise.includet(joinpath(@__DIR__, "overloads", "clapeyron_tracer_overloads.jl"))
 
@@ -342,6 +343,8 @@ du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function
 
 f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
 
+@time f_closure(du0_vec, u0_vec, p_guess, 0.0)
+
 p_guess = [0.0]
 
 #test_prob = ODEProblem(f_closure, u0_vec, (0.0, 0.01), p_guess)
@@ -356,12 +359,13 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 105000.0
+tMax = 30000.0
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 
-@time sol = solve(implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
+#@time sol = solve(implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
+@time sol = solve(implicit_prob, FBDF(), callback = approximate_time_to_finish_cb)
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 
 du_complete, u_complete = regenerate_fvm_state(sol, system, solve_system!, geo, p_guess, u_additional_information = ComponentVector());
