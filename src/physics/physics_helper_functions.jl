@@ -38,10 +38,6 @@ function mw_avg!(u, cell_id)
         inv_mw += mass_fractions[species[cell_id]] / molecular_weights[species[cell_id]]
     end
 
-    @show u.mw_avg[cell_id]
-
-    u.mw_avg[1] = 1.0u"g/mol"
-    
     u.mw_avg[cell_id] = 1.0 / inv_mw
 end
 
