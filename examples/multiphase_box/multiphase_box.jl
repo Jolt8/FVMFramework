@@ -253,14 +253,16 @@ add_region!(
     ),
     properties = water_methanol_properties,
     property_update_function = 
-    function update_inlet!(du, u, p, t, cell_id, vol)
+    function update_inlet!(du, u, p, t, cell_id, vol, system)
         update_fluid_properties!(du, u, p, t, cell_id, vol, system)
     end,
     region_function =
     function inlet!(du, u, p, t, cell_id, vol)
         #update_fluid_properties!(du, u, cell_id, vol, system)
 
-        #du.heat[cell_id] += 10.0
+        if t >= 30000.0
+            du.heat[cell_id] += 1000.0
+        end
 
         fluid_sum_and_cap_fluxes!(du, u, cell_id, vol)
     end
@@ -354,15 +356,13 @@ jac_sparsity = ADTypes.jacobian_sparsity(
 ode_func = ODEFunction(f_closure, jac_prototype = float.(jac_sparsity))
 
 t0 = 0.0
-tMax = 30000.0
+tMax = 105000.0
 tspan = (t0, tMax)
 
 implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 
 @time sol = solve(implicit_prob, FBDF(linsolve = SparspakFactorization()), callback = approximate_time_to_finish_cb)
 #@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
-
-u_named = [ComponentVector(sol.u[i], system.state_axes) for i in 1:length(sol.u)];
 
 du_complete, u_complete = regenerate_fvm_state(sol, system, solve_system!, geo, p_guess, u_additional_information = ComponentVector());
 
