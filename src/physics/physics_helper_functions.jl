@@ -37,6 +37,10 @@ function mw_avg!(u, cell_id)
     for_fields!(u.mass_fractions, u.molecular_weights) do species, mass_fractions, molecular_weights
         inv_mw += mass_fractions[species[cell_id]] / molecular_weights[species[cell_id]]
     end
+
+    @show u.mw_avg[cell_id]
+
+    u.mw_avg[1] = 1.0u"g/mol"
     
     u.mw_avg[cell_id] = 1.0 / inv_mw
 end
@@ -70,7 +74,7 @@ end
 
 function molar_fractions!(u, cell_id)
     for_fields!(u.mass_fractions, u.molecular_weights, u.molar_fractions) do species, mass_fractions, molecular_weights, molar_fractions
-        molar_fractions[species[cell_id]] = mass_fractions[species[cell_id]] / molecular_weights[species[cell_id]]
+        molar_fractions[species[cell_id]] = (mass_fractions[species[cell_id]] / molecular_weights[species[cell_id]]) * u.mw_avg[cell_id]
     end
 end
 
