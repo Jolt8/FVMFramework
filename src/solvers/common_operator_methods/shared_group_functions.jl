@@ -34,13 +34,14 @@ end
 function update_region_group!(
     du, u, p, t,
     property_update_function!::F, region_cells,
-    cell_volumes
+    cell_volumes, system
 ) where {F}
     for cell_id in region_cells
         property_update_function!(
             du, u, p, t, 
             cell_id,
-            cell_volumes[cell_id]
+            cell_volumes[cell_id],
+            system
         )
     end
 end
