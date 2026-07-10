@@ -91,5 +91,3 @@ plot!(carbon_taxes, ones(length(carbon_taxes)) * solar_lifespan, label = "25 yea
 #oh, the 2 billion dollars per accounts for all costs like battery replacement and maintanence
 #even if we go to the high end of 3.5 billion dollars per GW, the carbon tax only has to be 37$/ton of CO2 for solar to be worth it
 #also, solar panels can usually last more than 25 years, with some lasting 30-40 years
-#also, if concentrated solar power can ever reach a level that allows for 24/7 operation, it would likely be much cheaper than solar panels
-#or natural gas
