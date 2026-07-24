@@ -1,0 +1,9 @@
+RayPath_ID,Tx_Channel,Rx_Channel,TimeOfFlight_us,AdaptiveCooldown_ms,Method,Status
+1,1,2,16.4668,5.02,CrossCorrelation,OK
+2,2,1,16.4936,5.02,CrossCorrelation,OK
+3,3,4,16.5058,5.02,CrossCorrelation,OK
+4,4,3,16.4533,5.02,CrossCorrelation,OK
+5,5,6,16.5480,5.02,CrossCorrelation,OK
+6,6,5,16.4556,5.02,CrossCorrelation,OK
+7,7,8,16.4958,5.02,CrossCorrelation,OK
+8,8,7,16.4906,5.02,CrossCorrelation,OK
