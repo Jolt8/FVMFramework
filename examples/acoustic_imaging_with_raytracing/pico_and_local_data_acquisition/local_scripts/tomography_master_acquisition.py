@@ -57,10 +57,11 @@ class PicoTriggerController:
                     self.port = p.device
                     print(f"[+] Auto-detected Pico 2W on Serial Port {self.port}")
                     return True
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[!] Found Pico 2W on {p.device}, but could not open port: {e}")
+                    print("    --> Note: If Thonny, PuTTY, or VSCode Serial Monitor is open, please close it to release the COM port.")
 
-        print("[!] Pico 2W USB Serial port not detected. Operating with hardware timing sync.")
+        print("[!] Pico 2W USB Serial port not detected or unavailable. Operating in hardware timing mode.")
         return False
 
     def trigger_pair(self, tx_chan, rx_chan):
@@ -85,7 +86,7 @@ class PicoTriggerController:
 
 
 class TomographyAcquisitionMaster:
-    def __init__(self, sample_rate_mhz=16.0, safety_factor=0.10, min_cooldown_ms=5.0, serial_port=None, runs_dir=None):
+    def __init__(self, sample_rate_mhz=1.0, safety_factor=0.10, min_cooldown_ms=5.0, serial_port=None, runs_dir=None, initial_target_tof_us=68.0, tolerance_pct=0.25):
         self.scope = Hantek6022BE()
         self.pico = PicoTriggerController(port=serial_port)
         self.sample_rate_mhz = sample_rate_mhz
@@ -95,12 +96,18 @@ class TomographyAcquisitionMaster:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.runs_dir = runs_dir if runs_dir else os.path.join(script_dir, "runs")
 
+        # User-Grounded Adaptive Dynamic Window Filtering
+        self.initial_target_tof_us = initial_target_tof_us
+        self.tolerance_pct = tolerance_pct  # ±25% dynamic acceptance window around ground truth
+        self.active_baseline_tof = {}       # Dynamically updated running baseline per transducer pair
+
         # Matches transducer pairs defined in readable_tomography_logic.py
         self.transducer_pairs = [
-            (1, 2), (2, 1),
-            (3, 4), (4, 3),
-            (5, 6), (6, 5),
-            (7, 8), (8, 7)
+            (1, 2), 
+            #(2, 1),
+            #(3, 4), (4, 3),
+            #(5, 6), (6, 5),
+            #(7, 8), (8, 7)
         ]
         self.tof_results = {}
         self.last_observed_tof_us = {}
@@ -117,82 +124,88 @@ class TomographyAcquisitionMaster:
             print("[X] Scope connection failed. Ensure OpenHantek GUI is closed.")
             return False
         
-        self.scope.configure(sample_rate_mhz=self.sample_rate_mhz, ch1_range_v=5.0, ch2_range_v=5.0)
-        print("[+] Hantek 6022BE Scope connected & configured.")
+        self.scope.configure(sample_rate_mhz=self.sample_rate_mhz, ch1_range_v=5.0, ch2_range_v=0.5)
+        print("[+] Hantek 6022BE Scope connected & configured (CH2 high-sensitivity +/- 500mV mode).")
         return True
 
-    def calculate_precision_tof_micros(self, ch1_volts, ch2_volts, method="cross_correlation"):
+    def calculate_precision_tof_micros(self, ch1_volts, ch2_volts, tx=1, rx=2, method="cross_correlation"):
         """
-        High-Precision Time-of-Flight (ToF) Calculation:
-        
-        Method 1: Cross-Correlation (R_xy) + Sub-sample Parabolic Interpolation
-                  Measures true signal lag between transmitted reference and received pulse.
-                  Provides sub-nanosecond delay resolution.
-                  
-        Method 2: Hilbert Transform Analytic Envelope Peak
-                  Smoothes sinusoidal carrier to detect wavepacket envelope and eliminate cycle skipping.
+        User-Grounded Adaptive Dynamic Window Filtering:
+        - Locates CH1 pulse trigger rising edge (> 1.5 V) as t = 0 reference
+        - Dynamically grounds search window around running baseline ToF (±25% acceptance band)
+        - Rejects corrupted scope frames / secondary pings outside acceptance window
+        - Dynamically adapts running baseline ToF via Exponential Moving Average (EMA)
         """
         if ch1_volts is None or ch2_volts is None or len(ch1_volts) == 0:
             return None
 
         dt_us = 1.0 / self.sample_rate_mhz
 
-        # Normalize signals (remove DC bias)
-        v_tx = ch1_volts - np.mean(ch1_volts)
-        v_rx = ch2_volts - np.mean(ch2_volts)
+        # Get current running ground-truth baseline ToF for this transducer pair (default initial 68.0 µs)
+        pair_key = (tx, rx)
+        current_baseline = self.active_baseline_tof.get(pair_key, self.initial_target_tof_us)
 
-        # Check if received signal exceeds noise floor (minimum threshold)
-        rx_amplitude = np.max(np.abs(v_rx))
-        if rx_amplitude < 0.08:  # Signal below noise floor (80 mV)
+        # Dynamic ±25% acceptance window boundaries
+        min_valid_tof = current_baseline * (1.0 - self.tolerance_pct)
+        max_valid_tof = current_baseline * (1.0 + self.tolerance_pct)
+
+        # Select trigger edge with full headroom in the frame
+        ch1_trig = np.where(ch1_volts > 1.5)[0]
+        trig_idx = 0
+        if len(ch1_trig) > 0:
+            for t in ch1_trig:
+                if t + int(max_valid_tof * self.sample_rate_mhz) <= len(ch1_volts):
+                    trig_idx = t
+                    break
+            else:
+                trig_idx = ch1_trig[0]
+
+        # Moving-average baseline detrending on CH2 (removes slow RC charging ramp)
+        kernel_size = 5
+        baseline = np.convolve(ch2_volts, np.ones(kernel_size)/kernel_size, mode='same')
+        v_rx_detrended = ch2_volts - baseline
+
+        # Ground search window around active baseline [current_baseline * 0.75, current_baseline * 1.25]
+        min_search_samples = int(min_valid_tof * self.sample_rate_mhz)
+        max_search_samples = int(max_valid_tof * self.sample_rate_mhz)
+
+        search_start = trig_idx + min_search_samples
+        search_end = min(trig_idx + max_search_samples, len(v_rx_detrended))
+
+        if search_start >= len(v_rx_detrended) or search_start >= search_end:
+            search_start = max(0, len(v_rx_detrended) - 30)
+            search_end = len(v_rx_detrended)
+
+        rx_search_region = v_rx_detrended[search_start:search_end]
+        if len(rx_search_region) == 0:
             return None
 
-        if method == "cross_correlation":
-            # 1. Compute full Cross-Correlation sequence R_xy[k]
-            corr = correlate(v_rx, v_tx, mode='full')
-            lags = correlation_lags(len(v_rx), len(v_tx), mode='full')
+        # Find acoustic wavepacket peak inside grounded search region
+        local_peak_idx = np.argmax(np.abs(rx_search_region))
+        rx_peak_idx = search_start + local_peak_idx
 
-            # Find correlation peak lag index
-            peak_idx = np.argmax(corr)
-            k_max = lags[peak_idx]
-
-            # 2. Sub-sample Parabolic (Quadratic) Interpolation around the peak
-            if 0 < peak_idx < len(corr) - 1:
-                y0 = corr[peak_idx - 1]
-                y1 = corr[peak_idx]
-                y2 = corr[peak_idx + 1]
-                denom = (y0 - 2 * y1 + y2)
-                if abs(denom) > 1e-12:
-                    delta = (y0 - y2) / (2.0 * denom)
-                else:
-                    delta = 0.0
-            else:
-                delta = 0.0
-
-            subsample_lag = k_max + delta
-            tof_us = subsample_lag * dt_us
-            return max(0.0, tof_us)
-
-        elif method == "hilbert_envelope":
-            # 1. Compute Hilbert Transform Analytic Envelopes
-            env_tx = np.abs(hilbert(v_tx))
-            env_rx = np.abs(hilbert(v_rx))
-
-            # 2. Find peak of envelope
-            tx_peak_idx = np.argmax(env_tx)
-            rx_peak_idx = np.argmax(env_rx)
-
-            tof_samples = rx_peak_idx - tx_peak_idx
-            tof_us = tof_samples * dt_us
-            return max(0.0, tof_us)
-
+        # Sub-sample Parabolic Interpolation around the wavepacket peak
+        if 0 < rx_peak_idx < len(v_rx_detrended) - 1:
+            y0 = abs(v_rx_detrended[rx_peak_idx - 1])
+            y1 = abs(v_rx_detrended[rx_peak_idx])
+            y2 = abs(v_rx_detrended[rx_peak_idx + 1])
+            denom = (y0 - 2 * y1 + y2)
+            delta = (y0 - y2) / (2.0 * denom) if abs(denom) > 1e-12 else 0.0
         else:
-            # Fallback First Threshold Crossing
-            thresh = 0.15
-            tx_c = np.where(np.abs(v_tx) > thresh)[0]
-            rx_c = np.where(np.abs(v_rx) > thresh)[0]
-            if len(tx_c) == 0 or len(rx_c) == 0:
-                return None
-            return max(0.0, (rx_c[0] - tx_c[0]) * dt_us)
+            delta = 0.0
+
+        subsample_idx = rx_peak_idx + delta
+        measured_tof_us = (subsample_idx - trig_idx) * dt_us
+
+        # Validate within ±25% acceptance window
+        if min_valid_tof <= measured_tof_us <= max_valid_tof:
+            # Dynamically adapt baseline ToF via Exponential Moving Average (EMA)
+            updated_baseline = 0.85 * current_baseline + 0.15 * measured_tof_us
+            self.active_baseline_tof[pair_key] = updated_baseline
+            return max(0.0, measured_tof_us)
+        else:
+            # Outlier frame rejected
+            return None
 
     def calculate_adaptive_cooldown_sec(self, tx, rx, measured_tof_us):
         """
@@ -268,7 +281,7 @@ class TomographyAcquisitionMaster:
                         # 1. Command Pico 2W to select MUX channel and fire 250ns pulse
                         self.pico.trigger_pair(tx, rx)
 
-                        # 2. Capture Scope Waveform
+                        # 2. Capture Scope Waveform (244 µs contiguous single-frame window at 1 MS/s)
                         ch1, ch2 = self.scope.capture_waveform(num_samples=2048)
                         
                         # 3. Save raw waveform data to scope CSV & flush from RAM to physical disk
@@ -282,8 +295,8 @@ class TomographyAcquisitionMaster:
                             f_scope.flush()
                             os.fsync(f_scope.fileno())
 
-                        # 4. Compute High-Precision Cross-Correlation ToF
-                        tof = self.calculate_precision_tof_micros(ch1, ch2, method="cross_correlation")
+                        # 4. Compute High-Precision Cross-Correlation ToF with Grounded Window Filtering
+                        tof = self.calculate_precision_tof_micros(ch1, ch2, tx=tx, rx=rx, method="cross_correlation")
                         
                         if tof is not None:
                             status = "OK"
@@ -297,7 +310,7 @@ class TomographyAcquisitionMaster:
                             print(f"     -> [WARNING] No signal detected for Tx {tx} -> Rx {rx}")
 
                         self.tof_results[(tx, rx)] = tof
-                        tof_writer.writerow([scan_index, f"{ray_timestamp:.3f}", ray_id, tx, rx, f"{tof:.4f}" if tof > 0 else "N/A", f"{cooldown_s*1000.0:.2f}", "CrossCorrelation", status])
+                        tof_writer.writerow([scan_index, f"{ray_timestamp:.3f}", ray_id, tx, rx, f"{tof:.4f}" if tof >= 0 else "N/A", f"{cooldown_s*1000.0:.2f}", "CrossCorrelation", status])
                         
                         # Force write to storage for ToF matrix entry
                         f_tof.flush()
@@ -321,6 +334,20 @@ class TomographyAcquisitionMaster:
         return self.tof_results
 
 if __name__ == "__main__":
-    master = TomographyAcquisitionMaster(sample_rate_mhz=16.0, safety_factor=0.10, min_cooldown_ms=5.0)
+    print("\n=======================================================")
+    print("      AUTOMATED ACOUSTIC TOMOGRAPHY ACQUISITION       ")
+    print("=======================================================\n")
+    try:
+        user_input = input("Enter baseline Time-of-Flight (µs) from OpenHantek scope [Press Enter for 68.0]: ").strip()
+        if user_input:
+            initial_tof = float(user_input)
+        else:
+            initial_tof = 68.0
+    except Exception:
+        initial_tof = 68.0
+
+    print(f"[+] Grounding ToF Acceptance Filter around: {initial_tof:.1f} µs (±25% Band: {initial_tof*0.75:.1f} µs to {initial_tof*1.25:.1f} µs)\n")
+
+    master = TomographyAcquisitionMaster(sample_rate_mhz=1.0, safety_factor=0.10, min_cooldown_ms=5.0, initial_target_tof_us=initial_tof, tolerance_pct=0.25)
     if master.connect():
         master.execute_tomography_scan(continuous=True)

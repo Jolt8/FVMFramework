@@ -1,7 +1,21 @@
 """
 Hantek 6022BE Python Data Acquisition & Ultrasound Tomography Interface
 Direct USB communication via PyUSB & libusb. Saves data to CSV.
+
+TROUBLESHOOTING & RECOVERY NOTES:
+---------------------------------
+1. Device not showing up in Zadig ("List All Devices" checked, but missing):
+   - Cause: Hardware connection dropped / USB 3.0 controller handshake issue with Cypress FX2 chip
+     (Windows PnP status shows Present: False / CM_PROB_PHANTOM).
+   - Fix: Plug directly into a USB 2.0 port on the motherboard (avoid USB 3.0 hubs or extension cables).
+
+2. OpenHantek crashing on launch (ucrtbase.dll / Exception 0xc0000409 / BEX64):
+   - Cause: Corrupted window geometry or scope state saved in Windows Registry under HKCU\Software\OpenHantek.
+   - Fix: Run PowerShell command to wipe the corrupted registry key:
+     Remove-Item -Path "HKCU:\Software\OpenHantek" -Recurse -Force
+   - Ensure target driver in Zadig is set to WinUSB (v6.1+) for USB\VID_04B5&PID_6022.
 """
+
 
 import sys
 import time
@@ -31,10 +45,14 @@ class Hantek6022BE:
         self.sample_rate_mhz = 16.0
 
     def find_device(self):
-        """Scans USB bus for Hantek 6022BE device."""
-        for dev in libusb_package.find(find_all=True):
-            if dev.idVendor in (self.VID_FW_LOADED, self.VID_BOOTLOADER) and dev.idProduct == self.PID_FW_LOADED:
-                return dev
+        """Scans USB bus for Hantek 6022BE device using LibUSB backend."""
+        try:
+            backend = libusb_package.get_libusb1_backend()
+            return usb.core.find(idVendor=self.VID_FW_LOADED, idProduct=self.PID_FW_LOADED, backend=backend)
+        except Exception:
+            for dev in libusb_package.find(find_all=True):
+                if dev.idVendor in (self.VID_FW_LOADED, self.VID_BOOTLOADER) and dev.idProduct == self.PID_FW_LOADED:
+                    return dev
         return None
 
     def connect(self):
@@ -45,12 +63,6 @@ class Hantek6022BE:
             return False
 
         print(f"[+] Found Hantek 6022BE (VID=0x{self.dev.idVendor:04X}, PID=0x{self.dev.idProduct:04X})")
-
-        try:
-            self.dev.reset()
-            time.sleep(0.1)
-        except Exception:
-            pass
 
         try:
             self.dev.set_configuration()
@@ -73,63 +85,51 @@ class Hantek6022BE:
         self.ch1_gain_v = ch1_range_v
         self.ch2_gain_v = ch2_range_v
         self.sample_rate_mhz = sample_rate_mhz
+
+        # Send vendor commands to configure FPGA ADC clock and gain
+        try:
+            # Set Gain (Request 0xE3): CH1=1 (5V), CH2=1 (5V)
+            self.dev.ctrl_transfer(0x40, 0xE3, 0x0001, 0x0001, b"\x01")
+            # Set Sample Rate (Request 0xE2)
+            self.dev.ctrl_transfer(0x40, 0xE2, 0x0001, 0x0000, b"\x01")
+        except Exception:
+            pass
+
         return True
 
     def capture_waveform(self, num_samples=2048):
-        """Reads USB bulk endpoint data and returns (ch1_volts, ch2_volts)."""
+        """Captures a clean 244 µs contiguous single-frame scope capture at 1 MS/s."""
         if not self.dev:
             return None, None
 
-        cfg = self.dev.get_active_configuration()
-        raw_bytes = None
-
-        for alt_obj in cfg:
-            alt_num = alt_obj.bAlternateSetting
-            in_eps = [ep.bEndpointAddress for ep in alt_obj if usb.util.endpoint_direction(ep.bEndpointAddress) == usb.util.ENDPOINT_IN]
+        try:
+            self.dev.set_interface_altsetting(0, 0)
+            time.sleep(0.005)
             
-            try:
-                self.dev.set_interface_altsetting(0, alt_num)
-                time.sleep(0.02)
-            except Exception:
-                continue
+            ch2_val = 0x0001 if self.ch2_gain_v <= 0.5 else 0x0000
+            # Set Gain (0xE3): CH1=5V (1), CH2=500mV (1) or 5V (0)
+            self.dev.ctrl_transfer(0x40, 0xE3, 0x0001, ch2_val, b"\x01")
+            # Set Samplerate (0xE2): Code 7 = 1 MS/s (244µs window)
+            self.dev.ctrl_transfer(0x40, 0xE2, 0x0007, 0x0000, b"\x01")
+            # Start hardware capture (0xE0)
+            self.dev.ctrl_transfer(0x40, 0xE0, 0x0001, 0x0000, b"\x01")
+            
+            self.dev.clear_halt(0x86)
+            data = self.dev.read(0x86, 2048, timeout=200)
+            if not data or len(data) < 100:
+                return None, None
 
-            for ep_addr in in_eps:
-                try:
-                    self.dev.clear_halt(ep_addr)
-                    data = self.dev.read(ep_addr, num_samples * 2, timeout=500)
-                    if data and len(data) > 0:
-                        raw_bytes = data
-                        print(f"[+] Successfully captured {len(data)} raw bytes from EP 0x{ep_addr:02X} (Alt #{alt_num})")
-                        break
-                except Exception:
-                    pass
-            if raw_bytes:
-                break
+            total_samples = len(data) // 2
+            data_np = np.frombuffer(data[:total_samples * 2], dtype=np.uint8)
+            ch1_raw = data_np[0::2]
+            ch2_raw = data_np[1::2]
 
-        if not raw_bytes:
-            # Generate simulated tomography waveform for inspection if USB clock is idle
-            dt_us = 1.0 / self.sample_rate_mhz
-            t_us = np.arange(num_samples) * dt_us
-            ch1_volts = 0.02 * np.random.randn(num_samples)
-            pulse_mask = t_us >= 18.5
-            ch1_volts[pulse_mask] += 2.4 * np.exp(-(t_us[pulse_mask]-18.5)/7.0) * np.sin(2*np.pi*0.04*(t_us[pulse_mask]-18.5))
+            ch1_volts = (ch1_raw.astype(np.float32) - 128.0) / 128.0 * self.ch1_gain_v
+            ch2_volts = (ch2_raw.astype(np.float32) - 128.0) / 128.0 * self.ch2_gain_v
 
-            ch2_volts = 0.015 * np.random.randn(num_samples)
-            pulse2_mask = t_us >= 35.0
-            ch2_volts[pulse2_mask] += 1.8 * np.exp(-(t_us[pulse2_mask]-35.0)/7.0) * np.sin(2*np.pi*0.04*(t_us[pulse2_mask]-35.0))
             return ch1_volts, ch2_volts
-
-        if len(raw_bytes) % 2 != 0:
-            raw_bytes = raw_bytes[:-1]
-
-        data_np = np.frombuffer(raw_bytes, dtype=np.uint8)
-        ch1_raw = data_np[0::2]
-        ch2_raw = data_np[1::2]
-
-        ch1_volts = (ch1_raw.astype(np.float32) - 128.0) / 128.0 * self.ch1_gain_v
-        ch2_volts = (ch2_raw.astype(np.float32) - 128.0) / 128.0 * self.ch2_gain_v
-
-        return ch1_volts, ch2_volts
+        except Exception:
+            return None, None
 
     def save_to_csv(self, ch1_volts, ch2_volts, filename="capture_hantek_main.csv"):
         """Saves captured channel waveforms to a CSV file."""
