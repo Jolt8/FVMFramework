@@ -1,3 +1,4 @@
+using Revise
 using Unitful
 using OrdinaryDiffEq
 using Ferrite
@@ -343,9 +344,9 @@ du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function
 
 f_closure = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
 
-@time f_closure(du0_vec, u0_vec, p_guess, 0.0)
-
 p_guess = [0.0]
+
+@time f_closure(du0_vec, u0_vec, p_guess, 0.0)
 
 #test_prob = ODEProblem(f_closure, u0_vec, (0.0, 0.01), p_guess)
 #@time sol = solve(test_prob, Tsit5(), callback = approximate_time_to_finish_cb)
