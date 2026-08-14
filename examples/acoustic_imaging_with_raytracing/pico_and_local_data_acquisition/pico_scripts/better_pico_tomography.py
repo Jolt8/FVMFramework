@@ -8,7 +8,7 @@ import select
 TX_MUX_BASE = 2     # GP2, GP3, GP4, GP5 (4-bit TX Channel Selection)
 RX_MUX_BASE = 6     # GP6, GP7, GP8, GP9 (4-bit RX Channel Selection)
 TX_TRIGGER = 10     # GP10 (Driven by PIO state machine for 250ns pulse)
-SCOPE_TRIGGER = 11  # GP11 (Scope trigger output)
+SCOPE_TRIGGER = 1  # GP11 (Scope trigger output)
 
 # --- PIO PROGRAM FOR EXACT 250ns HARDWARE PULSE & 100us SCOPE TRIGGER ---
 # The PIO state machine runs independently in hardware at 4 MHz.
