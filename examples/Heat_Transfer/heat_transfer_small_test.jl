@@ -15,7 +15,6 @@ using StaticArrays
 using PreallocationTools
 using ForwardDiff
 using Polyester
-using StatsBase
 
 using Unitful
 
@@ -39,6 +38,55 @@ n_faces = length(config.geo.cell_neighbor_areas[1])
 
 struct Solid <: AbstractPhysics end
 
+#property updating/retrieval
+
+#variable summation
+
+#internal physics
+
+#sources
+
+#boundary conditions
+
+#capacities
+
+add_setup_syms!(
+    config;
+    cache_syms_and_units = (heat = u"J",),
+    special_caches = ComponentVector(),
+    second_order_syms = [],
+    optimized_parameters = ComponentVector()
+)
+
+function cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
+    # J/s /= m^3 * kg*m^3 * J/(kg*K)
+    # = K/s
+    #@show du.heat[cell_id]
+    #@show vol
+    #@show u.rho[cell_id]
+    #@show u.cp[cell_id]
+    du.temp[cell_id] += du.heat[cell_id] / (vol * u.rho[cell_id] * u.cp[cell_id])
+    #@show du.temp[cell_id]
+end
+
+function cap_mass_flux_to_pressure_change!(du, u, cell_id, vol)
+    # kg/s /= (m^3 / (J/(mol*K) * K))
+    #remember: J = Pa*m^3
+    # = Pa/s
+    du_moles = du.mass[cell_id] / u.mw_avg[cell_id]
+    du.pressure[cell_id] += (du_moles * u.R_gas[cell_id] * u.temp[cell_id]) / vol
+end
+
+function cap_species_mass_flux_to_mass_fraction_change!(du, u, cell_id, vol)
+    total_mass = vol * u.rho[cell_id]
+
+    for_fields!(du.mass_fractions, u.mass_fractions, du.species_mass_flows) do species, du_mass_fractions, u_mass_fractions, species_mass_flows
+        du_mass_fractions[species[cell_id]] += (species_mass_flows[species[cell_id]] - u_mass_fractions[species[cell_id]] * du.mass[cell_id]) / total_mass
+    end
+end
+
+
+
 add_region!(
     config, "copper";
     type = Solid(),
@@ -50,21 +98,11 @@ add_region!(
         rho = 2700.0u"kg/m^3",
         cp = 921.0u"J/(kg*K)",
     ),
-    optimized_syms = (),
-    cache_syms_and_units = (heat = u"J",),
+    property_update_function = function copper_property_update!(properties, u)
+        
+    end,
     region_function =
     function heat_transfer!(du, u, cell_id, vol)
-        #property updating/retrieval
-
-        #variable summation
-
-        #internal physics
-
-        #sources
-
-        #boundary conditions
-
-        #capacities
         cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
     end
 )
@@ -80,37 +118,42 @@ add_region!(
         rho = 7800.0u"kg/m^3",
         cp = 450.0u"J/(kg*K)",
     ),
-    cache_syms_and_units = (heat = u"J",),
-    optimized_syms = (),
-    region_function=
-    function heat_transfer!(du, u, cell_id, vol)
-        #property updating/retrieval
-
-        #variable summation
-
-        #internal physics
-
-        #sources
-
-        #boundary conditions
-
-        #capacities
+    property_update_function = function steel_property_update!(properties, u)
+        
+    end,
+    region_function =
+    function heat_transfer!(du, u, p, t, cell_id, vol)
         cap_heat_flux_to_temp_change!(du, u, cell_id, vol)
     end
 )
 
-function solid_solid_flux!(
-    du, u,
+function heat_diffusion!(
+    du, u, p, t,
     idx_a, idx_b, face_idx,
-    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances
+    area, norm, dist,
+    vol_a, vol_b
+)
+    k_effective = 2 * u.k[idx_a] * u.k[idx_b] / (u.k[idx_a] + u.k[idx_b])
+
+    grad_T = (u.temp[idx_b] - u.temp[idx_a]) / dist
+
+    du.heat[idx_a] -= -k_effective * grad_T * area
+end
+
+function solid_solid_flux!(
+    du, u, p, t, 
+    idx_a, idx_b, face_idx,
+    cell_neighbor_areas, cell_neighbor_normals, cell_neighbor_distances,
+    cell_volumes
 )
 
     #hmm, perhaps these physics functions need to be more strictly typed
     #Checking profview, I'm getting some runtime dispatch and GC here, I don't know why 
     heat_diffusion!(
-        du, u,
+        du, u, p, t,
         idx_a, idx_b, face_idx,
-        cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx]
+        cell_neighbor_areas[idx_a][face_idx], cell_neighbor_normals[idx_a][face_idx], cell_neighbor_distances[idx_a][face_idx],
+        cell_volumes[idx_a], cell_volumes[idx_b]
     )
 end
 
@@ -118,42 +161,21 @@ function connection_map_function(type_a, type_b)
     typeof(type_a) <: Solid && typeof(type_b) <: Solid && return solid_solid_flux!
 end
 
-species_caches = ()
+du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, check_units = false);
 
-du0_vec, u0_vec, geo, system = finish_fvm_config(config, connection_map_function, species_caches, check_units = false);
+function solve_system!(du, u, p, t, geo, system)
+    solve_connection_groups!(du, u, p, t, geo, system)
+    solve_controller_groups!(du, u, p, t, geo, system)
+    solve_patch_groups!(du, u, p, t, geo, system)
+    solve_region_groups!(du, u, p, t, geo, system)
+end
 
-f_closure_implicit = (du, u, p, t) -> heat_transfer_f_test!(
-    du, u, p, t, 
-
-    geo.cell_volumes, geo.cell_centroids,
-    geo.cell_neighbor_areas, geo.cell_neighbor_normals, geo.cell_neighbor_distances,
-    geo.unconnected_cell_face_map, geo.cell_face_areas, geo.cell_face_normals,
-
-    system.connection_groups, system.controller_groups, system.region_groups, system.patch_groups,
-
-    system.du_virtual_axes, system.u_virtual_axes,
-    system.du_diff_cache, system.u_diff_cache,
-    system.merged_properties
-)
+f_closure_implicit = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
 
 p_guess = 0.0
 
 test_prob = ODEProblem(f_closure_implicit, u0_vec, (0.0, 1000.0), p_guess)
-@btime sol = solve(test_prob, Tsit5(), tspan = (0.0, 10.0))
-
-# 800.793 ms (1552 allocations: 55.95 MiB) (multithreaded)
-# 769.695 ms (1552 allocations: 55.95 MiB) (non-multithreaded)
-
-sol.u[1] == sol.u[end]
-
-#using BenchmarkTools
-#@btime sol = solve(test_prob, Tsit5(), tspan = (0.0, 10.0))
-
-#VSCodeServer.@profview sol = solve(test_prob, Tsit5(), tspan=(0.0, 100.0), callback=approximate_time_to_finish_cb)
-
-sol_u_named_0 = ComponentVector(sol.u[1], system.u_proto_axes)
-
-sol_u_named_end = ComponentVector(sol.u[end], system.u_proto_axes)
+sol = solve(test_prob, Tsit5(), tspan = (0.0, 10.0))
 
 t0 = 0.0
 tMax = 1000.0
@@ -173,21 +195,23 @@ implicit_prob = ODEProblem(ode_func, u0_vec, tspan, p_guess)
 desired_steps = 100
 save_interval = (tspan[end] / desired_steps)
 
-@btime sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true))
+@time sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
+@time sol = solve(implicit_prob, FBDF(linsolve = KLUFactorization(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
+@time sol = solve(implicit_prob, FBDF(precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 #728.605 ms (341178 allocations: 1.08 GiB) (non-multithreaded)
 #787.708 ms (202070 allocations: 1.07 GiB) (only connections multithreading)
 #799.862 ms (219386 allocations: 1.07 GiB) (everything multithreaded)
 #864.517 ms (211023 allocations: 1.07 GiB) (only regions multithreading)
 
 
-#VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
+VSCodeServer.@profview sol = solve(implicit_prob, FBDF(linsolve = KrylovJL_GMRES(), precs = iluzero, concrete_jac = true), callback = approximate_time_to_finish_cb)
 #algebraicmultigrid is only better for more than 1e6 cells
 
 record_sol = true
 
 sim_file = @__FILE__
 
-u_named = rebuild_u_named(sol.u, ComponentVector(u_proto))
+du_named, u_named = regenerate_fvm_state(sol, system, solve_system!, geo, p_guess)
 
 if record_sol == true
     sol_to_vtk(sol, u_named, grid, sim_file)
