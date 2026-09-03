@@ -1,5 +1,5 @@
 function heat_diffusion!(
-    du, u, 
+    du, u, p, t,
     idx_a, idx_b, face_idx,
     area, norm, dist,
     vol_a, vol_b
