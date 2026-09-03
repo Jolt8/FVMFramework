@@ -923,6 +923,7 @@ advecting_fluid_cells = vcat(collect(grid.cellsets["pipe_inlet"]), collect(grid.
 function trial_independent_solve_system!(du, u, p_vec, t, geo, system)
     p = ComponentVector(p_vec, system.p_axes)
 
+    #TODO: Automate this process of applying the guessed values to the actual variables
     for cell_id in eachindex(geo.cell_volumes)
         u.insulation_to_air_overall_heat_transfer_coefficient_to_environment[cell_id] = p.insulation_to_air_overall_heat_transfer_coefficient_to_environment[1]
         u.pipe_endcaps_to_air_thermal_conductance[cell_id] = p.pipe_endcaps_to_air_thermal_conductance[1]
