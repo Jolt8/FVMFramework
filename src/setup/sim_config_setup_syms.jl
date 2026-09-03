@@ -2,7 +2,7 @@ function add_setup_syms!(
     config;
     cache_syms_and_units,
     special_caches,
-    second_order_syms,
+    second_order_syms = [],
     optimized_parameters
 )
     config.cache_syms_and_units = cache_syms_and_units
