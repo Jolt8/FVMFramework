@@ -41,6 +41,21 @@ mutable struct SimulationConfigInfo
     u_proto::ComponentVector
 end
 
+
+"""
+    create_fvm_config(grid, u_proto)
+
+Create a `SimulationConfigInfo` struct with the given grid and 
+initial conditions.
+
+# Arguments
+- `grid::Ferrite.Grid`: The grid to use for the simulation.
+- `u_proto::ComponentVector`: The initial conditions for the simulation.
+
+# Returns
+- `SimulationConfigInfo`: The created simulation config struct.
+
+"""
 function create_fvm_config(grid, u_proto)
     top = ExclusiveTopology(grid)
 
