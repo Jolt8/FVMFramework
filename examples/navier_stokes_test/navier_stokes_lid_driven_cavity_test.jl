@@ -89,12 +89,15 @@ struct Fluid <: AbstractPhysics end
 function fluid_fluid_flux!(
     du,
     u,
+    p,
+    t,
     idx_a,
     idx_b,
     face_idx,
     cell_neighbor_areas,
     cell_neighbor_normals,
     cell_neighbor_distances,
+    cell_volumes
 )
     area = cell_neighbor_areas[idx_a][face_idx]
     norm = cell_neighbor_normals[idx_a][face_idx]
@@ -155,6 +158,8 @@ end
 function wall_patch_flux_generic!(
     du,
     u,
+    p,
+    t,
     idx_a,
     idx_b,
     face_idx,
@@ -201,6 +206,8 @@ end
 stationary_wall_flux!(
     du,
     u,
+    p,
+    t,
     idx_a,
     idx_b,
     face_idx,
@@ -211,6 +218,8 @@ stationary_wall_flux!(
 ) = wall_patch_flux_generic!(
     du,
     u,
+    p,
+    t,
     idx_a,
     idx_b,
     face_idx,
@@ -226,6 +235,8 @@ stationary_wall_flux!(
 moving_lid_flux!(
     du,
     u,
+    p,
+    t,
     idx_a,
     idx_b,
     face_idx,
@@ -265,7 +276,10 @@ add_region!(
         pressure = 0.0u"Pa",
     ),
     properties = fluid_properties,
-    region_function = function fluid_physics!(du, u, cell_id, vol)
+    property_update_function = function update_fluid_properties!(properties, u)
+        
+    end,
+    region_function = function fluid_physics!(du, u, p, t, cell_id, vol)
         du.u_vel[cell_id] += du.u_flow[cell_id] / vol
         du.v_vel[cell_id] += du.v_flow[cell_id] / vol
         du.w_vel[cell_id] += du.w_flow[cell_id] / vol
@@ -299,15 +313,15 @@ add_patch!(
 )
 
 # Finish FVM configuration
-du0_vec, u0_vec, state_axes, geo, system =
+du0_vec, u0_vec, geo, system =
     finish_fvm_config(config, connection_map_function, check_units = false)
 
 # System solver function
 function solve_system!(du, u, p, t, geo, system)
-    solve_connection_groups!(du, u, geo, system)
-    solve_controller_groups!(du, u, geo, system)
-    solve_patch_groups!(du, u, geo, system)
-    solve_region_groups!(du, u, geo, system)
+    solve_connection_groups!(du, u, p, t, geo, system)
+    solve_controller_groups!(du, u, p, t, geo, system)
+    solve_patch_groups!(du, u, p, t, geo, system)
+    solve_region_groups!(du, u, p, t, geo, system)
 end
 
 f_closure_implicit = (du, u, p, t) -> fvm_operator!(du, u, p, t, solve_system!, geo, system)
