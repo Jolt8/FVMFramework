@@ -371,13 +371,15 @@ println("ODE solving complete. Rebuilding state for VTK output...")
 
 u_named = []
 for i in eachindex(sol.u)
-    step_u = ComponentVector(sol.u[i], state_axes)
+    step_u = ComponentVector(sol.u[i], system.state_axes)
     vel_vec = [
         SVector{3,Float64}(step_u.u_vel[c], step_u.v_vel[c], step_u.w_vel[c]) for
         c = 1:n_cells
     ]
     push!(u_named, (velocity = vel_vec, pressure = step_u.pressure))
 end
+
+du_named, u_named = regenerate_fvm_state(sol, system, solve_system!, geo, p_guess)
 
 root_dir = "C:\\Users\\wille\\OneDrive\\Desktop\\julia_cfd_output_files"
 println("Saving VTK files to: ", root_dir)
