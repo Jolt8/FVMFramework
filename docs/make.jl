@@ -6,7 +6,8 @@ makedocs(
     modules = [FVMFramework],
     authors = "Will Martin <willemartin@icloud.com>",
     pages = [
-        "Home" => "index.md",
+        "FVMFramework.jl: A Framework for solving Finite Volume Method Problems in Julia" => "index.md",
+        "Setting up a Simulation" => "quickstart/sim_config_setup.md"
     ]
 )
 

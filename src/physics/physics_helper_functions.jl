@@ -64,11 +64,6 @@ function cp_avg!(u, cell_id)
         u.cp_avg[species[cell_id]] += mass_fractions[species[cell_id]] * species_cps[species[cell_id]]
     end
 end
-#=
-function partial_pressure(u, cell)
-    return mole_fractions .* P_total_bar
-end
-=#
 
 function van_t_hoff(A, dH, T, R)
     #K = A * exp(dH/RT)
